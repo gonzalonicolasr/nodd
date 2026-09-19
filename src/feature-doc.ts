@@ -8,6 +8,8 @@
 // does not compile; and a missing section returns a defect list instead of
 // throwing, because a half-written doc must be reported, not crash a session.
 
+import { defaultDelivery, parseDelivery, renderDelivery, type Delivery } from "./delivery.ts";
+
 export type Intent = "read-only" | "change";
 export type Route = "inline" | "tracked" | "forge";
 
@@ -34,6 +36,8 @@ export type FeatureDoc = {
   scope: string;
   constraints: string;
   route: { intent: Intent; route: Route };
+  /** Recorded and measured, never enforced (`src/delivery.ts`). */
+  delivery: Delivery;
   tasks: Task[];
   outcome: string;
   progress: string;
@@ -50,13 +54,24 @@ export function emptyDoc(fields: { slug: string; title: string }): FeatureDoc {
     scope: "",
     constraints: "",
     route: { intent: "change", route: "inline" },
+    delivery: defaultDelivery(),
     tasks: [],
     outcome: "",
     progress: "",
   };
 }
 
-const SECTIONS = ["Objective", "Problem", "Scope", "Constraints", "Route", "Tasks", "Outcome", "Progress"] as const;
+const SECTIONS = [
+  "Objective",
+  "Problem",
+  "Scope",
+  "Constraints",
+  "Route",
+  "Delivery",
+  "Tasks",
+  "Outcome",
+  "Progress",
+] as const;
 
 function renderTask(task: Task): string {
   const box = task.checked ? "x" : " ";
@@ -95,6 +110,10 @@ export function renderFeatureDoc(doc: FeatureDoc): string {
     "",
     `- intent: ${doc.route.intent}`,
     `- route: ${doc.route.route}`,
+    "",
+    "## Delivery",
+    "",
+    ...renderDelivery(doc.delivery),
     "",
     "## Tasks",
     "",
@@ -194,6 +213,7 @@ export function parseFeatureDoc(text: string): ParsedFeatureDoc {
         intent: intent === "read-only" || intent === "change" ? intent : "change",
         route: route === "tracked" || route === "forge" ? route : "inline",
       },
+      delivery: parseDelivery(sections.get("Delivery") ?? ""),
       tasks: parseTasks(sections.get("Tasks") ?? "", defects),
       outcome: sections.get("Outcome") ?? "",
       progress: sections.get("Progress") ?? "",
