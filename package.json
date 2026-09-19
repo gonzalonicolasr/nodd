@@ -17,7 +17,8 @@
       "./extensions/nodd-gates.ts",
       "./extensions/nodd-allow.ts",
       "./extensions/nodd-models.ts",
-      "./extensions/nodd-agents.ts"
+      "./extensions/nodd-agents.ts",
+      "./extensions/nodd-promote.ts"
     ]
   },
   "files": [
