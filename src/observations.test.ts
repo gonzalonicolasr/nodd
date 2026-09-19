@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { emptyState, observation, pendingCall } from "./observations.ts";
+import { observation, pendingCall } from "./observations.ts";
+import { emptyState } from "./state.ts";
 
 test("an observation carries the raw observed fields", () => {
   const obs = observation({
@@ -39,7 +40,8 @@ test("state splits committed from pending", () => {
   const state = emptyState();
   assert.ok(state.pending instanceof Map);
   assert.equal(state.pending.size, 0);
-  assert.deepEqual(state.committed.observations, []);
+  assert.equal(state.committed.toolCalls, 0);
+  assert.equal(state.committed.declaration, null);
 });
 
 // The ledger stores what was observed. Interpretation (success/failure) is

@@ -31,15 +31,6 @@ export type PendingCall = {
   input: Record<string, unknown>;
 };
 
-export type Committed = {
-  observations: Observation[];
-};
-
-export type NoddState = {
-  committed: Committed;
-  pending: Map<string, PendingCall>;
-};
-
 export function observation(fields: Observation): Observation {
   if (!fields?.toolCallId) {
     throw new Error("an observation requires a toolCallId: it is what makes replay idempotent");
@@ -57,8 +48,4 @@ export function observation(fields: Observation): Observation {
 export function pendingCall(fields: PendingCall): PendingCall {
   if (!fields?.toolCallId) throw new Error("a pending call requires a toolCallId");
   return { toolCallId: fields.toolCallId, toolName: fields.toolName, input: fields.input ?? {} };
-}
-
-export function emptyState(): NoddState {
-  return { committed: { observations: [] }, pending: new Map() };
 }
