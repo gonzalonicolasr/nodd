@@ -47,6 +47,20 @@ test("mutating bash blocks while a test command does not", () => {
 
 // A doc the model can rewrite is a doc the model can forge, and then evidence
 // is prose again. This holds even when the doc exists and the route is inline.
+test("file_path is read like path: pi's write tool sends either", () => {
+  // `write.js:99` and `edit.js:92` both accept `file_path ?? path`, and pi's
+  // own write tool sends `file_path`. Reading only `path` left every
+  // path-scoped rule blind on the real tool: the .nodd/ guard below let a
+  // direct write to the feature document through.
+  const decision = trackGate(
+    routed("tracked"),
+    { toolName: "write", input: { file_path: "/repo/.nodd/demo/feature.md" } },
+    emptyPolicy(),
+    present,
+  );
+  assert.equal(decision.allow, false, "a write under .nodd/ is refused however pi names the argument");
+});
+
 test("a direct write to .nodd/** is always blocked, pointing at nodd_task", () => {
   for (const state of [routed("tracked"), routed("inline"), emptyCommitted()]) {
     for (const path of [".nodd/x/feature.md", ".nodd/demo/state.json", "/repo/.nodd/demo/feature.md"]) {

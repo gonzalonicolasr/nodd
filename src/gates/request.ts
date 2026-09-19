@@ -11,7 +11,10 @@ export type GateRequest = {
 };
 
 export function targetPath(request: GateRequest): string | null {
-  const path = request.input?.path;
+  // pi's own write and edit tools accept either name and read `file_path ??
+  // path` (`write.js:99`, `edit.js:92`), and the write tool sends `file_path`.
+  // Reading only `path` left every path-scoped rule blind on the real tool.
+  const path = request.input?.file_path ?? request.input?.path;
   return typeof path === "string" && path !== "" ? path : null;
 }
 

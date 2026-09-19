@@ -117,7 +117,10 @@ export function fold(committed: Committed, obs: Observation): Committed {
     declaration: committed.declaration,
   };
 
-  const path = str(obs.input.path);
+  // `file_path ?? path`: pi's write tool sends the first, edit accepts both
+  // (`write.js:99`, `edit.js:92`). Reading only `path` left filesWritten empty
+  // on every real write, which is what evidence and delegate count.
+  const path = str(obs.input.file_path) || str(obs.input.path);
   if (READ_TOOLS.has(obs.toolName) && path) next.filesRead.add(path);
   if (WRITE_TOOLS.has(obs.toolName) && path) next.filesWritten.set(path, { at: obs.at, seq: next.toolCalls });
 

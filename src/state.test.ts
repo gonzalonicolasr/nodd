@@ -53,6 +53,20 @@ test("a fixed sequence folds into an exact snapshot", () => {
   });
 });
 
+test("a write naming file_path is recorded, like pi's own write tool sends it", () => {
+  // pi's write tool sends `file_path` (`write.js:99`); edit accepts both
+  // (`edit.js:92`). Reading only `path` left filesWritten empty on every real
+  // write — and filesWritten is what evidence times a checkoff against and what
+  // delegate counts, so both went blind against the actual tool.
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "write", input: { file_path: "c.ts" } }),
+    obs({ toolName: "read", input: { file_path: "a.ts" } }),
+  ]);
+
+  assert.deepEqual([...committed.filesWritten.keys()], ["c.ts"]);
+  assert.deepEqual([...committed.filesRead], ["a.ts"]);
+});
+
 test("distinct-path counting: one file read six times is one file", () => {
   const events = Array.from({ length: 6 }, () => obs({ toolName: "read", input: { path: "same.ts" } }));
   const committed = foldAll(emptyCommitted(), events);
