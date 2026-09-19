@@ -2,13 +2,23 @@
 //
 // `REQ: escalation-divergence`. ODD escalates a route by predicted magnitude
 // (`routing.go:68`); NODD keeps only the half of that decision it can observe.
-// The three triggers are:
+// The two triggers are:
 //
-//   1. two consecutive non-`success` outcomes on the same task — the plan is
-//      not working, which is a fact about observed results;
+//   1. two consecutive non-`success` outcomes of the declared runner — the plan
+//      is not working, which is a fact about observed results;
 //   2. a task writing more distinct files than it declared — the work is not
 //      the shape it was declared to be;
-//   3. the user asking.
+//
+// ## The trigger that was removed
+//
+// A third trigger, "the user asked", was specified and then deleted, because it
+// was not derivable. `/nodd-promote` lives in another extension with no path to
+// kernel state, and it *performs* the promotion rather than requesting one —
+// there is no moment at which a gate could observe the asking and still have
+// something left to do about it. Round 1 shipped it as a hardcoded `false`,
+// which is the failure this whole gate exists to refuse: a fabricated signal is
+// worse than an absent one, so the condition is gone from the type, the gate,
+// the requirement and the README rather than left there looking operational.
 //
 // **No size, line count, byte count or risk score is read.** A big task that
 // succeeds is not divergent, and a three-line task that fails twice is. The
@@ -27,14 +37,14 @@ import { isFileWrite } from "./request.ts";
 
 export type PromotionSignals = {
   slug: string;
-  /** Non-`success` outcomes in a row on `failedTaskId`. Reset by the caller. */
+  /** Trailing non-`success` outcomes of the declared runner, derived by the caller. */
   consecutiveFailures: number;
+  /** The command whose runs failed, quoted in the refusal. */
   failedTaskId: string | null;
   /** Distinct files the current task said it would touch. */
   declaredFiles: number;
   /** Distinct files it has actually written. */
   observedFiles: number;
-  userRequested: boolean;
 };
 
 const CONSECUTIVE_FAILURE_LIMIT = 2;
@@ -46,10 +56,6 @@ export function promotionGate(signals: PromotionSignals, request: GateRequest, p
   const action =
     `promote the run with \`/nodd-promote ${signals.slug}\` so forge plans the rest, ` +
     "or keep going here if you judge the divergence is not real";
-
-  if (signals.userRequested) {
-    return refuse("promotion", `pediste promover ${signals.slug} a forge`, action);
-  }
 
   if (signals.consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
     return refuse(

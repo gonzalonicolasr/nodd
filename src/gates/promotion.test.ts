@@ -10,7 +10,6 @@ const noSignals: PromotionSignals = {
   failedTaskId: null,
   declaredFiles: 0,
   observedFiles: 0,
-  userRequested: false,
 };
 
 const request = { toolName: "write", input: { file_path: "/repo/src/cache.ts" } };
@@ -63,20 +62,26 @@ test("zero declared is not a mismatch: nothing was promised to diverge from", ()
 });
 
 // ---------------------------------------------------------------------------
-// Trigger 3 — the user asked
+// The trigger that was specified and then removed
 // ---------------------------------------------------------------------------
-test("an explicit user request blocks and says so", () => {
-  const decision = decide({ userRequested: true });
-  assert.equal(decision.allow, false);
-  if (decision.allow) return;
-  assert.match(decision.reason, /pediste|user|solicit/i);
+test("there is no user-request trigger: it was not derivable and is gone, not faked", () => {
+  // `/nodd-promote` lives in another extension with no path to kernel state and
+  // performs the promotion itself, so no gate could ever observe the asking.
+  // Round 1 shipped it as a hardcoded `false`, which is the exact failure this
+  // gate exists to refuse. It is absent from the type and from the source.
+  assert.ok(!("userRequested" in noSignals), "the signal is gone from the type");
+  const source = readFileSync(new URL("./promotion.ts", import.meta.url), "utf8")
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join("\n");
+  assert.ok(!source.includes("userRequested"), "and gone from the executable code");
 });
 
 // ---------------------------------------------------------------------------
 // The two ways forward
 // ---------------------------------------------------------------------------
 test("a block offers exactly the promote command and the escape hatch", () => {
-  const decision = decide({ userRequested: true });
+  const decision = decide({ declaredFiles: 2, observedFiles: 3 });
   assert.equal(decision.allow, false);
   if (decision.allow) return;
   assert.ok(decision.remedy.action.includes("/nodd-promote cache-warmup"), decision.remedy.action);
@@ -93,7 +98,7 @@ test("no trigger at all allows", () => {
 test("disabling the gate turns it off entirely, even with every trigger firing", () => {
   const policy = { ...emptyPolicy(), config: { promotion: { enabled: false } } };
   const decision = promotionGate(
-    { slug: "x", consecutiveFailures: 5, failedTaskId: "T001", declaredFiles: 1, observedFiles: 99, userRequested: true },
+    { slug: "x", consecutiveFailures: 5, failedTaskId: "npm test", declaredFiles: 1, observedFiles: 99 },
     request,
     policy,
   );
@@ -124,6 +129,5 @@ test("the signals type exposes no size field at all", () => {
     "failedTaskId",
     "observedFiles",
     "slug",
-    "userRequested",
   ]);
 });

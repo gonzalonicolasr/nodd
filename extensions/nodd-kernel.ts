@@ -33,8 +33,10 @@ import { trackGate } from "../src/gates/track.ts";
 import { delegateGate } from "../src/gates/delegate.ts";
 import { evidenceGate } from "../src/gates/evidence.ts";
 import { promotionGate } from "../src/gates/promotion.ts";
-import type { GateRequest } from "../src/gates/request.ts";
+import { isFileWrite, targetPath, type GateRequest } from "../src/gates/request.ts";
 import { readLedger } from "../src/ledger.ts";
+import { isDeclaredRunner } from "../src/gates/evidence.ts";
+import { isSuccess, parseOutcome } from "../src/outcome.ts";
 import { candidateFor, candidateIdentity } from "../src/review-candidate.ts";
 import { reopenTask } from "../src/change-acceptance.ts";
 
@@ -244,7 +246,7 @@ export function createKernel(
         ["classify", () => classifyGate(state.committed, request, policy, state.pending)],
         ["track", () => trackGate(state.committed, request, policy, (slug) => existsSync(featureDocPath(cwd, slug)))],
         ["delegate", () => delegateGate(state.committed, request, policy, state.pending)],
-        ["promotion", () => promotionGate(promotionSignals(state.committed), request, policy)],
+        ["promotion", () => promotionGate(promotionSignals(state.committed, request), request, policy)],
       ];
 
       for (const [gate, evaluate] of decisions) {
@@ -382,18 +384,50 @@ function lastWrite(committed: Committed, declaredFiles: string[] = []): { lastWr
 }
 
 /**
- * What `gate-promotion` may look at. The failure counters are not tracked in
- * this kernel yet, so they are reported as zero rather than guessed — a
- * fabricated signal is worse than an absent one.
+ * What `gate-promotion` may look at, derived from what this kernel observed.
+ *
+ * Round 1 returned zeroes here with a comment saying a fabricated signal is
+ * worse than an absent one — which was right, and was then used to justify
+ * shipping the gate wired to constants, so it could never fire. Both real
+ * signals are derivable from state the kernel already holds:
+ *
+ *   - `declaredFiles` from the declaration's own file list;
+ *   - `observedFiles` from `filesWritten`;
+ *   - `consecutiveFailures` from the trailing non-success runs of the declared
+ *     runner, which is the only command whose failures say the plan is wrong.
+ *
+ * The third specified signal, "the user asked", was not derivable and has been
+ * removed from the product rather than faked (see `src/gates/promotion.ts`).
  */
-function promotionSignals(committed: Committed) {
+function promotionSignals(committed: Committed, request: GateRequest) {
+  const declaration = committed.declaration;
+  const runner = declaration?.runner ?? null;
+
+  // Only runs of the declared runner count, and only the trailing streak: a
+  // failing `grep` is not a failing plan, and a success clears the streak.
+  let consecutiveFailures = 0;
+  if (runner !== null) {
+    for (let i = committed.commandResults.length - 1; i >= 0; i--) {
+      const run = committed.commandResults[i];
+      if (!isDeclaredRunner(run.command, runner)) continue;
+      if (isSuccess(parseOutcome(run.isError, run.resultText))) break;
+      consecutiveFailures += 1;
+    }
+  }
+
+  // The file this call is about to write counts too. Write intent is known at
+  // preflight, and a gate that only saw finished writes would refuse the
+  // divergence one file late — after the divergent write already happened.
+  const files = new Set(committed.filesWritten.keys());
+  const target = targetPath(request);
+  if (target && isFileWrite(request)) files.add(target);
+
   return {
-    slug: committed.declaration?.slug ?? "",
-    consecutiveFailures: 0,
-    failedTaskId: null,
-    declaredFiles: 0,
-    observedFiles: committed.filesWritten.size,
-    userRequested: false,
+    slug: declaration?.slug ?? "",
+    consecutiveFailures,
+    failedTaskId: consecutiveFailures > 0 ? runner : null,
+    declaredFiles: declaration?.files.length ?? 0,
+    observedFiles: files.size,
   };
 }
 

@@ -55,6 +55,10 @@ function session(options: { cwd?: string } = {}) {
     observe(toolName: string, input: Record<string, unknown>, content = ""): void {
       toolResult!({ toolName, toolCallId: `call-${nextId++}`, input, isError: false, content });
     },
+    /** The same, for a result pi reported as an error. */
+    fail(toolName: string, input: Record<string, unknown>, content = ""): void {
+      toolResult!({ toolName, toolCallId: `call-${nextId++}`, input, isError: true, content });
+    },
     declare(args: Record<string, unknown>) {
       return this.runTool("nodd_declare", args);
     },
@@ -314,6 +318,101 @@ test("strict TDD on the real path: GREEN with no observed RED is refused", () =>
   const reply = String(s.task({ action: "check", id: "T1", slug: "login" }));
   assert.match(reply, /red|failing/i, reply);
   assert.ok(!/checked in/.test(reply));
+});
+
+// ---------------------------------------------------------------------------
+// gate-promotion, on the real path
+//
+// In round 1 this gate was wired and inert: `promotionSignals()` hardcoded every
+// trigger to zero, so deleting its registry row left the whole suite green.
+// Every test here drives it through the registered handler with signals derived
+// from what the kernel observed.
+// ---------------------------------------------------------------------------
+test("writing more distinct files than were declared blocks, naming both counts", () => {
+  const s = session();
+  s.declare({
+    intent: "change", route: "tracked", slug: "scope", summary: "two files",
+    runner: "npm test", files: ["/repo/a.ts", "/repo/b.ts"],
+  });
+  // Delegation is satisfied so gate-delegate does not speak first.
+  s.observe("subagent", { agent: "writer" }, "done");
+  s.observe("write", { path: "/repo/a.ts" }, "");
+  s.observe("write", { path: "/repo/b.ts" }, "");
+
+  const blocked = s.call("write", { path: "/repo/c.ts", content: "x" });
+  assert.equal(blocked?.block, true, "a third file against two declared is divergence");
+  assert.match(blocked!.reason!, /nodd\/promotion/);
+  assert.match(blocked!.reason!, /2/, "the declared count");
+  assert.match(blocked!.reason!, /3/, "the observed count");
+  assert.match(blocked!.reason!, /nodd-promote scope/, "the way forward is named");
+});
+
+test("writing exactly the declared files never blocks, however many they are", () => {
+  const s = session();
+  const files = Array.from({ length: 40 }, (_, i) => `/repo/f${i}.ts`);
+  s.declare({ intent: "change", route: "tracked", slug: "big", summary: "forty files", runner: "npm test", files });
+  s.observe("subagent", { agent: "writer" }, "done");
+  for (const path of files.slice(0, 39)) s.observe("write", { path }, "");
+
+  assert.equal(s.call("write", { path: files[39], content: "x" }), undefined, "mismatch is the trigger, never magnitude");
+});
+
+test("two consecutive failed runs of the declared runner block the next write", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "tracked", slug: "stuck", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s.observe("subagent", { agent: "writer" }, "done");
+  s.fail("bash", { command: "npm test" }, "FAIL\nCommand exited with code 1");
+  s.fail("bash", { command: "npm test" }, "FAIL\nCommand exited with code 1");
+
+  const blocked = s.call("write", { path: "/repo/a.ts", content: "x" });
+  assert.equal(blocked?.block, true, "the plan is not working, which is what escalation is for");
+  assert.match(blocked!.reason!, /nodd\/promotion/);
+  assert.match(blocked!.reason!, /2/, "both attempts are counted");
+});
+
+test("one failure does not block: a first red is ordinary work, especially under TDD", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "tracked", slug: "red", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s.observe("subagent", { agent: "writer" }, "done");
+  s.fail("bash", { command: "npm test" }, "FAIL\nCommand exited with code 1");
+
+  assert.equal(s.call("write", { path: "/repo/a.ts", content: "x" }), undefined);
+});
+
+test("a failure then a success does not block: the streak is consecutive, not cumulative", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "tracked", slug: "fixed", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s.observe("subagent", { agent: "writer" }, "done");
+  s.fail("bash", { command: "npm test" }, "FAIL\nCommand exited with code 1");
+  s.fail("bash", { command: "npm test" }, "FAIL\nCommand exited with code 1");
+  s.observe("bash", { command: "npm test" }, "42 passing");
+
+  assert.equal(s.call("write", { path: "/repo/a.ts", content: "x" }), undefined, "a resolved task must not stay blocked");
+});
+
+test("failures of some other command are not this task's failures", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "tracked", slug: "other", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s.observe("subagent", { agent: "writer" }, "done");
+  s.fail("bash", { command: "grep -r missing ." }, "Command exited with code 1");
+  s.fail("bash", { command: "grep -r missing ." }, "Command exited with code 1");
+
+  assert.equal(s.call("write", { path: "/repo/a.ts", content: "x" }), undefined, "a failing grep is not a failing plan");
+});
+
+test("gates.promotion off lets the diverging write through", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "tracked", slug: "off", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s.observe("subagent", { agent: "writer" }, "done");
+  s.observe("write", { path: "/repo/a.ts" }, "");
+  assert.equal(s.call("write", { path: "/repo/b.ts", content: "x" })?.block, true, "baseline: this blocks");
+
+  const disabled = session();
+  disabled.kernel.setPolicy({ config: { promotion: { enabled: false } }, flags: {}, hatches: {} });
+  disabled.declare({ intent: "change", route: "tracked", slug: "off", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  disabled.observe("subagent", { agent: "writer" }, "done");
+  disabled.observe("write", { path: "/repo/a.ts" }, "");
+  assert.equal(disabled.call("write", { path: "/repo/b.ts", content: "x" }), undefined, "off means off");
 });
 
 // ---------------------------------------------------------------------------

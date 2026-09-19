@@ -75,8 +75,11 @@ const REMEDY = "run the verification command, then check the task off once it is
  * tokens, so `npm test -- src/login.test.ts` counts and `echo npm test` does
  * not: a runner narrowed to one file is the ordinary way a task verifies
  * itself, while the runner quoted inside another command is not a run of it.
+ *
+ * Exported because `gate-promotion`'s failure streak counts runs of the same
+ * declared runner, and the two gates must agree on what "a run of it" means.
  */
-function isDeclaredRunner(command: string, runner: string): boolean {
+export function isDeclaredRunner(command: string, runner: string): boolean {
   const actual = command.trim().split(/\s+/);
   const declared = runner.trim().split(/\s+/);
   if (declared.length === 0 || actual.length < declared.length) return false;

@@ -798,7 +798,7 @@ or lower the claim to the truth where the mechanism is not derivable.
   emptying `lastWriteAt` turns the suite red.
 - review: ~380 changed lines
 
-## [ ] T040 — `gate-promotion` runs on derived signals, and drops the one it cannot derive
+## [x] T040 — `gate-promotion` runs on derived signals, and drops the one it cannot derive
 
 - files:
   - `src/gates/promotion.ts`, `extensions/nodd-kernel.ts`
