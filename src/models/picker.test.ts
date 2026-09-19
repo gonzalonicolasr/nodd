@@ -572,3 +572,16 @@ test("with no profile at all there is nothing to preview", () => {
   const state = createPickerState({ models: {}, thinking: {}, groups: new Map(), profiles: {}, activeProfile: null });
   assert.deepEqual(previewRows(state), [], "an empty preview is what suppresses the second panel");
 });
+
+test("choosing through a prefixed group does not double the prefix", () => {
+  // The group key is `cliproxy/ds` and the id inside it is `ds/deepseek-v4-pro`:
+  // joining them naively produced `cliproxy/ds/ds/deepseek-v4-pro`, a model id
+  // that resolves to nothing. The key's prefix belongs to the id, not to the
+  // provider, so only the provider part may be prepended.
+  let state = open({ groups: new Map([["cliproxy/ds", ["ds/deepseek-v4-pro"]]]) });
+  state = press(state, "edit-loose");
+  state = assign(state, "implement", "cliproxy/ds", "ds/deepseek-v4-pro", "high");
+
+  assert.equal(state.edits.models.implement, "cliproxy/ds/deepseek-v4-pro");
+  assert.equal(state.edits.thinking.implement, "high");
+});

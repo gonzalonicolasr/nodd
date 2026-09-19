@@ -279,3 +279,39 @@ test("nothing in this extension names forge's config file", () => {
   assert.ok(!source.includes(`zero${"."}json`), "NODD never opens forge's config");
   assert.ok(source.includes("nodd.json") || source.includes("noddConfigPath"), "it uses its own");
 });
+
+test("the picker offers the providers you can actually use, not the whole catalogue", () => {
+  // pi's registry carries every provider it knows how to speak to — bedrock,
+  // baseten, huggingface, cloudflare — whether or not you have credentials for
+  // any of them. Browsing all of it meant scrolling past dozens of providers
+  // that cannot answer. `getAvailable()` is pi's own answer to "which of these
+  // has configured auth", so that is what the picker lists.
+  const registry = {
+    getAll: () => [
+      { provider: "cliproxy", id: "ds/deepseek-flash" },
+      { provider: "amazon-bedrock", id: "claude-3" },
+      { provider: "huggingface", id: "meta-llama/x" },
+    ],
+    getAvailable: () => [{ provider: "cliproxy", id: "ds/deepseek-flash" }],
+  };
+
+  const groups = register.groupsFrom(registry);
+  assert.deepEqual([...groups.keys()], ["cliproxy/ds"], "only the configured provider is browsable");
+});
+
+test("with no availability information the full registry is still offered", () => {
+  // An older host, or one that cannot answer, must not leave the picker empty:
+  // showing everything beats showing nothing.
+  const groups = register.groupsFrom({ getAll: () => [{ provider: "anthropic", id: "claude-opus-4-1" }] });
+  assert.deepEqual([...groups.keys()], ["anthropic"]);
+});
+
+test("an empty availability list falls back rather than offering nothing", () => {
+  // Availability is refreshed asynchronously, so early in a session it can be
+  // legitimately empty. Trusting it blindly would show an empty provider list.
+  const groups = register.groupsFrom({
+    getAll: () => [{ provider: "anthropic", id: "claude-opus-4-1" }],
+    getAvailable: () => [],
+  });
+  assert.deepEqual([...groups.keys()], ["anthropic"], "an empty answer is not an answer");
+});

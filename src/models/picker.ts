@@ -528,9 +528,15 @@ function commitDrill(state: PickerState, level: ThinkingLevel): PickerState {
   const { drillSlot, drillProvider, drillModel } = state;
   if (drillSlot === null || drillModel === null) return state;
 
-  // No provider is a bare model id — which is what the empty-registry path
+  // `drillProvider` is a group key, and a pooled provider's key carries the
+  // pool prefix (`cliproxy/ds`) which the id already repeats
+  // (`ds/deepseek-v4-pro`). Only the provider part is prepended, or the commit
+  // doubles the prefix into an id that resolves to nothing.
+  //
+  // No provider at all is a bare model id — what the empty-registry path
   // produces, and what the command's validation accepts.
-  const qualified = drillProvider ? `${drillProvider}/${drillModel}` : drillModel;
+  const provider = drillProvider?.split("/")[0] ?? null;
+  const qualified = provider ? `${provider}/${drillModel}` : drillModel;
   return {
     ...state,
     edits: {

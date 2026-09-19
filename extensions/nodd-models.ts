@@ -48,13 +48,31 @@ export function fileConfigIo(path: string = noddConfigPath()): ConfigIo {
   };
 }
 
-type ModelRegistry = { getAll(): RegistryModel[] };
+type ModelRegistry = {
+  getAll(): RegistryModel[];
+  /** pi's own answer to "which providers have configured auth". */
+  getAvailable?(): RegistryModel[];
+};
 
 const USAGE =
   "uso: /nodd-models · /nodd-models <slot>=<provider>/<modelo> · /nodd-models profile [list|new <n>|save [n]|use <n>|delete <n>]";
 
+/**
+ * The models worth browsing.
+ *
+ * pi's registry lists every provider it can speak to — bedrock, baseten,
+ * huggingface — whether or not credentials exist for any of them, which buried
+ * the few usable ones under dozens that cannot answer. `getAvailable()` narrows
+ * that to the configured providers.
+ *
+ * An empty or missing answer falls back to the full registry: availability is
+ * refreshed asynchronously, so early in a session it can be legitimately empty,
+ * and an empty picker is worse than a long one.
+ */
 function groupsFrom(registry: ModelRegistry | undefined): Map<string, string[]> {
   try {
+    const available = registry?.getAvailable?.();
+    if (available && available.length > 0) return groupByProvider(available);
     const all = registry?.getAll?.();
     return all && all.length > 0 ? groupByProvider(all) : new Map();
   } catch {
@@ -362,5 +380,6 @@ function register(pi?: PiApi): void {
 register.runPicker = runPicker;
 register.createComponent = createComponent;
 register.pickerInput = pickerInput;
+register.groupsFrom = groupsFrom;
 
 export default register;
