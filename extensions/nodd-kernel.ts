@@ -24,8 +24,17 @@ import {
 } from "../src/feature-doc.ts";
 import { writeVerified } from "../src/io.ts";
 import { renderPrompt } from "../src/prompt.ts";
-import { emptyPolicy, type Policy } from "../src/gates/policy.ts";
+import { consumeHatch, emptyPolicy, type GateDecision, type Policy } from "../src/gates/policy.ts";
 import { parseConfig, noddConfigPath } from "../src/config.ts";
+import { GATE_IDS } from "../src/gates/registry.ts";
+import { authorizeGate } from "../src/gates/authorize.ts";
+import { classifyGate } from "../src/gates/classify.ts";
+import { trackGate } from "../src/gates/track.ts";
+import { delegateGate } from "../src/gates/delegate.ts";
+import { evidenceGate } from "../src/gates/evidence.ts";
+import { promotionGate } from "../src/gates/promotion.ts";
+import type { GateRequest } from "../src/gates/request.ts";
+import { readLedger } from "../src/ledger.ts";
 import { candidateFor, candidateIdentity } from "../src/review-candidate.ts";
 import { reopenTask } from "../src/change-acceptance.ts";
 
@@ -99,6 +108,10 @@ export type Kernel = {
    * finished. The hazard is made unrepresentable rather than documented.
    */
   evidenceView(): Committed;
+  /** Run the ordered registry against one call. `null` means let it run. */
+  checkCall(request: GateRequest): { block: true; reason: string } | null;
+  setPolicy(policy: Policy): void;
+  policy(): Policy;
 };
 
 export function createKernel(
@@ -106,6 +119,9 @@ export function createKernel(
   cwd: string = process.cwd(),
 ): Kernel {
   const state = emptyState();
+  // Mutable because `/nodd-allow` grants a hatch mid-session and a refusal
+  // spends it. The policy is session state, not a constant.
+  let policy: Policy = emptyPolicy();
 
   const readDoc = (slug: string): FeatureDoc | null => {
     const path = featureDocPath(cwd, slug);
@@ -172,10 +188,18 @@ export function createKernel(
       const index = doc.tasks.findIndex((t) => t.id === args.id);
       if (index < 0) return { ok: false, text: `nodd_task: ${args.id} is not in the document` };
 
-      // The evidence gate replaces this line in a later capability: a checkoff
-      // will require a committed `success` observed after the task's last
-      // write. Until then the checkoff records what it actually has, which is
-      // nothing yet, rather than inventing a command it never saw.
+      // A checkoff is gated like any other claim: the evidence gate answers
+      // from observed command results, and what it returns is what gets
+      // written. NODD never invents a command it did not see run.
+      const { records } = readLedger(ledgerPath(cwd, doc.slug));
+      const verdict = evidenceGate(
+        state.committed,
+        records,
+        { task: args.id, lastWriteAt: lastWriteAt(state.committed) },
+        policy,
+      );
+      if (!verdict.allow) return { ok: false, text: verdict.reason };
+
       // The candidate is the observed commit SHA, or `pending-commit` when this
       // session has seen no commit. Never the checkbox (`routing.go:51`,`:102`).
       const task = doc.tasks[index];
@@ -183,11 +207,48 @@ export function createKernel(
         id: task.id,
         title: task.title,
         checked: true,
-        evidence: { command: "none", outcome: "unverified (evidence gate not yet active)" },
+        evidence: { command: verdict.observed.command, outcome: verdict.observed.outcome },
         candidate: candidateIdentity(candidateFor(state.committed)),
       };
       const saved = saveDoc(doc);
       return saved.ok ? { ok: true, text: `${args.id} checked in .nodd/${doc.slug}/feature.md` } : saved;
+    },
+
+    checkCall(request) {
+      // Registry order, first refusal wins: one call never collects two
+      // messages about the same missing declaration.
+      const decisions: Array<[(typeof GATE_IDS)[number], () => GateDecision]> = [
+        ["authorize", () => authorizeGate(state.committed, request, policy)],
+        ["classify", () => classifyGate(state.committed, request, policy, state.pending)],
+        ["track", () => trackGate(state.committed, request, policy, (slug) => existsSync(featureDocPath(cwd, slug)))],
+        ["delegate", () => delegateGate(state.committed, request, policy, state.pending)],
+        ["promotion", () => promotionGate(promotionSignals(state.committed), request, policy)],
+      ];
+
+      for (const [gate, evaluate] of decisions) {
+        const decision = evaluate();
+        if (decision.allow) continue;
+
+        // A one-shot override is spent by the refusal it prevents — never
+        // implicitly, never across gates, never twice.
+        const hatch = consumeHatch(policy, gate);
+        if (hatch) {
+          policy = hatch.policy;
+          return null;
+        }
+        // `terminate` is deliberately never set: a blocked call stops that
+        // call, not the agent.
+        return { block: true, reason: decision.reason };
+      }
+      return null;
+    },
+
+    setPolicy(next) {
+      policy = next;
+    },
+
+    policy() {
+      return policy;
     },
 
     onToolCall(event) {
@@ -256,6 +317,37 @@ const TASK_SCHEMA = {
   },
 };
 
+/** pi's tool input, as a plain object a gate can read. */
+function normalizeInput(input: unknown): Record<string, unknown> {
+  return typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+}
+
+function ledgerPath(cwd: string, slug: string): string {
+  return join(cwd, ".nodd", slug, "ledger.jsonl");
+}
+
+/** The most recent observed write, which evidence must postdate. */
+function lastWriteAt(committed: Committed): string {
+  const writes = committed.commandResults.filter((result) => result.at !== "");
+  return writes.length > 0 ? writes[writes.length - 1].at : new Date(0).toISOString();
+}
+
+/**
+ * What `gate-promotion` may look at. The failure counters are not tracked in
+ * this kernel yet, so they are reported as zero rather than guessed — a
+ * fabricated signal is worse than an absent one.
+ */
+function promotionSignals(committed: Committed) {
+  return {
+    slug: committed.declaration?.slug ?? "",
+    consecutiveFailures: 0,
+    failedTaskId: null,
+    declaredFiles: 0,
+    observedFiles: committed.filesWritten.size,
+    userRequested: false,
+  };
+}
+
 /** Gate flags as configured. An unreadable config means nobody chose. */
 function readPolicy(): Policy {
   try {
@@ -270,6 +362,10 @@ export default function register(pi?: PiApi, cwd: string = process.cwd()): Kerne
   const kernel = createKernel(undefined, cwd);
   if (!pi || typeof pi.on !== "function") return kernel;
 
+  // Flags the user set persist into the session's policy. `/nodd-allow` adds
+  // one-shot hatches on top of this at runtime.
+  kernel.setPolicy(readPolicy());
+
   pi.registerTool?.("nodd_declare", {
     ...DECLARE_SCHEMA,
     handler: (args: DeclareArgs) => kernel.declare(args).text,
@@ -279,9 +375,21 @@ export default function register(pi?: PiApi, cwd: string = process.cwd()): Kerne
     handler: (args: TaskArgs) => kernel.task(args).text,
   });
 
+  // Enforcement. The gates are useless unless they run here: this is the only
+  // point in a session where NODD can refuse a call before it happens.
   pi.on("tool_call", ((event: ToolCallEvent) => {
+    let decision: { block: true; reason: string } | null = null;
+    try {
+      decision = kernel.checkCall({ toolName: event?.toolName ?? "", input: normalizeInput(event?.input) });
+    } catch {
+      // A gate that throws must not break the session. Failing open here is
+      // deliberate: NODD refuses work it understands, never work it crashed on.
+      decision = null;
+    }
+    // Record the call either way. A refused call still happened, and the
+    // counters that decide the next refusal must see it.
     kernel.onToolCall(event);
-    // Observe only. Gates arrive in a later capability.
+    return decision ?? undefined;
   }) as never);
 
   pi.on("tool_result", ((event: ToolResultEvent) => {
@@ -304,7 +412,7 @@ export default function register(pi?: PiApi, cwd: string = process.cwd()): Kerne
   pi.on("before_agent_start", ((event: AgentStartEvent) => {
     try {
       const incoming = typeof event?.systemPrompt === "string" ? event.systemPrompt : "";
-      const { blockA, blockB } = renderPrompt(kernel.evidenceView(), readPolicy());
+      const { blockA, blockB } = renderPrompt(kernel.evidenceView(), kernel.policy());
       const appended = [blockA, blockB].filter((block) => block !== "").join("\n\n");
       return { systemPrompt: incoming === "" ? appended : `${incoming}\n\n${appended}` };
     } catch {

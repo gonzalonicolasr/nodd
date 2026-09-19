@@ -90,16 +90,38 @@ test("the model never writes the doc: the extension does", () => {
   assert.equal(readFileSync(featureDocPath(cwd, "demo"), "utf8"), before);
 });
 
-test("checkoff refusal wiring is present but open until the evidence gate lands", () => {
+/** Observe a successful bash run, so the evidence gate has something to see. */
+function observeGreen(kernel: ReturnType<typeof createKernel>, command: string, id = "v1"): void {
+  kernel.onToolResult({ toolCallId: id, toolName: "bash", input: { command }, isError: false, content: "ok" });
+}
+
+test("a checkoff with no observed run is refused by the evidence gate", () => {
   const cwd = tmp();
   const kernel = createKernel(undefined, cwd);
   kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
   kernel.task({ action: "add", id: "T1", title: "First", slug: "demo" });
 
   const checked = kernel.task({ action: "check", id: "T1", slug: "demo" });
-  assert.equal(checked.ok, true);
-  const parsed = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8"));
-  assert.equal(parsed.doc.tasks[0].checked, true);
+  assert.equal(checked.ok, false, "nothing was observed, so nothing may be claimed");
+  assert.match(checked.text, /nodd\/evidence/);
+  assert.equal(
+    parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8")).doc.tasks[0].checked,
+    false,
+    "a refused checkoff changes nothing on disk",
+  );
+});
+
+test("a checkoff records the observed command, never an invented one", () => {
+  const cwd = tmp();
+  const kernel = createKernel(undefined, cwd);
+  kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
+  kernel.task({ action: "add", id: "T1", title: "First", slug: "demo" });
+  observeGreen(kernel, "node --test");
+
+  assert.equal(kernel.task({ action: "check", id: "T1", slug: "demo" }).ok, true);
+  const task = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8")).doc.tasks[0];
+  assert.equal(task.checked && task.evidence.command, "node --test");
+  assert.equal(task.checked && task.evidence.outcome, "success");
 });
 
 test("a checkoff with no observed commit records pending-commit", () => {
@@ -107,6 +129,7 @@ test("a checkoff with no observed commit records pending-commit", () => {
   const kernel = createKernel(undefined, cwd);
   kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
   kernel.task({ action: "add", id: "T1", title: "First", slug: "demo" });
+  observeGreen(kernel, "node --test");
   kernel.task({ action: "check", id: "T1", slug: "demo" });
 
   const task = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8")).doc.tasks[0];
@@ -118,6 +141,7 @@ test("nodd_task reopen without a reason is refused; with one it records under Pr
   const kernel = createKernel(undefined, cwd);
   kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
   kernel.task({ action: "add", id: "T1", title: "First", slug: "demo" });
+  observeGreen(kernel, "node --test");
   kernel.task({ action: "check", id: "T1", slug: "demo" });
 
   const bare = kernel.task({ action: "reopen", id: "T1", slug: "demo" });
