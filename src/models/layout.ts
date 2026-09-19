@@ -185,3 +185,72 @@ export function fitRows(lines: readonly string[], maxRows: number): string[] {
   if (maxRows <= 0) return [];
   return lines.length <= maxRows ? [...lines] : lines.slice(0, maxRows);
 }
+
+// ---------------------------------------------------------------------------
+// The boxed two-panel layout
+// ---------------------------------------------------------------------------
+
+/** One content row of a panel: plain text, measured before any colour runs. */
+export type BoxRow = { text: string };
+
+/** Below this width a frame cannot be drawn; the rows are returned bare. */
+export const MIN_BOX_WIDTH = 10;
+/** Below this terminal width the preview panel is dropped, never squeezed. */
+export const MIN_SPLIT_WIDTH = 76;
+/** The menu never shrinks past this, so profile names stay readable. */
+const MIN_MENU_WIDTH = 30;
+/** Nor does it take more than this share when both panels compete. */
+const MAX_MENU_SHARE = 0.62;
+
+/**
+ * Wrap rows in a four-sided box of the given outer width.
+ *
+ * Every row is sized on its plain text to `width - 4` (two `│` columns plus a
+ * space of padding each side) and measured in display cells, so a wide glyph
+ * can never push the closing edge off the line.
+ */
+export function frameBox(rows: readonly BoxRow[], width: number): string[] {
+  if (width < MIN_BOX_WIDTH) return rows.map((row) => truncateToWidth(row.text, Math.max(0, width)));
+  const horizontal = "─".repeat(width - 2);
+  return [
+    `┌${horizontal}┐`,
+    ...rows.map((row) => `│ ${padToWidth(row.text, width - 4)} │`),
+    `└${horizontal}┘`,
+  ];
+}
+
+/** The widest row of a block, in display cells. */
+function contentWidth(rows: readonly BoxRow[]): number {
+  let max = 0;
+  for (const row of rows) max = Math.max(max, visibleWidth(row.text));
+  return max;
+}
+
+/**
+ * Two framed panels side by side, padded to equal height.
+ *
+ * Under {@link MIN_SPLIT_WIDTH}, or with nothing to preview, only the menu is
+ * returned: a preview crushed into a handful of columns is worse than none.
+ */
+export function sideBySide(menu: readonly BoxRow[], preview: readonly BoxRow[], width: number): string[] {
+  if (width < MIN_SPLIT_WIDTH || preview.length === 0) {
+    return frameBox(menu, Math.min(width, Math.max(MIN_BOX_WIDTH, contentWidth(menu) + 4)));
+  }
+
+  const gap = 1;
+  const menuWidth = Math.max(
+    MIN_MENU_WIDTH,
+    Math.min(contentWidth(menu) + 4, Math.floor(width * MAX_MENU_SHARE)),
+  );
+  const previewWidth = Math.max(MIN_BOX_WIDTH, width - menuWidth - gap);
+
+  // Pad to a common height first: framing a short panel and padding afterwards
+  // would leave its bottom border floating mid-block.
+  const height = Math.max(menu.length, preview.length);
+  const pad = (rows: readonly BoxRow[]): BoxRow[] =>
+    rows.length >= height ? [...rows] : [...rows, ...Array.from({ length: height - rows.length }, () => ({ text: "" }))];
+
+  const left = frameBox(pad(menu), menuWidth);
+  const right = frameBox(pad(preview), previewWidth);
+  return left.map((line, index) => `${line}${" ".repeat(gap)}${right[index] ?? ""}`);
+}

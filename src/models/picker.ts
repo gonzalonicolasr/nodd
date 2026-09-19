@@ -22,7 +22,7 @@
 // Forge's autotune screen is deliberately absent: autotune is a forge feature and
 // NODD has no learning loop to configure.
 
-import { SLOT_ROWS, isMechanismSlot } from "./slots.ts";
+import { MECHANISM_PLACEHOLDER, SLOT_ROWS, isMechanismSlot } from "./slots.ts";
 import { THINKING_LEVELS, type SlotThinking, type ThinkingLevel } from "./thinking.ts";
 import { isValidProfileName, type Profile } from "./profiles.ts";
 
@@ -674,4 +674,68 @@ function submitProfileName(
       ? `perfil «${name}» creado y activo — elegí los modelos`
       : `perfil «${name}» creado — elegí los modelos (activar es aparte)`,
   });
+}
+
+// ---------------------------------------------------------------------------
+// The preview panel
+// ---------------------------------------------------------------------------
+
+/** One row of the preview panel. */
+export type PreviewRow = { text: string };
+
+/** The profile the preview should show, or null when there is nothing to show. */
+function previewTarget(state: PickerState): { name: string; profile: Profile } | null {
+  if (state.screen === "profile-actions" && state.drillProfile) {
+    const profile = state.edits.profiles[state.drillProfile];
+    return profile ? { name: state.drillProfile, profile } : null;
+  }
+  if (state.screen !== "main") return null;
+
+  // On the menu the cursor drives the preview, so arrowing down the list shows
+  // each profile in turn. Off a profile row it falls back to the active one.
+  const entry = state.entries[state.cursor];
+  const name = entry?.kind === "profile"
+    ? entry.value
+    : state.edits.activeProfile ?? Object.keys(state.edits.profiles).sort()[0];
+  if (!name) return null;
+  const profile = state.edits.profiles[name];
+  return profile ? { name, profile } : null;
+}
+
+/**
+ * The preview rows: every canonical step with its model and thinking level.
+ *
+ * Empty when there is no profile to show, which is what suppresses the second
+ * panel rather than drawing an empty box.
+ */
+export function previewRows(state: PickerState): PreviewRow[] {
+  const target = previewTarget(state);
+  if (!target) return [];
+
+  const { name, profile } = target;
+  const active = name === state.edits.activeProfile ? " (activo)" : "";
+  const rows: PreviewRow[] = [{ text: `vista previa · ${name}${active}` }, { text: "" }];
+
+  const width = Math.max(...SLOT_ROWS.map((row) => row.id.length));
+  const providers = new Set<string>();
+  for (const row of SLOT_ROWS) {
+    const label = row.id.padEnd(width);
+    if (isMechanismSlot(row.id)) {
+      rows.push({ text: `${label}   ${MECHANISM_PLACEHOLDER}` });
+      continue;
+    }
+    const model = profile.models?.[row.id];
+    if (!model) {
+      rows.push({ text: `${label} → sin asignar` });
+      continue;
+    }
+    const slash = model.indexOf("/");
+    if (slash > 0) providers.add(model.slice(0, slash));
+    const level = profile.thinking?.[row.id];
+    rows.push({ text: `${label} → ${model}${level ? ` · ${level}` : ""}` });
+  }
+
+  rows.push({ text: "" });
+  rows.push({ text: `proveedores: ${providers.size > 0 ? [...providers].sort().join(", ") : "por defecto"}` });
+  return rows;
 }

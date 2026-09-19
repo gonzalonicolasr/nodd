@@ -123,3 +123,49 @@ test("a bare model resolved to one provider is written qualified", () => {
   const patch = assignmentPatch({}, { slot: "implement", provider: "openai-codex", model: "gpt-5-codex" });
   assert.deepEqual(patch, { models: { implement: "openai-codex/gpt-5-codex" } });
 });
+
+test("a provider whose ids carry a prefix is browsable by prefix", () => {
+  // cliproxy fronts several subscription pools and encodes the pool in the id:
+  // `personal/claude-opus-5`, `ds/deepseek-flash`. Grouping by provider alone
+  // put 166 models behind one row, which is not a menu anyone can use.
+  const groups = groupByProvider([
+    { provider: "cliproxy", id: "personal/claude-opus-5" },
+    { provider: "cliproxy", id: "personal/claude-sonnet-5" },
+    { provider: "cliproxy", id: "ds/deepseek-flash" },
+    { provider: "cliproxy", id: "glm-5.2" },
+    { provider: "anthropic", id: "claude-opus-4-1" },
+  ]);
+
+  assert.deepEqual(
+    [...groups.keys()].sort(),
+    ["anthropic", "cliproxy/ds", "cliproxy/personal", "cliproxy"].sort(),
+    "each prefix is its own browsable group; unprefixed ids stay under the provider",
+  );
+  assert.deepEqual(groups.get("cliproxy/personal"), ["personal/claude-opus-5", "personal/claude-sonnet-5"]);
+  assert.deepEqual(groups.get("cliproxy"), ["glm-5.2"], "only the unprefixed ids remain directly under it");
+});
+
+test("assigning through a prefixed group writes the provider, not the prefix", () => {
+  // The group is a browsing device. What reaches the agent frontmatter must be
+  // the real `provider/id`, or pi cannot resolve it.
+  const groups = groupByProvider([{ provider: "cliproxy", id: "personal/claude-opus-5" }]);
+  const assignment = parseAssignment("implement=cliproxy/personal/claude-opus-5");
+
+  assert.deepEqual(assignment, { slot: "implement", provider: "cliproxy", model: "personal/claude-opus-5" });
+  assert.deepEqual(validateAssignment(assignment!, groups), { ok: true, provider: "cliproxy" });
+});
+
+test("the unknown-provider message names providers, not browsing keys", () => {
+  // `cliproxy/ds` is a menu grouping, not something you can type as a provider:
+  // offering it as a valid value would send the user to an assignment that
+  // cannot resolve.
+  const groups = groupByProvider([
+    { provider: "cliproxy", id: "personal/claude-opus-5" },
+    { provider: "cliproxy", id: "ds/deepseek-flash" },
+    { provider: "anthropic", id: "claude-opus-4-1" },
+  ]);
+  const result = validateAssignment(parseAssignment("implement=nope/x")!, groups);
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /Usá uno de: anthropic, cliproxy$/, "the real providers, deduped");
+});

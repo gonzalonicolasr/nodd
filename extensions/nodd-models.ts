@@ -24,8 +24,8 @@ import { mergeConfig, noddConfigPath } from "../src/config.ts";
 import { SLOT_ROWS } from "../src/models/slots.ts";
 import { assignmentPatch, groupByProvider, parseAssignment, validateAssignment, type RegistryModel } from "../src/models/assign.ts";
 import { applyProfileCommand, isValidProfileName, mirrorToActiveProfile, readActiveProfile, readProfiles, type Profile } from "../src/models/profiles.ts";
-import { back, createPickerState, decodeKey, enter, navigate, pickerTitle, submitText, type EnterResult, type PickerState } from "../src/models/picker.ts";
-import { fitRows, truncateToWidth, usableRows, windowRows } from "../src/models/layout.ts";
+import { back, createPickerState, decodeKey, enter, navigate, pickerTitle, previewRows, submitText, type EnterResult, type PickerState } from "../src/models/picker.ts";
+import { fitRows, sideBySide, truncateToWidth, usableRows, windowRows } from "../src/models/layout.ts";
 import { isThinkingLevel, type SlotThinking } from "../src/models/thinking.ts";
 
 export type ConfigIo = {
@@ -211,7 +211,7 @@ function createComponent(
   let buffer: string | null = null;
 
   function render(width: number): string[] {
-    const inner = Math.max(20, width - 2);
+    const inner = Math.max(20, width - 4);
     // pi hands the component its width but not its height, so the height comes
     // from the terminal itself, minus what pi's own chrome takes.
     const maxRows = usableRows(process.stdout?.rows);
@@ -226,19 +226,24 @@ function createComponent(
       );
     }
 
-    // Reserve the header and footer, then window the list around the cursor so
-    // a long list scrolls instead of overflowing the terminal.
-    const capacity = Math.max(1, maxRows - head.length - 2);
+    // Reserve the header, footer and the two frame lines, then window the list
+    // around the cursor so a long list scrolls instead of overflowing.
+    const capacity = Math.max(1, maxRows - head.length - 4);
     const win = windowRows(state.entries.length, state.cursor, capacity);
     const rows = state.entries.slice(win.start, win.end).map((entry, index) => {
       const selected = win.start + index === state.cursor;
-      return truncateToWidth(`${selected ? "❯ " : "  "}${entry.label}`, inner);
+      return { text: `${selected ? "❯ " : "  "}${entry.label}` };
     });
 
-    return fitRows(
-      [...head, ...rows, "", truncateToWidth("↑↓ mover · enter elegir · esc volver · q salir", inner)],
-      maxRows,
-    );
+    const menu = [
+      ...head.map((text) => ({ text })),
+      ...rows,
+      { text: "" },
+      { text: "↑↓ mover · enter elegir · esc volver · q salir" },
+    ];
+    // The preview is empty until a profile exists, and `sideBySide` drops the
+    // second panel for an empty preview or a narrow terminal.
+    return fitRows(sideBySide(menu, previewRows(state), width), maxRows);
   }
 
   /** Apply an `EnterResult` — re-render on `state`, close on `save`/`quit`. */

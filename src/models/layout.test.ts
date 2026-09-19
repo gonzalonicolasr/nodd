@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   fitRows,
+  frameBox,
   padToWidth,
+  sideBySide,
   stripAnsi,
   truncateToWidth,
   usableRows,
@@ -119,4 +121,47 @@ test("the layout helpers import nothing at all", () => {
     .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
     .join("\n");
   assert.ok(!/^import /m.test(source), "the layout must stay dependency-free: no node:*, no pi, no TUI");
+});
+
+// ---------------------------------------------------------------------------
+// The boxed two-panel layout
+// ---------------------------------------------------------------------------
+
+test("frameBox draws four sides and pads every row to the same width", () => {
+  const out = frameBox([{ text: "uno" }, { text: "" }, { text: "dos" }], 20);
+
+  assert.equal(out.length, 5, "top, three rows, bottom");
+  assert.ok(out[0].startsWith("┌") && out[0].endsWith("┐"));
+  assert.ok(out[4].startsWith("└") && out[4].endsWith("┘"));
+  for (const line of out) {
+    assert.equal(visibleWidth(line), 20, `every line is the box width: ${JSON.stringify(line)}`);
+  }
+  assert.ok(out[1].startsWith("│ uno") && out[1].endsWith("│"));
+});
+
+test("frameBox truncates on display cells, so the closing edge never moves", () => {
+  const out = frameBox([{ text: "una fila larguísima que no entra de ningún modo" }], 20);
+  assert.equal(visibleWidth(out[1]), 20);
+  assert.ok(out[1].endsWith("│"), "the right edge survives the cut");
+});
+
+test("below the split width only the menu is rendered", () => {
+  const menu = [{ text: "menu" }];
+  const preview = [{ text: "preview" }];
+  const narrow = sideBySide(menu, preview, 40);
+
+  assert.ok(narrow.every((line) => !line.includes("preview")), "no room: the preview is dropped, not squeezed");
+  assert.ok(narrow.some((line) => line.includes("menu")));
+});
+
+test("side by side, both panels are framed and equally tall", () => {
+  const out = sideBySide([{ text: "a" }, { text: "b" }, { text: "c" }], [{ text: "p" }], 100);
+
+  assert.ok(out.every((line) => visibleWidth(line) <= 100), "the pair never exceeds the terminal");
+  const joined = out.join("\n");
+  assert.ok(joined.includes("a") && joined.includes("p"), "both panels are present");
+  // Five rows: the taller panel is three rows plus its two frame lines, and the
+  // shorter one is padded to match rather than leaving a ragged edge.
+  assert.equal(out.length, 5);
+  for (const line of out) assert.equal(visibleWidth(line), visibleWidth(out[0]), "rows are flush");
 });

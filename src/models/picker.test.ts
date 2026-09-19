@@ -10,6 +10,7 @@ import {
   enter,
   navigate,
   pickerTitle,
+  previewRows,
   rebuildEntries,
   submitText,
   type PickerState,
@@ -528,4 +529,46 @@ test("no transition writes: every one returns state the caller may discard", () 
   // a code path: the module cannot write, so only the command can.
   const source = readFileSync(new URL("./picker.ts", import.meta.url), "utf8");
   assert.ok(!/writeFileSync|readFileSync/.test(source), "the state machine performs no IO");
+});
+
+// ---------------------------------------------------------------------------
+// The preview panel
+// ---------------------------------------------------------------------------
+
+test("the preview shows the profile under the cursor, model and level per slot", () => {
+  const state = createPickerState({
+    models: {},
+    thinking: {},
+    groups: new Map(),
+    profiles: {
+      rapido: {
+        models: { implement: "cliproxy/ds/deepseek-v4-pro", explore: "cliproxy/ds/deepseek-flash" },
+        thinking: { implement: "high", explore: "low" },
+      },
+      lento: { models: { implement: "cliproxy/personal/claude-opus-5" }, thinking: { implement: "xhigh" } },
+    },
+    activeProfile: "rapido",
+  });
+
+  // The menu is alphabetical, so the cursor opens on `lento`; one row down is
+  // `rapido`, and the preview follows the cursor rather than the active profile.
+  const rows = previewRows(navigate(state, 1)).map((row) => row.text);
+  assert.match(rows[0], /vista previa · rapido \(activo\)/, "the profile under the cursor is named");
+  assert.ok(rows.some((r) => /implement\s+→ cliproxy\/ds\/deepseek-v4-pro · high/.test(r)), rows.join("\n"));
+  assert.ok(rows.some((r) => /explore\s+→ cliproxy\/ds\/deepseek-flash · low/.test(r)), rows.join("\n"));
+  assert.ok(rows.some((r) => r.includes("proveedores: cliproxy")), "the providers are summarised");
+});
+
+test("the preview marks mechanism steps rather than pretending they take a model", () => {
+  const state = createPickerState({
+    models: {}, thinking: {}, groups: new Map(),
+    profiles: { p: { models: {}, thinking: {} } }, activeProfile: "p",
+  });
+  const rows = previewRows(state).map((row) => row.text);
+  assert.ok(rows.some((r) => r.includes("authorize") && r.includes(MECHANISM_PLACEHOLDER)), rows.join("\n"));
+});
+
+test("with no profile at all there is nothing to preview", () => {
+  const state = createPickerState({ models: {}, thinking: {}, groups: new Map(), profiles: {}, activeProfile: null });
+  assert.deepEqual(previewRows(state), [], "an empty preview is what suppresses the second panel");
 });
