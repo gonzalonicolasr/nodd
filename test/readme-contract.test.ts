@@ -51,9 +51,11 @@ test("every module the README cites exists on disk", () => {
 // that is what this reads: scoped to its section, and by identity, not presence.
 test("the seven canonical steps are documented, in order, in their section", () => {
   const steps = section(/The seven canonical steps/);
-  const chain = /(`[a-z-]+`(?:\s*→\s*`[a-z-]+`)+)\./.exec(steps);
-  assert.ok(chain, "the canonical chain is missing from its section");
-  const named = chain[1].split("→").map((step) => step.trim().replaceAll("`", ""));
+  // Taking the first match let a correct decoy above a corrupted chain pass, so
+  // the section is allowed exactly one chain and that one is the one read.
+  const chains = [...steps.matchAll(/(`[a-z-]+`(?:\s*→\s*`[a-z-]+`)+)\./g)];
+  assert.equal(chains.length, 1, "the section must hold exactly one canonical chain");
+  const named = chains[0][1].split("→").map((step) => step.trim().replaceAll("`", ""));
   assert.deepEqual(named, [...CANONICAL_STEPS], "the documented chain is not the canonical step list");
 });
 
