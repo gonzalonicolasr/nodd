@@ -701,7 +701,7 @@ Acceptance criteria:
 | 20 | `:67` | Optional SDD selected only by explicit request or accepted proposal; do not recommend SDD to resolve ambiguity | **M** | `gate-promotion` never fires on ambiguity; its triggers are observables only |
 | 21 | `:68` | File count, changed lines, size, or perceived risk alone never selects SDD | **M**, **deliberately divergent** | `REQ: escalation-divergence` |
 | 22 | `:69` | Automatic pace is not mutation authorization; once authorized, work continues under the selected route | **M** | `gate-authorize` keys on the declared intent, never on a gate's own activity |
-| 23 | `:70` | Routes are not a ban on per-action delegation: tests, builds, installs and review actors may use fresh workers | **M** | `gate-delegate` counts only understanding reads and writer files; test/build/install commands never trip it |
+| 23 | `:70` | Routes are not a ban on per-action delegation: tests, builds, installs and review actors may use fresh workers | **M** | `gate-delegate` counts only understanding reads and writer files for the mapping and writer triggers, so test/build/install commands never reach those. The long-session backstop (`routing.go:82`) is a separate clause and counts every tool call, these included: 25 runs of the declared runner with no delegation does fire it |
 | 24 | `:71` | Direct and delegated work never create SDD artifacts, prompts, phase attempts or synthetic SDD runs | **M** | `REQ: no-sdd-artifacts-off-route` |
 
 ### Mandatory delegation triggers (`routing.go:77-84`)
