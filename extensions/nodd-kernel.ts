@@ -23,6 +23,9 @@ import {
   type Route,
 } from "../src/feature-doc.ts";
 import { writeVerified } from "../src/io.ts";
+import { renderPrompt } from "../src/prompt.ts";
+import { emptyPolicy, type Policy } from "../src/gates/policy.ts";
+import { parseConfig, noddConfigPath } from "../src/config.ts";
 import { candidateFor, candidateIdentity } from "../src/review-candidate.ts";
 import { reopenTask } from "../src/change-acceptance.ts";
 
@@ -32,6 +35,7 @@ export const OBSERVATION_ENTRY = "nodd:observation";
 type ToolCallEvent = { toolName: string; toolCallId: string; input?: Record<string, unknown> };
 type ToolResultEvent = ToolCallEvent & { isError?: boolean; content?: unknown };
 type SessionStartEvent = { entries?: Array<{ type?: string; data?: unknown }> };
+type AgentStartEvent = { systemPrompt?: unknown };
 
 /** The slice of pi's API this extension uses. Declared locally: no pi import. */
 type PiApi = {
@@ -252,6 +256,16 @@ const TASK_SCHEMA = {
   },
 };
 
+/** Gate flags as configured. An unreadable config means nobody chose. */
+function readPolicy(): Policy {
+  try {
+    const { config } = parseConfig(readFileSync(noddConfigPath(), "utf8"));
+    return { ...emptyPolicy(), config: config.gates };
+  } catch {
+    return emptyPolicy();
+  }
+}
+
 export default function register(pi?: PiApi, cwd: string = process.cwd()): Kernel {
   const kernel = createKernel(undefined, cwd);
   if (!pi || typeof pi.on !== "function") return kernel;
@@ -281,6 +295,23 @@ export default function register(pi?: PiApi, cwd: string = process.cwd()): Kerne
 
   pi.on("session_start", ((event: SessionStartEvent) => {
     kernel.replay(event?.entries);
+  }) as never);
+
+  // Chained, never replaced (`types.d.ts:806-810`): the incoming prompt is
+  // returned byte-for-byte with NODD's two blocks appended, so another
+  // extension's contribution survives ours. Rebuilt from current state each
+  // turn rather than accumulated, and budgeted in `src/prompt.ts`.
+  pi.on("before_agent_start", ((event: AgentStartEvent) => {
+    try {
+      const incoming = typeof event?.systemPrompt === "string" ? event.systemPrompt : "";
+      const { blockA, blockB } = renderPrompt(kernel.evidenceView(), readPolicy());
+      const appended = [blockA, blockB].filter((block) => block !== "").join("\n\n");
+      return { systemPrompt: incoming === "" ? appended : `${incoming}\n\n${appended}` };
+    } catch {
+      // A prompt NODD cannot render must not stop the turn: leaving the
+      // incoming prompt untouched loses guidance, never the session.
+      return undefined;
+    }
   }) as never);
 
   return kernel;
