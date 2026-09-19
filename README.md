@@ -147,7 +147,9 @@ up, because a green command proves something only about *which* command ran and
 4. **A RED first, under strict TDD**, when the declaration set `tdd: strict`.
    `tdd: strict` without a runner is refused at declaration, because a RED run
    is a failing run *of the declared runner*: accepting it would write
-   `- tdd: strict` into the document while checking nothing.
+   `- tdd: strict` into the document while checking nothing. Strict is pinned
+   the same way the runner is: once set, re-declaring without it is refused, so
+   the discipline cannot be dropped after the work by leaving one field out.
 
 The honest limit: **the model still chooses the runner.** NODD cannot know what
 the right check for your project is. What it enforces is that the choice is made
