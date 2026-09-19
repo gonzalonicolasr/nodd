@@ -87,6 +87,30 @@ steps**: they run no model and cannot be assigned one. `/nodd-models` shows them
 as `mecanismo · sin modelo` and refuses an assignment. The other three are the
 steps where a model actually does work.
 
+## Choosing models
+
+`/nodd-models` with no argument opens a picker: profiles, then slots, then the
+providers and models of pi's live registry, then a thinking level. Nothing is
+written until `— guardar y salir —`; leaving with `q` writes nothing at all.
+
+A **profile** is a named set of assignments — `rapido`, `barato`, whatever you
+call it — and the picker can create, edit, duplicate, activate and delete them.
+The active profile is what the generated agents read. Editing a slot while a
+profile is active edits that profile, so the two never drift apart silently.
+
+The slot and the level both reach the generated agent's frontmatter as `model:`
+and `thinking:`. **Changes apply to the next pi session**, not the running one:
+the agent files are rewritten from the config when the extension loads, which
+happens at startup.
+
+The text forms do the same without the UI:
+
+```bash
+/nodd-models implement=anthropic/claude-opus-4-1
+/nodd-models profile new rapido
+/nodd-models profile use rapido
+```
+
 ## The gates
 
 | gate | fires on | refuses when |
