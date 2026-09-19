@@ -193,6 +193,19 @@ export function createKernel(
       // the runner -- the round-1 echo attack with one extra step. A runner is
       // pinned once; changing it means a new feature, or `/nodd-allow`.
       const requested = args.runner && args.runner !== "" ? args.runner : null;
+
+      // Strict TDD is "a RED run of the declared runner before the GREEN". With
+      // no runner there is no such run to require, and the gate silently
+      // skipped the check while the document still read `- tdd: strict`. A doc
+      // asserting a discipline nothing enforces is the exact failure NODD
+      // exists to prevent, so the declaration is refused instead.
+      if (args.tdd === "strict" && (requested ?? doc.verification.runner) === null) {
+        return {
+          ok: false,
+          text: "nodd_declare: tdd: strict requires a runner, because a RED run is a failing run of the declared runner. Declare one, or declare tdd: off.",
+        };
+      }
+
       if (doc.verification.runner !== null && requested !== null && requested !== doc.verification.runner) {
         return {
           ok: false,

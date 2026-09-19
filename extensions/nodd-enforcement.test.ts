@@ -358,6 +358,24 @@ test("echo attack with no runner declared: allowed, but the artifact says the ru
 // later declaration cannot rewrite the runner. It could: nodd_declare
 // overwrites `## Verification` wholesale, so a refused checkoff was repaired by
 // re-declaring with the echo as the runner, and the second attempt passed.
+// README fact 4: "A RED first, under strict TDD, when the declaration set
+// `tdd: strict`." The kernel only built the TDD context when a runner was also
+// pinned, so `tdd: strict` alone wrote `- tdd: strict` into the artifact and
+// enforced nothing -- a document asserting a discipline nobody checked, which
+// is the one thing NODD exists to prevent.
+test("strict TDD without a pinned runner is refused, never recorded as enforced", () => {
+  const s = session();
+  const reply = String(s.declare({
+    intent: "change", route: "tracked", slug: "notdd", summary: "x", tdd: "strict", files: ["/repo/a.ts"],
+  }));
+  assert.match(reply, /runner/i, `strict TDD with nothing pinned must be refused, got: ${reply}`);
+
+  assert.ok(
+    !existsSync(join(s.cwd, ".nodd", "notdd", "feature.md")),
+    "a refused declaration writes no document claiming strict TDD",
+  );
+});
+
 test("the runner cannot be re-declared to fit a run that already happened", () => {
   const s = session();
   trackedFeature(s);
