@@ -7,6 +7,7 @@ import {
   mirrorToActiveProfile,
   readActiveProfile,
   readProfiles,
+  readThinking,
 } from "./profiles.ts";
 
 const withProfiles = () => ({
@@ -183,4 +184,89 @@ test("mirroring writes the current config into the active profile", () => {
 test("mirroring with no active profile changes nothing", () => {
   const data = { models: { implement: "anthropic/x" }, profiles: {}, activeProfile: null };
   assert.deepEqual(mirrorToActiveProfile(data), data);
+});
+
+// ---------------------------------------------------------------------------
+// Thinking levels travel with the models, and only when they exist
+// ---------------------------------------------------------------------------
+test("a profile reads back the thinking levels it was stored with", () => {
+  const result = readProfiles({
+    profiles: { fast: { models: { implement: "anthropic/x" }, thinking: { implement: "high" } } },
+  });
+  assert.deepEqual(result.profiles.fast, {
+    models: { implement: "anthropic/x" },
+    thinking: { implement: "high" },
+  });
+  assert.deepEqual(result.defects, []);
+});
+
+test("an invalid level is dropped and reported, not written on to frontmatter pi cannot resolve", () => {
+  const result = readProfiles({
+    profiles: { fast: { models: {}, thinking: { implement: "ultracode", explore: "high" } } },
+  });
+  assert.deepEqual(result.profiles.fast.thinking, { explore: "high" });
+  assert.ok(
+    result.defects.some((d) => d.includes("ultracode")),
+    `the discarded level must be named: ${JSON.stringify(result.defects)}`,
+  );
+});
+
+test("a profile with no levels carries no thinking key at all, so the file stays minimal", () => {
+  const result = readProfiles({ profiles: { fast: { models: { implement: "anthropic/x" } } } });
+  assert.deepEqual(result.profiles.fast, { models: { implement: "anthropic/x" } });
+  assert.ok(!("thinking" in result.profiles.fast), "an absent level set must not become an empty object");
+});
+
+test("new snapshots the live thinking map into the profile", () => {
+  const result = applyProfileCommand(
+    { models: { implement: "anthropic/x" }, thinking: { implement: "xhigh" } },
+    { kind: "new", name: "fresh" },
+  );
+  assert.equal(result.ok, true);
+  if (result.ok !== true) return;
+  assert.deepEqual(result.data.profiles, {
+    fresh: { models: { implement: "anthropic/x" }, thinking: { implement: "xhigh" } },
+  });
+});
+
+test("use applies the profile's levels to the live config, and clears them when it has none", () => {
+  const withLevels = applyProfileCommand(
+    { profiles: { fast: { models: { implement: "anthropic/x" }, thinking: { implement: "low" } } } },
+    { kind: "use", name: "fast" },
+  );
+  assert.equal(withLevels.ok, true);
+  if (withLevels.ok !== true) return;
+  assert.deepEqual(withLevels.data.thinking, { implement: "low" });
+
+  // A profile with no levels must not leave the previous profile's levels
+  // applied to its models: that would run a model at an effort nobody chose.
+  const without = applyProfileCommand(
+    { thinking: { implement: "low" }, profiles: { plain: { models: { implement: "anthropic/y" } } } },
+    { kind: "use", name: "plain" },
+  );
+  assert.equal(without.ok, true);
+  if (without.ok !== true) return;
+  assert.ok(!("thinking" in without.data), "the stale level set must be dropped, not carried over");
+});
+
+test("mirroring carries the live levels into the active profile", () => {
+  const mirrored = mirrorToActiveProfile({
+    models: { implement: "anthropic/just-edited" },
+    thinking: { implement: "medium" },
+    profiles: { fast: { models: { implement: "anthropic/old" } } },
+    activeProfile: "fast",
+  });
+  assert.deepEqual((mirrored.profiles as Record<string, unknown>).fast, {
+    models: { implement: "anthropic/just-edited" },
+    thinking: { implement: "medium" },
+  });
+});
+
+test("readThinking keeps only real levels, so a hand-edited file cannot inject one", () => {
+  assert.deepEqual(readThinking({ thinking: { implement: "high", explore: "max", track: "low" } }), {
+    implement: "high",
+    track: "low",
+  });
+  assert.deepEqual(readThinking({}), {});
+  assert.deepEqual(readThinking({ thinking: "broken" }), {});
 });

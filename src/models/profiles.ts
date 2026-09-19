@@ -13,7 +13,17 @@
 // leave the user staring at a profile that vanished with no explanation, and
 // throwing would take the whole command down over a hand-edit.
 
-export type Profile = { models: Record<string, string> };
+import { isThinkingLevel, type SlotThinking } from "./thinking.ts";
+
+/**
+ * A named set of slot assignments, plus the thinking level each one runs at.
+ *
+ * `thinking` is optional and omitted when empty, never stored as `{}`: the
+ * stored file is what the round-trip tests compare, and an empty object would
+ * make "this profile sets no levels" and "this profile sets levels, none of them"
+ * the same shape on disk.
+ */
+export type Profile = { models: Record<string, string>; thinking?: SlotThinking };
 
 /** Sub-command verbs, which therefore cannot be profile names. */
 export const RESERVED_PROFILE_NAMES = ["list", "new", "save", "use", "delete", "rm", "from"] as const;
@@ -45,6 +55,38 @@ function stringMap(value: unknown): Record<string, string> {
   return out;
 }
 
+/** The real levels inside one `thinking` map, dropping everything else. */
+function levelMap(value: unknown): SlotThinking {
+  const out: SlotThinking = {};
+  for (const [slot, level] of Object.entries(isObject(value) ? value : {})) {
+    if (isThinkingLevel(level)) out[slot] = level;
+  }
+  return out;
+}
+
+/**
+ * The thinking levels of a config object, keeping only real pi effort levels.
+ *
+ * A level pi cannot resolve is dropped rather than carried: it would reach
+ * `nodd-agents.ts` and land in agent frontmatter, failing at the moment the
+ * agent is launched instead of here, where the user can still see why.
+ */
+export function readThinking(data: Record<string, unknown>): SlotThinking {
+  return levelMap(data.thinking);
+}
+
+/** Every non-level found under a `thinking` map, for reporting. */
+function badLevels(value: unknown): string[] {
+  return Object.entries(isObject(value) ? value : {})
+    .filter(([, level]) => !isThinkingLevel(level))
+    .map(([slot, level]) => `${slot}=${String(level)}`);
+}
+
+/** A profile, with `thinking` present only when it holds something. */
+function profileOf(models: Record<string, string>, thinking: SlotThinking): Profile {
+  return Object.keys(thinking).length > 0 ? { models, thinking } : { models };
+}
+
 export type ReadProfiles = { profiles: Record<string, Profile>; defects: string[] };
 
 export function readProfiles(data: Record<string, unknown>): ReadProfiles {
@@ -65,7 +107,11 @@ export function readProfiles(data: Record<string, unknown>): ReadProfiles {
       defects.push(`profile \`${name}\` is not an object and was discarded`);
       continue;
     }
-    profiles[name] = { models: stringMap(value.models) };
+    const bad = badLevels(value.thinking);
+    if (bad.length > 0) {
+      defects.push(`profile \`${name}\` has thinking levels pi cannot resolve, discarded: ${bad.join(", ")}`);
+    }
+    profiles[name] = profileOf(stringMap(value.models), levelMap(value.thinking));
   }
   return { profiles, defects };
 }
@@ -79,7 +125,22 @@ export function readActiveProfile(data: Record<string, unknown>): string | null 
 
 /** The flat config as a profile snapshot. */
 function snapshot(data: Record<string, unknown>): Profile {
-  return { models: stringMap(data.models) };
+  return profileOf(stringMap(data.models), readThinking(data));
+}
+
+/**
+ * Apply a profile's models and levels to the flat config.
+ *
+ * A profile with no levels *removes* the key rather than leaving the previous
+ * profile's levels behind: a stale level would keep running a model at an effort
+ * nobody chose for it, which is the silent-divergence defect this whole command
+ * is built to avoid.
+ */
+function flatten(data: Record<string, unknown>, profile: Profile): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...data, models: { ...profile.models } };
+  if (profile.thinking) next.thinking = { ...profile.thinking };
+  else delete next.thinking;
+  return next;
 }
 
 /**
@@ -138,7 +199,7 @@ export function applyProfileCommand(data: Record<string, unknown>, command: Prof
     }
     return {
       ok: true,
-      data: { ...data, models: { ...profile.models }, activeProfile: command.name },
+      data: { ...flatten(data, profile), activeProfile: command.name },
       message: `perfil ${command.name} activado`,
     };
   }

@@ -41,6 +41,17 @@ test("merge writes only the named section", () => {
   assert.deepEqual(merged.gates, { track: { enabled: false } });
 });
 
+// `/nodd-gates` writes through this merge, so a section it does not know about
+// has to survive it. Thinking levels are exactly that section: dropping them on
+// an unrelated gate toggle would silently reset every slot's effort.
+test("merge preserves thinking levels it was not asked to touch", () => {
+  const merged = mergeConfig(
+    { models: { implement: "a/b" }, thinking: { implement: "high" } },
+    { gates: { track: { enabled: false } } },
+  );
+  assert.deepEqual(merged.thinking, { implement: "high" });
+});
+
 test("no NODD source file mentions zero.json", () => {
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   const walk = (dir: string, out: string[] = []): string[] => {
