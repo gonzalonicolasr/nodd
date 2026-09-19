@@ -117,7 +117,9 @@ test("an observed subagent result never mutates the declared intent or route", (
   }));
 
   assert.deepEqual(declarationAfter(committed), declared, "findings alone authorize nothing");
-  assert.deepEqual(declared, { intent: "read-only", route: "inline", slug: "demo" });
+  assert.deepEqual(declared, {
+    intent: "read-only", route: "inline", slug: "demo", runner: null, tdd: "off", files: [],
+  });
 });
 
 test("only nodd_declare changes the declaration", () => {
@@ -133,7 +135,9 @@ test("only nodd_declare changes the declaration", () => {
     input: { intent: "change", route: "tracked", slug: "demo" },
     isError: false, resultText: "", at: "2026-09-19T10:06:00.000Z",
   }));
-  assert.deepEqual(declarationAfter(committed), { intent: "change", route: "tracked", slug: "demo" });
+  assert.deepEqual(declarationAfter(committed), {
+    intent: "change", route: "tracked", slug: "demo", runner: null, tdd: "off", files: [],
+  });
 });
 
 // ---------------------------------------------------------------------------

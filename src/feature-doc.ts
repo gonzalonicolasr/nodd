@@ -13,6 +13,20 @@ import { defaultDelivery, parseDelivery, renderDelivery, type Delivery } from ".
 export type Intent = "read-only" | "change";
 export type Route = "inline" | "tracked" | "forge";
 
+/**
+ * How this feature is verified, fixed at declaration time. `gate-evidence` will
+ * only accept a run of `runner`, so a checkoff cannot be satisfied by whatever
+ * exit-0 string the model happens to produce. `source` records who decided, per
+ * `routing.go:101`: the presence of a framework is not a choice.
+ */
+export type Verification = {
+  runner: string | null;
+  tdd: "strict" | "off";
+  source: string;
+  /** The distinct files the declaration promised to touch. */
+  files: string[];
+};
+
 export type TaskEvidence = {
   command: string;
   /** Rendered verbatim. `src/outcome.ts` owns the vocabulary. */
@@ -36,10 +50,10 @@ export type FeatureDoc = {
   scope: string;
   constraints: string;
   route: { intent: Intent; route: Route };
+  verification: Verification;
   /** Recorded and measured, never enforced (`src/delivery.ts`). */
   delivery: Delivery;
   tasks: Task[];
-  outcome: string;
   progress: string;
 };
 
@@ -54,11 +68,37 @@ export function emptyDoc(fields: { slug: string; title: string }): FeatureDoc {
     scope: "",
     constraints: "",
     route: { intent: "change", route: "inline" },
+    verification: { runner: null, tdd: "off", source: "undeclared", files: [] },
     delivery: defaultDelivery(),
     tasks: [],
-    outcome: "",
     progress: "",
   };
+}
+
+/**
+ * `## Outcome`, rendered from the task list rather than stored.
+ *
+ * Matrix row 13 (`routing.go:51`) requires that a close report cannot drop a
+ * failed or pending check. A free-text field can: in round 1 this was a string
+ * nothing ever wrote, so the section was permanently empty while the matrix
+ * claimed it was "rendered from the ledger". Deriving it makes the claim true —
+ * a pending task is in this section because it is in the list, and no caller
+ * can omit it.
+ */
+export function renderOutcome(doc: FeatureDoc): string[] {
+  if (doc.tasks.length === 0) return ["No tasks declared yet."];
+
+  const done = doc.tasks.filter((task) => task.checked);
+  const pending = doc.tasks.filter((task) => !task.checked);
+  const lines = [`- verified: ${done.length} of ${doc.tasks.length} task(s)`];
+
+  for (const task of done) {
+    if (task.checked) lines.push(`- [x] ${task.id}: \`${task.evidence.command}\` → ${task.evidence.outcome}`);
+  }
+  for (const task of pending) {
+    lines.push(`- [ ] ${task.id}: no observed verification yet`);
+  }
+  return lines;
 }
 
 const SECTIONS = [
@@ -67,11 +107,36 @@ const SECTIONS = [
   "Scope",
   "Constraints",
   "Route",
+  "Verification",
   "Delivery",
   "Tasks",
   "Outcome",
   "Progress",
 ] as const;
+
+function renderVerification(v: Verification): string[] {
+  return [
+    `- runner: ${v.runner ?? "none declared"}`,
+    `- tdd: ${v.tdd}`,
+    `- source: ${v.source}`,
+    `- files: ${v.files.length > 0 ? v.files.join(", ") : "none declared"}`,
+  ];
+}
+
+function parseVerification(block: string): Verification {
+  const field = (name: string): string | null => {
+    const match = new RegExp(`^- ${name}: (.+)$`, "m").exec(block);
+    const value = match ? match[1].trim() : null;
+    return value === null || value === "none declared" ? null : value;
+  };
+  const files = field("files");
+  return {
+    runner: field("runner"),
+    tdd: field("tdd") === "strict" ? "strict" : "off",
+    source: field("source") ?? "undeclared",
+    files: files === null ? [] : files.split(",").map((part) => part.trim()).filter((part) => part !== ""),
+  };
+}
 
 function renderTask(task: Task): string {
   const box = task.checked ? "x" : " ";
@@ -111,6 +176,10 @@ export function renderFeatureDoc(doc: FeatureDoc): string {
     `- intent: ${doc.route.intent}`,
     `- route: ${doc.route.route}`,
     "",
+    "## Verification",
+    "",
+    ...renderVerification(doc.verification),
+    "",
     "## Delivery",
     "",
     ...renderDelivery(doc.delivery),
@@ -121,7 +190,7 @@ export function renderFeatureDoc(doc: FeatureDoc): string {
     "",
     "## Outcome",
     "",
-    doc.outcome,
+    ...renderOutcome(doc),
     "",
     "## Progress",
     "",
@@ -213,9 +282,9 @@ export function parseFeatureDoc(text: string): ParsedFeatureDoc {
         intent: intent === "read-only" || intent === "change" ? intent : "change",
         route: route === "tracked" || route === "forge" ? route : "inline",
       },
+      verification: parseVerification(sections.get("Verification") ?? ""),
       delivery: parseDelivery(sections.get("Delivery") ?? ""),
       tasks: parseTasks(sections.get("Tasks") ?? "", defects),
-      outcome: sections.get("Outcome") ?? "",
       progress: sections.get("Progress") ?? "",
     },
     defects,

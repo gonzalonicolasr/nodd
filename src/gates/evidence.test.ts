@@ -22,7 +22,7 @@ function ledgerFor(committed: Committed): LedgerRecord[] {
   }));
 }
 
-const check = { task: "T1", lastWriteAt: "2026-09-19T10:00:00.000Z" };
+const check = { task: "T1", lastWriteAt: "2026-09-19T10:00:00.000Z", runner: "npm test" };
 
 // ---------------------------------------------------------------------------
 // The mandated provenance test: the recorded value comes from the observed
@@ -106,17 +106,74 @@ test("aborted, timeout and unknown never satisfy a checkoff", () => {
 
 test("the success must come after the task's last write", () => {
   const state = afterCommand("npm test", false, "ok");
-  const stale = { task: "T1", lastWriteAt: "2026-09-19T23:00:00.000Z" };
+  const stale = { ...check, lastWriteAt: "2026-09-19T23:00:00.000Z" };
   const decision = evidenceGate(state, ledgerFor(state), stale, emptyPolicy());
   assert.equal(decision.allow, false, "a run predating the edit proves nothing about the edit");
   assert.ok(decision.allow === false && /before/i.test(decision.reason));
+});
+
+// ---------------------------------------------------------------------------
+// The two attacks the round-1 verdict landed. Both produced a green checkoff.
+// ---------------------------------------------------------------------------
+test("the stale-green attack is refused: a run before the edit never certifies the edit", () => {
+  // Green at 10:05, then the source is edited at 10:30. In round 1 this checked
+  // the task off, because `lastWriteAt` read `commandResults` (bash only) and
+  // `filesWritten` carried no timestamps at all.
+  const green = fold(emptyCommitted(), observation({
+    toolCallId: "b1", toolName: "bash", input: { command: "npm test" },
+    isError: false, resultText: "ok", at: "2026-09-19T10:05:00.000Z",
+  }));
+  const edited = fold(green, observation({
+    toolCallId: "w1", toolName: "edit", input: { path: "/repo/src/login.ts" },
+    isError: false, resultText: "", at: "2026-09-19T10:30:00.000Z",
+  }));
+
+  const decision = evidenceGate(
+    edited,
+    ledgerFor(edited),
+    { task: "T1", lastWriteAt: "2026-09-19T10:30:00.000Z", runner: "npm test" },
+    emptyPolicy(),
+  );
+  assert.equal(decision.allow, false, "the edit is newer than the only green run");
+  assert.ok(decision.allow === false && /before the last write/i.test(decision.reason), decision.allow === false ? decision.reason : "");
+});
+
+test("the echo attack is refused: an exit-0 string the model chose is not the declared check", () => {
+  const state = afterCommand("echo 'I have verified that all tests pass'", false, "I have verified that all tests pass");
+  const decision = evidenceGate(state, ledgerFor(state), check, emptyPolicy());
+  assert.equal(decision.allow, false, "exit 0 on a sentence is not evidence of anything");
+  assert.ok(decision.allow === false && /npm test/.test(decision.reason), "the refusal names the declared runner");
+  assert.ok(decision.allow === false && /runner|declared/i.test(decision.reason), decision.allow === false ? decision.reason : "");
+});
+
+test("a command that merely contains the runner as a substring is not the runner", () => {
+  const state = afterCommand("echo npm test", false, "npm test");
+  assert.equal(evidenceGate(state, ledgerFor(state), check, emptyPolicy()).allow, false);
+});
+
+test("the declared runner with its own arguments is still the declared runner", () => {
+  // `npm test -- src/login.test.ts` is the runner scoped to a file, which is the
+  // ordinary way a task verifies itself. Refusing it would make the gate a
+  // nuisance and get it switched off.
+  const state = afterCommand("npm test -- src/login.test.ts", false, "ok");
+  assert.equal(evidenceGate(state, ledgerFor(state), check, emptyPolicy()).allow, true);
+});
+
+test("with no runner declared, any observed success still has to postdate the write", () => {
+  // Honest limit, stated: a feature doc without a declared runner cannot have
+  // its command checked against one. The write-ordering half still applies, and
+  // the recorded evidence says the runner was not pinned.
+  const state = afterCommand("node --test", false, "ok");
+  const decision = evidenceGate(state, ledgerFor(state), { task: "T1", lastWriteAt: "2026-09-19T10:00:00.000Z", runner: null }, emptyPolicy());
+  assert.equal(decision.allow, true);
+  assert.equal(decision.allow === true && decision.observed.command, "node --test");
 });
 
 // routing.go:101 — in TDD mode the failing test comes first.
 test("TDD mode requires an observed RED before an implementation checkoff", () => {
   const policy = emptyPolicy();
   const green = afterCommand("npm test", false, "ok");
-  const tdd = { ...check, tdd: { mode: "strict" as const, source: "config", runner: "npm test" } };
+  const tdd = { ...check, tdd: { mode: "strict" as const, source: "nodd_declare", runner: "npm test" } };
 
   const withoutRed = evidenceGate(green, ledgerFor(green), tdd, policy);
   assert.equal(withoutRed.allow, false);
@@ -144,7 +201,7 @@ test("the flag off allows the checkoff but records that nothing was verified", (
 
 test("the rendered line carries the real command and outcome", () => {
   const passed = afterCommand("node --test", false, "ok");
-  const decision = evidenceGate(passed, ledgerFor(passed), check, emptyPolicy());
+  const decision = evidenceGate(passed, ledgerFor(passed), { ...check, runner: "node --test" }, emptyPolicy());
   assert.equal(renderObserved(decision.allow === true ? decision.observed : null), "observed: `node --test` → success");
 });
 

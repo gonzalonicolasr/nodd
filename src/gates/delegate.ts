@@ -32,7 +32,7 @@ import { isFileWrite, targetPath, type GateRequest } from "./request.ts";
  * result is not observable yet and is never counted.
  */
 function writtenFiles(committed: Committed, request: GateRequest, pending: Map<string, PendingCall>): Set<string> {
-  const files = new Set(committed.filesWritten);
+  const files = new Set(committed.filesWritten.keys());
   for (const call of pending.values()) {
     if (isFileWrite(call)) {
       const path = targetPath(call);

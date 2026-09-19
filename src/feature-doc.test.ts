@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emptyDoc, parseFeatureDoc, renderFeatureDoc, type FeatureDoc } from "./feature-doc.ts";
+import { emptyDoc, parseFeatureDoc, renderFeatureDoc, renderOutcome, type FeatureDoc } from "./feature-doc.ts";
 
 function docWithTasks(n: number): FeatureDoc {
   const doc = emptyDoc({ slug: "demo", title: "Demo feature" });
@@ -9,7 +9,7 @@ function docWithTasks(n: number): FeatureDoc {
   doc.scope = "- src/thing.ts";
   doc.constraints = "- no new dependencies";
   doc.route = { intent: "change", route: "tracked" };
-  doc.outcome = "Pending.";
+  doc.verification = { runner: "npm test", tdd: "off", source: "nodd_declare", files: ["src/thing.ts"] };
   doc.progress = "- started";
   for (let i = 1; i <= n; i++) {
     doc.tasks.push(
@@ -78,4 +78,43 @@ test("a missing section returns a typed defect list, never a throw", () => {
 test("the slug survives the round trip", () => {
   const parsed = parseFeatureDoc(renderFeatureDoc(docWithTasks(1)));
   assert.equal(parsed.doc.slug, "demo");
+});
+
+// ---------------------------------------------------------------------------
+// The declared verification contract (`## Verification`)
+// ---------------------------------------------------------------------------
+test("the declared runner and TDD mode survive the round trip", () => {
+  const parsed = parseFeatureDoc(renderFeatureDoc(docWithTasks(1)));
+  assert.equal(parsed.doc.verification.runner, "npm test");
+  assert.equal(parsed.doc.verification.source, "nodd_declare");
+  assert.deepEqual(parsed.doc.verification.files, ["src/thing.ts"]);
+});
+
+test("an undeclared runner round-trips as null, never as an invented command", () => {
+  const doc = emptyDoc({ slug: "bare", title: "Bare" });
+  const parsed = parseFeatureDoc(renderFeatureDoc(doc));
+  assert.equal(parsed.doc.verification.runner, null);
+  assert.equal(parsed.doc.verification.tdd, "off");
+  assert.deepEqual(parsed.doc.verification.files, []);
+});
+
+// ---------------------------------------------------------------------------
+// Matrix row 13: a pending check cannot be dropped from the close report
+// ---------------------------------------------------------------------------
+test("the Outcome section is derived from the tasks, so a pending check cannot be omitted", () => {
+  const rendered = renderFeatureDoc(docWithTasks(3));
+  const outcome = rendered.split("## Outcome")[1].split("## Progress")[0];
+
+  assert.match(outcome, /verified: 1 of 3/, "the count is reported, not asserted");
+  assert.match(outcome, /\[x\] T2: `npm test` → success/, "a verified task carries its observed evidence");
+  for (const pending of ["T1", "T3"]) {
+    assert.match(outcome, new RegExp(`\\[ \\] ${pending}: no observed verification yet`), `${pending} must appear as pending`);
+  }
+});
+
+test("no caller can author the Outcome section: it is a function of the task list", () => {
+  const doc = docWithTasks(3);
+  assert.ok(!("outcome" in doc), "there is no free-text outcome field to forge");
+  assert.deepEqual(renderOutcome(doc), renderOutcome({ ...doc }));
+  assert.deepEqual(renderOutcome(emptyDoc({ slug: "s", title: "T" })), ["No tasks declared yet."]);
 });

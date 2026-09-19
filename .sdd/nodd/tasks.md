@@ -778,7 +778,7 @@ or lower the claim to the truth where the mechanism is not derivable.
   suite red instead of silently dropping characters.
 - review: ~120 changed lines
 
-## [ ] T039 — Evidence is bound to the declared runner and to the last write
+## [x] T039 — Evidence is bound to the declared runner and to the last write
 
 - files:
   - `src/state.ts`, `src/feature-doc.ts`, `src/gates/evidence.ts`,

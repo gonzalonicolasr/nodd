@@ -37,17 +37,19 @@ test("a fixed sequence folds into an exact snapshot", () => {
 
   const committed = foldAll(emptyCommitted(), events);
   assert.deepEqual([...committed.filesRead], ["a.ts", "b.ts"]);
-  assert.deepEqual([...committed.filesWritten], ["c.ts", "d.ts"]);
+  assert.deepEqual([...committed.filesWritten.keys()], ["c.ts", "d.ts"]);
   assert.equal(committed.delegations, 1);
   assert.equal(committed.toolCalls, 12);
-  assert.deepEqual(committed.declaration, { intent: "change", route: "tracked", slug: "demo" });
+  assert.deepEqual(committed.declaration, {
+    intent: "change", route: "tracked", slug: "demo", runner: null, tdd: "off", files: [],
+  });
   // Bash records are stored raw. Whether a command mutates is the classifier's
   // judgement (T014) and is derived at gate time, so the ledger never
   // pre-collapses an observation into a verdict.
   assert.deepEqual(committed.commandResults.map((r) => r.command), ["npm test", "echo hi > f.txt"]);
   assert.deepEqual(committed.commandResults[0], {
     toolCallId: "call_9", command: "npm test", isError: false, resultText: "ok",
-    at: "2026-09-19T10:00:00.000Z",
+    at: "2026-09-19T10:00:00.000Z", seq: 9,
   });
 });
 
@@ -69,12 +71,69 @@ test("replay is idempotent by toolCallId", () => {
   assert.deepEqual(twice, once);
 });
 
+// Without this, "the evidence ran after the edit" is not computable at all: a
+// Set of paths has no ordering against a command result, which is how a green
+// run predating the edit certified the edit in round 1.
+test("a written file records when it was written, so evidence can be ordered against it", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "write", input: { path: "c.ts" }, at: "2026-09-19T10:00:00.000Z" }),
+    obs({ toolName: "edit", input: { path: "d.ts" }, at: "2026-09-19T11:00:00.000Z" }),
+  ]);
+  assert.deepEqual(committed.filesWritten.get("c.ts"), { at: "2026-09-19T10:00:00.000Z", seq: 1 });
+  assert.deepEqual(committed.filesWritten.get("d.ts"), { at: "2026-09-19T11:00:00.000Z", seq: 2 });
+});
+
+// Wall clocks are not fine-grained enough to order two tool results that land in
+// the same millisecond, and in a real session a write and the run that follows
+// it routinely do. Observation order is what the kernel actually knows.
+test("observation order, not the clock, decides what came after what", () => {
+  const sameInstant = "2026-09-19T10:00:00.000Z";
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "bash", input: { command: "npm test" }, at: sameInstant }),
+    obs({ toolName: "edit", input: { path: "c.ts" }, at: sameInstant }),
+  ]);
+  assert.equal(committed.commandResults[0].at, committed.filesWritten.get("c.ts")!.at, "the clock cannot tell them apart");
+  assert.ok(
+    committed.filesWritten.get("c.ts")!.seq > committed.commandResults[0].seq,
+    "but the kernel saw the edit second, and that is what ordering must use",
+  );
+});
+
+test("rewriting a file moves its timestamp forward: the latest edit is the one evidence must postdate", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "write", input: { path: "c.ts" }, at: "2026-09-19T10:00:00.000Z" }),
+    obs({ toolName: "edit", input: { path: "c.ts" }, at: "2026-09-19T12:00:00.000Z" }),
+  ]);
+  assert.equal(committed.filesWritten.size, 1, "distinct paths, still");
+  assert.equal(committed.filesWritten.get("c.ts")!.at, "2026-09-19T12:00:00.000Z");
+});
+
+test("a declaration records its runner, its TDD mode and the files it promised to touch", () => {
+  const committed = foldAll(emptyCommitted(), [obs({
+    toolName: "nodd_declare",
+    input: { intent: "change", route: "tracked", slug: "demo", runner: "npm test", tdd: "strict", files: ["a.ts", "b.ts", "a.ts"] },
+  })]);
+  assert.equal(committed.declaration?.runner, "npm test");
+  assert.equal(committed.declaration?.tdd, "strict");
+  assert.deepEqual(committed.declaration?.files, ["a.ts", "b.ts"], "distinct paths, as gate-promotion counts them");
+});
+
+test("a declaration without a runner records none, and never invents one", () => {
+  const committed = foldAll(emptyCommitted(), [obs({
+    toolName: "nodd_declare", input: { intent: "change", route: "tracked", slug: "demo" },
+  })]);
+  assert.equal(committed.declaration?.runner, null);
+  assert.equal(committed.declaration?.tdd, "off");
+  assert.deepEqual(committed.declaration?.files, []);
+});
+
 test("folding is total: an unknown tool advances only the call count", () => {
   const before = emptyCommitted();
   const after = fold(before, obs({ toolName: "some_other_extension_tool", input: { weird: true } }));
   assert.equal(after.toolCalls, 1);
   assert.equal(after.filesRead.size, 0);
   assert.equal(after.filesWritten.size, 0);
+  assert.equal(after.commandResults.length, 0);
 });
 
 test("a later declaration replaces the earlier one", () => {
@@ -82,7 +141,9 @@ test("a later declaration replaces the earlier one", () => {
     obs({ toolName: "nodd_declare", input: { intent: "read-only", route: "inline", slug: "a" } }),
     obs({ toolName: "nodd_declare", input: { intent: "change", route: "tracked", slug: "b" } }),
   ]);
-  assert.deepEqual(committed.declaration, { intent: "change", route: "tracked", slug: "b" });
+  assert.deepEqual(committed.declaration, {
+    intent: "change", route: "tracked", slug: "b", runner: null, tdd: "off", files: [],
+  });
 });
 
 test("the reducer imports neither node:fs nor pi", () => {

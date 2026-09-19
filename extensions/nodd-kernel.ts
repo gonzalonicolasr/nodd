@@ -69,6 +69,11 @@ export type DeclareArgs = {
   slug: string;
   summary: string;
   title?: string;
+  /** The verification command. `gate-evidence` accepts runs of this and nothing else. */
+  runner?: string;
+  tdd?: "strict" | "off";
+  /** The files this work says it will touch. `gate-promotion` compares against it. */
+  files?: string[];
 };
 
 export type TaskArgs = {
@@ -160,6 +165,14 @@ export function createKernel(
       const doc = existing ?? emptyDoc({ slug: args.slug, title: args.title || args.slug });
       doc.objective = args.summary;
       doc.route = { intent: args.intent, route: args.route };
+      // Declared once and written by the extension, so the runner a checkoff is
+      // measured against is not a string the model can pick per checkoff.
+      doc.verification = {
+        runner: args.runner && args.runner !== "" ? args.runner : null,
+        tdd: args.tdd === "strict" ? "strict" : "off",
+        source: "nodd_declare",
+        files: [...new Set((args.files ?? []).filter((file) => typeof file === "string" && file !== ""))],
+      };
       return saveDoc(doc);
     },
 
@@ -195,7 +208,16 @@ export function createKernel(
       const verdict = evidenceGate(
         state.committed,
         records,
-        { task: args.id, lastWriteAt: lastWriteAt(state.committed) },
+        {
+          task: args.id,
+          // The task's own files when it declared some, the whole session's
+          // writes otherwise. Either way a real timestamp, not a bash proxy.
+          ...lastWrite(state.committed, doc.verification.files),
+          runner: doc.verification.runner,
+          ...(doc.verification.tdd === "strict" && doc.verification.runner
+            ? { tdd: { mode: "strict" as const, source: doc.verification.source, runner: doc.verification.runner } }
+            : {}),
+        },
         policy,
       );
       if (!verdict.allow) return { ok: false, text: verdict.reason };
@@ -296,6 +318,17 @@ const DECLARE_SCHEMA = {
       slug: { type: "string", description: "filename-safe feature identity" },
       summary: { type: "string", description: "the objective, in one or two sentences" },
       title: { type: "string", description: "human-readable feature title" },
+      runner: {
+        type: "string",
+        description:
+          "the verification command for this feature, e.g. `npm test`. Only observed runs of this command can check a task off; declare it now, because you cannot choose it later.",
+      },
+      tdd: { type: "string", enum: ["strict", "off"], description: "strict requires an observed failing run before a checkoff" },
+      files: {
+        type: "array",
+        items: { type: "string" },
+        description: "the files this work will touch; writing more distinct files than declared escalates to promotion",
+      },
     },
     required: ["intent", "route", "slug", "summary"],
   },
@@ -326,10 +359,26 @@ function ledgerPath(cwd: string, slug: string): string {
   return join(cwd, ".nodd", slug, "ledger.jsonl");
 }
 
-/** The most recent observed write, which evidence must postdate. */
-function lastWriteAt(committed: Committed): string {
-  const writes = committed.commandResults.filter((result) => result.at !== "");
-  return writes.length > 0 ? writes[writes.length - 1].at : new Date(0).toISOString();
+/**
+ * The most recent observed write that evidence must postdate.
+ *
+ * Reads `filesWritten`, which is where writes actually are. Round 1 read
+ * `commandResults` — bash only — so a `write`/`edit` after a green run moved
+ * nothing, and the stale run certified the edit it predated.
+ *
+ * Scoped to the declared files when there are any: a task is certified by a run
+ * postdating *its* edits, not every edit in the session.
+ */
+function lastWrite(committed: Committed, declaredFiles: string[] = []): { lastWriteAt: string; lastWriteSeq: number } {
+  const relevant = declaredFiles.length > 0
+    ? [...committed.filesWritten].filter(([path]) => declaredFiles.includes(path))
+    : [...committed.filesWritten];
+
+  let latest = { at: new Date(0).toISOString(), seq: 0 };
+  for (const [, write] of relevant) {
+    if (write.seq > latest.seq) latest = write;
+  }
+  return { lastWriteAt: latest.at, lastWriteSeq: latest.seq };
 }
 
 /**

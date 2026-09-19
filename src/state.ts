@@ -19,14 +19,43 @@ export type CommandResult = {
   isError: boolean;
   resultText: string;
   at: string;
+  /**
+   * Position in this session's observation order. `at` is a wall clock and two
+   * tool results can share a millisecond, so "did the run come after the edit?"
+   * is answered by the order the kernel observed them in — which it knows
+   * exactly — rather than by a timestamp's resolution. A rule that is only sound
+   * when the clock happens to tick between two events is not a mechanism.
+   */
+  seq: number;
 };
 
-export type Declaration = { intent: Intent; route: Route; slug: string };
+/** When a file was written, and where that write sits in observation order. */
+export type WriteRecord = { at: string; seq: number };
+
+export type Declaration = {
+  intent: Intent;
+  route: Route;
+  slug: string;
+  /**
+   * The verification command this feature is checked with, as declared. Evidence
+   * must come from it: without this, any exit-0 string the model chose certifies
+   * any task, and `echo 'tests pass'` is a valid receipt.
+   */
+  runner: string | null;
+  tdd: "strict" | "off";
+  /** Distinct files the declaration promised to touch. `gate-promotion` reads it. */
+  files: string[];
+};
 
 export type Committed = {
   seen: Set<string>;
   filesRead: Set<string>;
-  filesWritten: Set<string>;
+  /**
+   * path -> the most recent write to it. A `Set` made "the evidence ran after
+   * the edit" structurally uncomputable, which is how a green run predating an
+   * edit certified that edit.
+   */
+  filesWritten: Map<string, WriteRecord>;
   commandResults: CommandResult[];
   delegations: number;
   toolCalls: number;
@@ -53,7 +82,7 @@ export function emptyCommitted(): Committed {
   return {
     seen: new Set(),
     filesRead: new Set(),
-    filesWritten: new Set(),
+    filesWritten: new Map(),
     commandResults: [],
     delegations: 0,
     toolCalls: 0,
@@ -68,13 +97,20 @@ function str(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
+/** Distinct declared paths. Counted the same way written files are. */
+function declaredFiles(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const paths = value.filter((entry): entry is string => typeof entry === "string" && entry !== "");
+  return [...new Set(paths)];
+}
+
 export function fold(committed: Committed, obs: Observation): Committed {
   if (committed.seen.has(obs.toolCallId)) return committed;
 
   const next: Committed = {
     seen: new Set(committed.seen).add(obs.toolCallId),
     filesRead: new Set(committed.filesRead),
-    filesWritten: new Set(committed.filesWritten),
+    filesWritten: new Map(committed.filesWritten),
     commandResults: [...committed.commandResults],
     delegations: committed.delegations,
     toolCalls: committed.toolCalls + 1,
@@ -83,7 +119,7 @@ export function fold(committed: Committed, obs: Observation): Committed {
 
   const path = str(obs.input.path);
   if (READ_TOOLS.has(obs.toolName) && path) next.filesRead.add(path);
-  if (WRITE_TOOLS.has(obs.toolName) && path) next.filesWritten.add(path);
+  if (WRITE_TOOLS.has(obs.toolName) && path) next.filesWritten.set(path, { at: obs.at, seq: next.toolCalls });
 
   if (obs.toolName === "bash") {
     const command = str(obs.input.command);
@@ -94,6 +130,7 @@ export function fold(committed: Committed, obs: Observation): Committed {
         isError: obs.isError,
         resultText: obs.resultText,
         at: obs.at,
+        seq: next.toolCalls,
       });
     }
   }
@@ -105,7 +142,16 @@ export function fold(committed: Committed, obs: Observation): Committed {
     const route = str(obs.input.route);
     const slug = str(obs.input.slug);
     if (intent && route && slug) {
-      next.declaration = { intent: intent as Intent, route: route as Route, slug };
+      next.declaration = {
+        intent: intent as Intent,
+        route: route as Route,
+        slug,
+        runner: str(obs.input.runner),
+        // Anything but the literal `strict` is off. A mode NODD cannot read is
+        // not a mode it gets to assume.
+        tdd: obs.input.tdd === "strict" ? "strict" : "off",
+        files: declaredFiles(obs.input.files),
+      };
     }
   }
 

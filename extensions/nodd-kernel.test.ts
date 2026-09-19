@@ -44,7 +44,7 @@ test("tool_call inserts into pending and tool_result moves it into committed", (
 
   kernel.onToolResult({ toolName: "write", toolCallId: "c1", input: { path: "a.ts" }, isError: false, content: "" });
   assert.equal(kernel.state.pending.size, 0);
-  assert.deepEqual([...kernel.state.committed.filesWritten], ["a.ts"]);
+  assert.deepEqual([...kernel.state.committed.filesWritten.keys()], ["a.ts"]);
 });
 
 test("evidence helpers take Committed, so a pending sibling is structurally unreachable", () => {
@@ -77,7 +77,7 @@ test("session_start replays appended entries into committed state", () => {
     ],
   });
   assert.deepEqual([...kernel.state.committed.filesRead], ["a.ts"]);
-  assert.deepEqual([...kernel.state.committed.filesWritten], ["b.ts"]);
+  assert.deepEqual([...kernel.state.committed.filesWritten.keys()], ["b.ts"]);
 });
 
 test("terminate is never assigned anywhere in the extension", () => {

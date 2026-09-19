@@ -5,7 +5,7 @@
 // is refused unless a `success` outcome was observed, from a real command, after
 // the task's last write.
 //
-// Three independent facts must line up, and each is checked against observation
+// Four independent facts must line up, and each is checked against observation
 // rather than assertion:
 //
 //   1. a command ran           — a `tool_result`, not an assistant sentence
@@ -14,6 +14,18 @@
 //                                `unknown` never qualify (T019)
 //   3. it ran after the edit   — a green run predating the change proves
 //                                nothing about the change
+//   4. it was *the declared check* — the runner recorded at declaration time,
+//                                not whatever string the model picked
+//
+// Fact 4 is what makes the other three worth having. pi's bash tool exits 0 for
+// `echo 'I have verified that all tests pass'` just as it does for `npm test`,
+// so a gate that accepts any exit-0 accepts the model's own sentence wearing a
+// command's clothes — `Evidence: tests pass` again, now in NODD's format. The
+// model does not choose the runner: it is declared once, lands in the feature
+// doc's `## Verification` section, and the gate compares against it.
+//
+// Honest limit: when no runner was declared, fact 4 cannot be checked and is
+// skipped rather than faked. The refusal and the artifact both say so.
 //
 // Plus a fourth, per the ledger integrity rule: the record must be one this
 // kernel observed. A record on disk is a claim about the past; only the
@@ -34,6 +46,14 @@ export type CheckRequest = {
   task: string;
   /** When the task's last observed write happened. Evidence must postdate it. */
   lastWriteAt: string;
+  /**
+   * That write's position in observation order. Two tool results can share a
+   * millisecond, so the ordering is decided here and `lastWriteAt` is what the
+   * refusal quotes. `0` means nothing has been written yet.
+   */
+  lastWriteSeq?: number;
+  /** The declared verification command. `null` when the declaration pinned none. */
+  runner: string | null;
   tdd?: TddContext;
 };
 
@@ -49,6 +69,19 @@ export type EvidenceDecision =
   | { allow: false; gate: "evidence"; reason: string; remedy: Remedy };
 
 const REMEDY = "run the verification command, then check the task off once it is observed to succeed";
+
+/**
+ * Whether an observed command *is* the declared runner. Prefix match on whole
+ * tokens, so `npm test -- src/login.test.ts` counts and `echo npm test` does
+ * not: a runner narrowed to one file is the ordinary way a task verifies
+ * itself, while the runner quoted inside another command is not a run of it.
+ */
+function isDeclaredRunner(command: string, runner: string): boolean {
+  const actual = command.trim().split(/\s+/);
+  const declared = runner.trim().split(/\s+/);
+  if (declared.length === 0 || actual.length < declared.length) return false;
+  return declared.every((token, i) => actual[i] === token);
+}
 
 function deny(reason: string, remedy: string = REMEDY): EvidenceDecision {
   const refusal = refuse("evidence", reason, remedy);
@@ -89,13 +122,26 @@ export function evidenceGate(
     return deny(`no command has been observed running for ${request.task}, so there is nothing to record as evidence`);
   }
 
-  const green = runs.filter((run) => isSuccess(run.outcome));
+  // The declared check, before success is even considered: a green `echo` is
+  // not a failing test run, it is not a test run at all.
+  const relevant = request.runner === null
+    ? runs
+    : runs.filter((run) => isDeclaredRunner(run.command, request.runner!));
+  if (relevant.length === 0) {
+    const observed = runs.map((run) => `\`${run.command}\``).join(", ");
+    return deny(
+      `this feature declared \`${request.runner}\` as its verification runner, and no observed command was a run of it (observed: ${observed})`,
+      `run \`${request.runner}\`, then check ${request.task} off once it is observed to succeed`,
+    );
+  }
+
+  const green = relevant.filter((run) => isSuccess(run.outcome));
   if (green.length === 0) {
-    const last = runs[runs.length - 1];
+    const last = relevant[relevant.length - 1];
     return deny(`the last observed run of \`${last.command}\` ended ${describeOutcome(last.outcome)}, which is not success`);
   }
 
-  const afterWrite = green.filter((run) => run.at >= request.lastWriteAt);
+  const afterWrite = green.filter((run) => run.seq > (request.lastWriteSeq ?? 0) && run.at >= request.lastWriteAt);
   if (afterWrite.length === 0) {
     const last = green[green.length - 1];
     return deny(
@@ -105,7 +151,7 @@ export function evidenceGate(
 
   if (request.tdd?.mode === "strict") {
     const chosen = afterWrite[afterWrite.length - 1];
-    const red = runs.find((run) => !isSuccess(run.outcome) && run.at <= chosen.at);
+    const red = relevant.find((run) => !isSuccess(run.outcome) && run.at <= chosen.at);
     if (!red) {
       return deny(
         `TDD mode is strict (${request.tdd.source}) but no failing (RED) run was observed before this success, so the test was never seen to fail first`,
