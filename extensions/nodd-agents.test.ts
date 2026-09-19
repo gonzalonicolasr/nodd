@@ -40,6 +40,16 @@ test("the renderer matches an expected frontmatter and body exactly", () => {
   assert.ok(rendered.endsWith("\n"));
 });
 
+test("the configured thinking level reaches the generated agent", () => {
+  // `/nodd-models` stores a level per slot. If it stops here, the picker is
+  // writing a value nothing reads — a setting that looks applied and is not.
+  const withLevel = buildAgentFile(NODD_AGENTS[2], "anthropic/claude-opus-4-1", "high");
+  assert.match(withLevel, /^thinking: high$/m);
+
+  const withNone = buildAgentFile(NODD_AGENTS[2], "anthropic/claude-opus-4-1", undefined);
+  assert.ok(!/^thinking:/m.test(withNone), "no level rather than an empty one");
+});
+
 test("a slot with no configured model falls back to default, then omits the line", () => {
   const withDefault = buildAgentFile(NODD_AGENTS[0], "anthropic/fallback");
   assert.match(withDefault, /^model: anthropic\/fallback$/m);

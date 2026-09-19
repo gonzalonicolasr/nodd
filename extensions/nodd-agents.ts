@@ -106,11 +106,18 @@ function enforcementNote(): string {
 }
 
 /** Pure: agent definition plus model in, file text out. */
-export function buildAgentFile(agent: NoddAgent, model: string | undefined): string {
+export function buildAgentFile(
+  agent: NoddAgent,
+  model: string | undefined,
+  thinking?: string | undefined,
+): string {
   const front = ["---", `name: nodd-${agent.slot}`, `description: ${agent.description}`];
   // Omitted rather than emitted empty: a blank `model:` is a value pi cannot
   // resolve, and an unresolvable model fails at the moment it is needed.
   if (model) front.push(`model: ${model}`);
+  // The level `/nodd-models` stored. Without this line the picker would be
+  // writing a setting nothing reads.
+  if (thinking) front.push(`thinking: ${thinking}`);
   front.push(
     `tools: ${agent.tools.join(", ")}`,
     "systemPromptMode: replace",
@@ -131,6 +138,17 @@ export function buildAgentFile(agent: NoddAgent, model: string | undefined): str
   ].join("\n");
 
   return `${front.join("\n")}\n\n${body}\n`;
+}
+
+/**
+ * The level configured for a slot. Unlike the model there is no `default`
+ * fallback: an unset level means pi's own default, which is the right answer.
+ */
+function thinkingFor(config: Record<string, unknown>, slot: string): string | undefined {
+  const thinking = config.thinking;
+  if (typeof thinking !== "object" || thinking === null) return undefined;
+  const level = (thinking as Record<string, unknown>)[slot];
+  return typeof level === "string" && level !== "" ? level : undefined;
 }
 
 function modelFor(config: Record<string, unknown>, slot: string): string | undefined {
@@ -158,7 +176,11 @@ export function provisionAgents(home: string, config: Record<string, unknown>): 
   for (const agent of NODD_AGENTS) {
     const name = `nodd-${agent.slot}`;
     try {
-      writeFileSync(join(dir, `${name}.md`), buildAgentFile(agent, modelFor(config, agent.slot)), "utf8");
+      writeFileSync(
+        join(dir, `${name}.md`),
+        buildAgentFile(agent, modelFor(config, agent.slot), thinkingFor(config, agent.slot)),
+        "utf8",
+      );
       result.written.push(name);
     } catch {
       // One agent failing must not block the other two.
