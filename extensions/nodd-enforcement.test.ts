@@ -351,6 +351,34 @@ test("echo attack with no runner declared: allowed, but the artifact says the ru
   );
 });
 
+// Two claims of the README meet here, and round 2 left the seam open.
+//
+// "The choice is made up front ... so the command the work is judged by cannot
+// be invented afterwards to fit whatever happened to pass" is only true if a
+// later declaration cannot rewrite the runner. It could: nodd_declare
+// overwrites `## Verification` wholesale, so a refused checkoff was repaired by
+// re-declaring with the echo as the runner, and the second attempt passed.
+test("the runner cannot be re-declared to fit a run that already happened", () => {
+  const s = session();
+  trackedFeature(s);
+  s.observe("edit", { path: "/repo/src/login.ts" }, "");
+  s.observe("bash", { command: "echo 'I have verified that all tests pass'" }, "ok");
+  assert.match(String(s.task({ action: "check", id: "T1", slug: "login" })), /nodd\/evidence/, "the echo is not npm test");
+
+  // The repair attempt: keep the feature, swap the runner for the thing that
+  // did pass. This must not become a checkoff.
+  const redeclared = String(s.declare({
+    intent: "change", route: "tracked", slug: "login", summary: "build login",
+    runner: "echo 'I have verified that all tests pass'", files: ["/repo/src/login.ts"],
+  }));
+  assert.match(redeclared, /runner/i, `re-pinning an already-pinned runner must be refused, got: ${redeclared}`);
+
+  const doc = readFileSync(join(s.cwd, ".nodd", "login", "feature.md"), "utf8");
+  assert.match(doc, /- runner: npm test$/m, "the originally declared runner stands");
+  assert.ok(!doc.includes("I have verified"), "the invented runner must not reach the artifact");
+  assert.match(String(s.task({ action: "check", id: "T1", slug: "login" })), /nodd\/evidence/, "and the checkoff is still refused");
+});
+
 test("a checkoff certified by the declared runner carries no unpinned caveat", () => {
   // The disclosure above is only worth something if it discriminates. If every
   // line carried it, the two cases would read the same again.

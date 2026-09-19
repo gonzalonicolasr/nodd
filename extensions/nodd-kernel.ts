@@ -186,12 +186,26 @@ export function createKernel(
 
       const existing = readDoc(args.slug);
       const doc = existing ?? emptyDoc({ slug: args.slug, title: args.title || args.slug });
+
+      // "Declared up front" is only a property if it cannot be re-declared
+      // afterwards. Re-declaring rewrote `## Verification` wholesale, so a
+      // refused checkoff was repaired by naming the command that did pass as
+      // the runner -- the round-1 echo attack with one extra step. A runner is
+      // pinned once; changing it means a new feature, or `/nodd-allow`.
+      const requested = args.runner && args.runner !== "" ? args.runner : null;
+      if (doc.verification.runner !== null && requested !== null && requested !== doc.verification.runner) {
+        return {
+          ok: false,
+          text: `nodd_declare: ${args.slug} already pinned \`${doc.verification.runner}\` as its verification runner, and a runner chosen after the work is a runner chosen to fit it. To verify differently, declare a new feature.`,
+        };
+      }
+
       doc.objective = args.summary;
       doc.route = { intent: args.intent, route: args.route };
       // Declared once and written by the extension, so the runner a checkoff is
       // measured against is not a string the model can pick per checkoff.
       doc.verification = {
-        runner: args.runner && args.runner !== "" ? args.runner : null,
+        runner: requested ?? doc.verification.runner,
         tdd: args.tdd === "strict" ? "strict" : "off",
         source: "nodd_declare",
         files: [...new Set((args.files ?? []).filter((file) => typeof file === "string" && file !== ""))],
