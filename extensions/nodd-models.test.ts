@@ -1,0 +1,174 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { MECHANISM_PLACEHOLDER } from "../src/models/slots.ts";
+import register, { runModelsCommand, type ConfigIo } from "./nodd-models.ts";
+
+const registry = {
+  getAll: () => [
+    { provider: "anthropic", id: "claude-sonnet-4-5" },
+    { provider: "anthropic", id: "claude-opus-4-1" },
+    { provider: "openai-codex", id: "gpt-5-codex" },
+  ],
+};
+
+function memoryIo(initial: Record<string, unknown> = {}): ConfigIo & { writes: Record<string, unknown>[] } {
+  let data = { ...initial };
+  const writes: Record<string, unknown>[] = [];
+  return {
+    writes,
+    readConfig: () => ({ ...data }),
+    writeConfig: (next) => {
+      data = next;
+      writes.push(next);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The display
+// ---------------------------------------------------------------------------
+test("the no-arg output lists all seven steps with the four mechanisms marked", () => {
+  const io = memoryIo({ models: { implement: "anthropic/claude-opus-4-1" } });
+  const output = runModelsCommand("", io, registry);
+
+  for (const step of ["authorize", "explore", "resolve-uncertainty", "classify", "track", "implement", "close"]) {
+    assert.ok(output.includes(step), `${step} must be listed`);
+  }
+  for (const mechanism of ["authorize", "classify", "track", "close"]) {
+    const row = output.split("\n").find((line) => line.includes(mechanism))!;
+    assert.ok(row.includes(MECHANISM_PLACEHOLDER), `${mechanism} must be marked as a mechanism: ${row}`);
+  }
+  assert.ok(output.includes("anthropic/claude-opus-4-1"), "an assigned slot shows its model");
+  assert.equal(io.writes.length, 0, "displaying writes nothing");
+});
+
+test("the two global slots are listed alongside the steps", () => {
+  const output = runModelsCommand("", memoryIo(), registry);
+  assert.ok(output.includes("default"));
+  assert.ok(output.includes("orchestrator"));
+});
+
+// ---------------------------------------------------------------------------
+// Direct assignment
+// ---------------------------------------------------------------------------
+test("a valid assignment writes only models.implement and preserves unrelated keys", () => {
+  const io = memoryIo({
+    models: { explore: "anthropic/claude-sonnet-4-5" },
+    gates: { track: { enabled: false } },
+    somethingElse: { deep: [1, 2, 3] },
+  });
+
+  const output = runModelsCommand("implement=anthropic/claude-opus-4-1", io, registry);
+  assert.equal(io.writes.length, 1, "a valid assignment writes exactly once");
+
+  const written = io.writes[0];
+  assert.deepEqual(written.models, {
+    explore: "anthropic/claude-sonnet-4-5",
+    implement: "anthropic/claude-opus-4-1",
+  });
+  assert.deepEqual(written.gates, { track: { enabled: false } }, "gate flags survive a model write");
+  assert.deepEqual(written.somethingElse, { deep: [1, 2, 3] }, "an unknown key survives byte-for-byte");
+  assert.match(output, /implement/);
+});
+
+test("classify=x/y is rejected as a mechanism and writes nothing", () => {
+  const io = memoryIo();
+  const output = runModelsCommand("classify=anthropic/claude-opus-4-1", io, registry);
+  assert.match(output, /mecanismo/);
+  assert.equal(io.writes.length, 0);
+});
+
+test("an unknown model is rejected against the live registry and writes nothing", () => {
+  const io = memoryIo();
+  assert.match(runModelsCommand("implement=unknown/model", io, registry), /provider desconocido/);
+  assert.match(runModelsCommand("implement=anthropic/gpt-9", io, registry), /modelo desconocido/);
+  assert.equal(io.writes.length, 0);
+});
+
+test("an unparseable argument reports usage and writes nothing", () => {
+  const io = memoryIo();
+  assert.match(runModelsCommand("implement", io, registry), /uso/i);
+  assert.equal(io.writes.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Profiles, through the same command
+// ---------------------------------------------------------------------------
+test("profile new writes once and activates the profile", () => {
+  const io = memoryIo({ models: { implement: "anthropic/claude-opus-4-1" } });
+  const output = runModelsCommand("profile new fast", io, registry);
+  assert.equal(io.writes.length, 1);
+  assert.equal(io.writes[0].activeProfile, "fast");
+  assert.match(output, /fast/);
+});
+
+test("profile list writes nothing", () => {
+  const io = memoryIo({ profiles: { fast: { models: {} } }, activeProfile: "fast" });
+  const output = runModelsCommand("profile list", io, registry);
+  assert.ok(output.includes("fast"));
+  assert.equal(io.writes.length, 0);
+});
+
+test("editing a slot with a profile active mirrors into that profile", () => {
+  const io = memoryIo({
+    models: { implement: "anthropic/claude-sonnet-4-5" },
+    profiles: { fast: { models: { implement: "anthropic/claude-sonnet-4-5" } } },
+    activeProfile: "fast",
+  });
+  runModelsCommand("implement=anthropic/claude-opus-4-1", io, registry);
+  assert.deepEqual(
+    (io.writes[0].profiles as Record<string, unknown>).fast,
+    { models: { implement: "anthropic/claude-opus-4-1" } },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The picker host
+// ---------------------------------------------------------------------------
+test("quitting the picker produces zero writes; saving writes once", async () => {
+  const quitIo = memoryIo();
+  await register.runPicker({ type: "quit" }, quitIo);
+  assert.equal(quitIo.writes.length, 0, "quit writes nothing");
+
+  const saveIo = memoryIo({ unrelated: true });
+  await register.runPicker({ type: "save", models: { implement: "anthropic/claude-opus-4-1" } }, saveIo);
+  assert.equal(saveIo.writes.length, 1);
+  assert.deepEqual(saveIo.writes[0].models, { implement: "anthropic/claude-opus-4-1" });
+  assert.equal(saveIo.writes[0].unrelated, true, "the picker's save preserves unrelated keys");
+});
+
+test("the command is registered with pi under its own name", () => {
+  const commands = new Map<string, unknown>();
+  register({ registerCommand: (name: string, options: unknown) => commands.set(name, options) } as never);
+  assert.ok(commands.has("nodd-models"), "the command must be /nodd-models, never /zero-models");
+  assert.ok(!commands.has("zero-models"));
+});
+
+test("the picker component renders rows and is a plain object, no TUI import", () => {
+  const component = register.createComponent(
+    { models: { implement: "anthropic/claude-opus-4-1" }, groups: new Map([["anthropic", ["claude-opus-4-1"]]]) },
+    () => {},
+  );
+  const lines = component.render(80);
+  assert.ok(Array.isArray(lines), "render returns string[]");
+  assert.ok(lines.length > 7, "every slot row is rendered");
+  assert.ok(lines.some((line) => line.includes(MECHANISM_PLACEHOLDER)), "mechanism rows are visible in the picker");
+  assert.ok(lines.some((line) => line.includes("anthropic/claude-opus-4-1")));
+});
+
+// ---------------------------------------------------------------------------
+// The absolute rule
+// ---------------------------------------------------------------------------
+test("this extension imports no TUI package, as a value or as a type", () => {
+  const source = readFileSync(new URL("./nodd-models.ts", import.meta.url), "utf8");
+  const forbidden = `@earendil-works/${["pi", "tui"].join("-")}`;
+  assert.ok(!source.includes(forbidden), "not a value import, not an import type, not a string");
+  assert.ok(/interface Component/.test(source), "the component contract is declared locally");
+});
+
+test("nothing in this extension names forge's config file", () => {
+  const source = readFileSync(new URL("./nodd-models.ts", import.meta.url), "utf8");
+  assert.ok(!source.includes(`zero${"."}json`), "NODD never opens forge's config");
+  assert.ok(source.includes("nodd.json") || source.includes("noddConfigPath"), "it uses its own");
+});

@@ -14,7 +14,9 @@
   "pi": {
     "extensions": [
       "./extensions/nodd-kernel.ts",
-      "./extensions/nodd-gates.ts"
+      "./extensions/nodd-gates.ts",
+      "./extensions/nodd-allow.ts",
+      "./extensions/nodd-models.ts"
     ]
   },
   "files": [
