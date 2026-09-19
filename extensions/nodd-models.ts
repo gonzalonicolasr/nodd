@@ -23,8 +23,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { mergeConfig, noddConfigPath } from "../src/config.ts";
 import { SLOT_ROWS } from "../src/models/slots.ts";
 import { assignmentPatch, groupByProvider, parseAssignment, validateAssignment, type RegistryModel } from "../src/models/assign.ts";
-import { applyProfileCommand, isValidProfileName, mirrorToActiveProfile, readActiveProfile, readProfiles } from "../src/models/profiles.ts";
-import { createPickerState, enter, moveCursor, renderRows, stage, type EnterResult, type PickerState } from "../src/models/picker.ts";
+import { applyProfileCommand, isValidProfileName, mirrorToActiveProfile, readActiveProfile, readProfiles, type Profile } from "../src/models/profiles.ts";
+import { back, createPickerState, decodeKey, enter, navigate, pickerTitle, submitText, type EnterResult, type PickerState } from "../src/models/picker.ts";
+import { fitRows, truncateToWidth, usableRows, windowRows } from "../src/models/layout.ts";
+import { isThinkingLevel, type SlotThinking } from "../src/models/thinking.ts";
 
 export type ConfigIo = {
   readConfig(): Record<string, unknown>;
@@ -144,67 +146,168 @@ export function runModelsCommand(args: string, io: ConfigIo, registry?: ModelReg
   return `nodd · ${assignment.slot} → ${patch.models[assignment.slot]}`;
 }
 
-/** Persist a picker outcome. Quit writes nothing; save writes once. */
-function runPicker(result: EnterResult, io: ConfigIo): void {
-  if (result.type !== "save") return;
-  const raw = io.readConfig();
-  io.writeConfig(mirrorToActiveProfile(mergeConfig(raw, { models: result.models })));
+/** The thinking map as stored, keeping only the levels that are real. */
+function currentThinking(raw: Record<string, unknown>): SlotThinking {
+  const stored = raw.thinking;
+  const out: SlotThinking = {};
+  for (const [key, value] of Object.entries(typeof stored === "object" && stored !== null ? stored : {})) {
+    if (isThinkingLevel(value)) out[key] = value;
+  }
+  return out;
+}
+
+/** Everything the picker opens on, read from the config in one place. */
+function pickerInput(raw: Record<string, unknown>, groups: Map<string, string[]>) {
+  return {
+    models: currentModels(raw),
+    thinking: currentThinking(raw),
+    groups,
+    profiles: readProfiles(raw).profiles,
+    activeProfile: readActiveProfile(raw),
+  };
 }
 
 /**
- * The `ctx.ui.custom` component. It holds one `PickerState` and forwards
- * keystrokes to the pure state machine; every decision lives there.
+ * Persist a picker outcome. Quit writes nothing; save writes once.
+ *
+ * The picker stages everything — slots, thinking levels and the whole profile
+ * map — and hands back the final state, so this is one write, never one per
+ * keystroke. `activeProfile` and `profiles` are carried through because the
+ * picker can create, delete, duplicate and activate them.
+ */
+function runPicker(result: EnterResult, io: ConfigIo): void {
+  if (result.type !== "save") return;
+  const raw = io.readConfig();
+  const { models, thinking, profiles, activeProfile } = result.state.edits;
+  io.writeConfig(
+    mirrorToActiveProfile(
+      mergeConfig(raw, { models, thinking, profiles, activeProfile }),
+    ),
+  );
+}
+
+/**
+ * The `ctx.ui.custom` component. It holds one `PickerState` and forwards every
+ * keystroke to the pure state machine; no decision lives here.
+ *
+ * Ported from `zero-models.ts:777-926`. Two things it must never do: throw out
+ * of `handleInput` (a transition bug would wedge the pi session, so the whole
+ * body is wrapped and a failure closes the picker), and write anything — only
+ * `runPicker` writes, once, on save.
  */
 function createComponent(
-  input: { models: Record<string, string>; groups: Map<string, string[]> },
+  input: {
+    models: Record<string, string>;
+    thinking: SlotThinking;
+    groups: Map<string, string[]>;
+    profiles?: Record<string, Profile>;
+    activeProfile?: string | null;
+  },
   done: (result: EnterResult) => void,
   requestRender: () => void = () => {},
 ): Component {
   let state: PickerState = createPickerState(input);
-  let choosing: { slot: string; options: string[]; cursor: number } | null = null;
+  // Inline text buffer — non-null only while `state.textPrompt` is open.
+  let buffer: string | null = null;
+
+  function render(width: number): string[] {
+    const inner = Math.max(20, width - 2);
+    // pi hands the component its width but not its height, so the height comes
+    // from the terminal itself, minus what pi's own chrome takes.
+    const maxRows = usableRows(process.stdout?.rows);
+    const head: string[] = [pickerTitle(state), ""];
+    if (state.notice) head.push(state.notice, "");
+
+    if (state.textPrompt) {
+      return fitRows(
+        [...head, state.textPrompt.label, `> ${buffer ?? ""}`, "", "enter confirmar · esc volver"]
+          .map((line) => truncateToWidth(line, inner)),
+        maxRows,
+      );
+    }
+
+    // Reserve the header and footer, then window the list around the cursor so
+    // a long list scrolls instead of overflowing the terminal.
+    const capacity = Math.max(1, maxRows - head.length - 2);
+    const win = windowRows(state.entries.length, state.cursor, capacity);
+    const rows = state.entries.slice(win.start, win.end).map((entry, index) => {
+      const selected = win.start + index === state.cursor;
+      return truncateToWidth(`${selected ? "❯ " : "  "}${entry.label}`, inner);
+    });
+
+    return fitRows(
+      [...head, ...rows, "", truncateToWidth("↑↓ mover · enter elegir · esc volver · q salir", inner)],
+      maxRows,
+    );
+  }
+
+  /** Apply an `EnterResult` — re-render on `state`, close on `save`/`quit`. */
+  function applyResult(result: EnterResult): void {
+    if (result.type === "state") {
+      state = result.state;
+      requestRender();
+      return;
+    }
+    done(result);
+  }
+
+  /** Route a keystroke while the inline text buffer is open. */
+  function handleTextInput(data: string): void {
+    const key = decodeKey(data);
+    if (key === "esc") {
+      // Esc abandons the typed value and returns to the list unchanged:
+      // `submitText` with an empty string is exactly that no-op.
+      state = submitText(state, "");
+      buffer = null;
+    } else if (key === "enter") {
+      state = submitText(state, buffer ?? "");
+      buffer = null;
+    } else if (key === "backspace") {
+      buffer = (buffer ?? "").slice(0, -1);
+    } else if (data.length >= 1 && data.charCodeAt(0) >= 32 && !data.startsWith("\u001b")) {
+      // Printable characters only; control sequences are dropped.
+      buffer = (buffer ?? "") + data;
+    }
+    requestRender();
+  }
 
   return {
-    render(width: number): string[] {
-      const inner = Math.max(20, width - 4);
-      const lines = choosing
-        ? [
-            `elegí un modelo para ${choosing.slot}:`,
-            ...choosing.options.map((option, i) => `${i === choosing!.cursor ? "❯" : " "} ${option}`),
-          ]
-        : [
-            "nodd · modelos (↑↓ mover · enter elegir · q salir)",
-            ...renderRows(state).map((row, i) => {
-              const marker = i === state.cursor ? "❯" : " ";
-              return `${marker} ${row.id.padEnd(20)} →  ${row.value}`;
-            }),
-          ];
-      return lines.map((line) => line.slice(0, inner));
+    render,
+    invalidate(): void {
+      /* stateless render — nothing cached to clear */
     },
-
     handleInput(data: string): void {
-      if (choosing) {
-        if (data === "\r" || data === "\n") {
-          state = stage(state, choosing.slot, choosing.options[choosing.cursor]);
-          choosing = null;
-        } else if (data === "\u001b[A") choosing.cursor = Math.max(0, choosing.cursor - 1);
-        else if (data === "\u001b[B") choosing.cursor = Math.min(choosing.options.length - 1, choosing.cursor + 1);
-        else if (data === "q" || data === "\u001b") choosing = null;
-        requestRender();
-        return;
-      }
+      try {
+        if (state.textPrompt) {
+          handleTextInput(data);
+          return;
+        }
 
-      if (data === "\u001b[A") state = moveCursor(state, -1);
-      else if (data === "\u001b[B") state = moveCursor(state, 1);
-      else if (data === "q" || data === "\u001b") done({ type: "quit" });
-      else if (data === "\r" || data === "\n") {
-        const result = enter(state);
-        if (result.type === "choose") choosing = { slot: result.slot, options: result.options, cursor: 0 };
-        else done(result);
+        const key = decodeKey(data);
+        if (key === "up") state = navigate(state, -1);
+        else if (key === "down") state = navigate(state, 1);
+        else if (key === "enter") {
+          const result = enter(state);
+          // `enter` on a custom-* row opens `textPrompt`; arm the buffer.
+          if (result.type === "state" && result.state.textPrompt) buffer = "";
+          applyResult(result);
+          return;
+        } else if (key === "esc") {
+          applyResult(back(state));
+          return;
+        } else if (data === "q") {
+          done({ type: "quit" });
+          return;
+        }
+        requestRender();
+      } catch {
+        // A transition bug must never wedge the pi session — close instead.
+        done({ type: "quit" });
       }
-      requestRender();
     },
   };
 }
+
 
 type PiApi = {
   registerCommand?(name: string, options: { description?: string; handler: (args: string, ctx: unknown) => unknown }): void;

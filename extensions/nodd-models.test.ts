@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { MECHANISM_PLACEHOLDER } from "../src/models/slots.ts";
 import register, { runModelsCommand, type ConfigIo } from "./nodd-models.ts";
+import type { EnterResult, PickerState } from "../src/models/picker.ts";
 
 const registry = {
   getAll: () => [
@@ -126,13 +127,38 @@ test("editing a slot with a profile active mirrors into that profile", () => {
 // ---------------------------------------------------------------------------
 // The picker host
 // ---------------------------------------------------------------------------
+
+/** Drive the real picker to a save carrying one staged model. */
+function stageOneModel(): { type: "save"; state: PickerState } {
+  let captured: EnterResult | null = null;
+  const component = register.createComponent(
+    {
+      models: { implement: "anthropic/claude-opus-4-1" },
+      thinking: {},
+      groups: new Map([["anthropic", ["claude-opus-4-1"]]]),
+    },
+    (result: EnterResult) => {
+      captured = result;
+    },
+  );
+  // The menu opens on "nuevo perfil"; save is two rows down.
+  component.handleInput?.("\u001b[B");
+  component.handleInput?.("\u001b[B");
+  component.handleInput?.("\r");
+  assert.ok(captured, "the picker must close with a result");
+  assert.equal(captured!.type, "save");
+  return captured as { type: "save"; state: PickerState };
+}
 test("quitting the picker produces zero writes; saving writes once", async () => {
   const quitIo = memoryIo();
   await register.runPicker({ type: "quit" }, quitIo);
   assert.equal(quitIo.writes.length, 0, "quit writes nothing");
 
+  // A save carries the whole staged state, so it is built from the picker
+  // itself rather than hand-written: a literal would drift from the real shape.
+  const saved = stageOneModel();
   const saveIo = memoryIo({ unrelated: true });
-  await register.runPicker({ type: "save", models: { implement: "anthropic/claude-opus-4-1" } }, saveIo);
+  await register.runPicker(saved, saveIo);
   assert.equal(saveIo.writes.length, 1);
   assert.deepEqual(saveIo.writes[0].models, { implement: "anthropic/claude-opus-4-1" });
   assert.equal(saveIo.writes[0].unrelated, true, "the picker's save preserves unrelated keys");
@@ -147,14 +173,25 @@ test("the command is registered with pi under its own name", () => {
 
 test("the picker component renders rows and is a plain object, no TUI import", () => {
   const component = register.createComponent(
-    { models: { implement: "anthropic/claude-opus-4-1" }, groups: new Map([["anthropic", ["claude-opus-4-1"]]]) },
+    {
+      models: { implement: "anthropic/claude-opus-4-1" },
+      thinking: {},
+      groups: new Map([["anthropic", ["claude-opus-4-1"]]]),
+    },
     () => {},
   );
   const lines = component.render(80);
   assert.ok(Array.isArray(lines), "render returns string[]");
-  assert.ok(lines.length > 7, "every slot row is rendered");
-  assert.ok(lines.some((line) => line.includes(MECHANISM_PLACEHOLDER)), "mechanism rows are visible in the picker");
-  assert.ok(lines.some((line) => line.includes("anthropic/claude-opus-4-1")));
+  assert.ok(lines.some((line) => line.includes("guardar y salir")), "the menu offers save");
+
+  // The slots are one screen in, behind the loose-config row, which is what the
+  // menu offers while no profile exists.
+  component.handleInput?.("\u001b[B");
+  component.handleInput?.("\r");
+  const slots = component.render(80);
+  assert.ok(slots.length > 7, "every slot row is rendered");
+  assert.ok(slots.some((line) => line.includes(MECHANISM_PLACEHOLDER)), "mechanism rows are visible in the picker");
+  assert.ok(slots.some((line) => line.includes("anthropic/claude-opus-4-1")));
 });
 
 // ---------------------------------------------------------------------------
