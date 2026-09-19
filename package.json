@@ -13,7 +13,8 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions/nodd-kernel.ts"
+      "./extensions/nodd-kernel.ts",
+      "./extensions/nodd-gates.ts"
     ]
   },
   "files": [
