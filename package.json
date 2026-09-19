@@ -1,0 +1,34 @@
+{
+  "name": "nodd",
+  "version": "0.1.0",
+  "description": "Non-negotiable Organic Driven Development — the ODD protocol as runtime mechanism for pi: blocking gates, observed evidence, and promotion to /forge.",
+  "type": "module",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-extension",
+    "nodd",
+    "odd",
+    "ai-coding-agent"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/nodd-kernel.ts"
+    ]
+  },
+  "files": [
+    "src",
+    "extensions",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test --experimental-strip-types"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.84.0"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "license": "MIT"
+}
