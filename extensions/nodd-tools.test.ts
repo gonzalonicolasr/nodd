@@ -113,6 +113,35 @@ test("a checkoff with no observed commit records pending-commit", () => {
   assert.equal(task.checked && task.candidate, "pending-commit");
 });
 
+test("nodd_task reopen without a reason is refused; with one it records under Progress", () => {
+  const cwd = tmp();
+  const kernel = createKernel(undefined, cwd);
+  kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
+  kernel.task({ action: "add", id: "T1", title: "First", slug: "demo" });
+  kernel.task({ action: "check", id: "T1", slug: "demo" });
+
+  const bare = kernel.task({ action: "reopen", id: "T1", slug: "demo" });
+  assert.equal(bare.ok, false);
+  assert.match(bare.text, /reason/i);
+  assert.equal(
+    parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8")).doc.tasks[0].checked,
+    true,
+    "a refused reopen changes nothing on disk",
+  );
+
+  const withReason = kernel.task({ action: "reopen", id: "T1", slug: "demo", reason: "the check ran against stale code" });
+  assert.equal(withReason.ok, true);
+  const doc = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8")).doc;
+  assert.equal(doc.tasks[0].checked, false);
+  assert.match(doc.progress, /T1 reopened: the check ran against stale code/);
+});
+
+test("the reopen action is in the tool schema so the model can name it", () => {
+  const pi = fakePi();
+  register(pi as never, tmp());
+  assert.deepEqual(pi.tools.get("nodd_task")!.parameters.properties.action.enum, ["add", "check", "reopen"]);
+});
+
 test("a checkoff after an observed commit records that SHA as the candidate", () => {
   const cwd = tmp();
   const kernel = createKernel(undefined, cwd);

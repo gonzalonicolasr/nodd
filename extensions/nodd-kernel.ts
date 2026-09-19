@@ -24,6 +24,7 @@ import {
 } from "../src/feature-doc.ts";
 import { writeVerified } from "../src/io.ts";
 import { candidateFor, candidateIdentity } from "../src/review-candidate.ts";
+import { reopenTask } from "../src/change-acceptance.ts";
 
 /** The NODD entry type appended to the session so a reload can rebuild state. */
 export const OBSERVATION_ENTRY = "nodd:observation";
@@ -58,10 +59,12 @@ export type DeclareArgs = {
 };
 
 export type TaskArgs = {
-  action: "add" | "check";
+  action: "add" | "check" | "reopen";
   id: string;
   title?: string;
   slug: string;
+  /** Required to reopen a checked task (`routing.go:97`). */
+  reason?: string;
 };
 
 function resultText(content: unknown): string {
@@ -155,6 +158,13 @@ export function createKernel(
         return saved.ok ? { ok: true, text: `${args.id} added to .nodd/${doc.slug}/feature.md` } : saved;
       }
 
+      if (args.action === "reopen") {
+        const reopened = reopenTask(doc, args.id, args.reason ?? "");
+        if (!reopened.ok) return { ok: false, text: `nodd_task: ${reopened.problem}` };
+        const saved = saveDoc(reopened.doc);
+        return saved.ok ? { ok: true, text: `${args.id} reopened in .nodd/${doc.slug}/feature.md` } : saved;
+      }
+
       const index = doc.tasks.findIndex((t) => t.id === args.id);
       if (index < 0) return { ok: false, text: `nodd_task: ${args.id} is not in the document` };
 
@@ -227,14 +237,16 @@ const DECLARE_SCHEMA = {
 };
 
 const TASK_SCHEMA = {
-  description: "Add a task to the feature document, or check one off. NODD writes the document; you never edit it directly.",
+  description:
+    "Add a task to the feature document, check one off, or reopen a checked one. NODD writes the document; you never edit it directly.",
   parameters: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["add", "check"] },
+      action: { type: "string", enum: ["add", "check", "reopen"] },
       id: { type: "string", description: "stable task id, e.g. T1" },
       title: { type: "string", description: "required when adding" },
       slug: { type: "string", description: "the feature slug" },
+      reason: { type: "string", description: "required when reopening: why the completed result no longer holds" },
     },
     required: ["action", "id", "slug"],
   },
