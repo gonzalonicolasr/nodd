@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { emptyCommitted, fold, type Committed } from "../state.ts";
 import { observation } from "../observations.ts";
 import { emptyPolicy } from "./policy.ts";
-import { trackGate } from "./track.ts";
+import { featureDocRelPath, trackGate } from "./track.ts";
 
 function routed(route: "inline" | "tracked" | "forge", slug = "demo"): Committed {
   return fold(emptyCommitted(), observation({
@@ -91,4 +91,45 @@ test("the flag off disables the whole gate, doc protection included", () => {
 
 test("an undeclared session does not block here — that is gate-classify's job", () => {
   assert.equal(trackGate(emptyCommitted(), write, emptyPolicy(), absent).allow, true);
+});
+
+// ---------------------------------------------------------------------------
+// The emergency door.
+//
+// When `nodd_declare` was broken, this gate had no way out: it refused every
+// write until `.nodd/<slug>/feature.md` existed, and the only tool that could
+// create it was the broken one. Writing the doc by hand hit the artifact
+// branch; disabling the gate meant writing config, which is itself a mutation;
+// `/nodd-allow` does not exist for a subagent. Five closed paths, verified —
+// the gate blocked every repair of its own cause.
+//
+// Creating the declared document is therefore allowed. It is faithful to the
+// gate's intent: the artifact branch exists so the model cannot *forge* a doc
+// after the fact, not so the doc cannot come into being.
+// ---------------------------------------------------------------------------
+test("the declared feature doc may be created when it does not exist yet", () => {
+  const doc = { toolName: "write", input: { file_path: `/repo/${featureDocRelPath("demo")}` } };
+  const decision = trackGate(routed("tracked"), doc, emptyPolicy(), absent);
+  assert.equal(decision.allow, true, "the only way out of the deadlock must stay open");
+});
+
+test("once the doc exists it is NODD's again", () => {
+  // The door closes behind itself: with the document in place, the model has
+  // no business rewriting it, which is the forgery the gate exists to stop.
+  const doc = { toolName: "write", input: { file_path: `/repo/${featureDocRelPath("demo")}` } };
+  const decision = trackGate(routed("tracked"), doc, emptyPolicy(), present);
+  assert.equal(decision.allow, false, "an existing feature doc is extension-owned");
+});
+
+test("the escape does not extend to another slug's document", () => {
+  const other = { toolName: "write", input: { file_path: `/repo/${featureDocRelPath("other")}` } };
+  const decision = trackGate(routed("tracked"), other, emptyPolicy(), absent);
+  assert.equal(decision.allow, false, "only the declared slug's own doc is exempt");
+});
+
+test("the escape does not extend to other NODD artifacts", () => {
+  // The ledger is evidence. Nothing about the deadlock requires opening it.
+  const ledger = { toolName: "write", input: { file_path: "/repo/.nodd/demo/ledger.json" } };
+  const decision = trackGate(routed("tracked"), ledger, emptyPolicy(), absent);
+  assert.equal(decision.allow, false, "the ledger stays extension-owned");
 });

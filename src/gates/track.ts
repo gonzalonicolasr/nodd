@@ -35,15 +35,37 @@ export function trackGate(
 ): GateDecision {
   if (!resolveFlag("track", policy).enabled) return allow();
 
+  const declaration = committed.declaration;
+
   if (targetsNoddDir(request)) {
-    return refuse(
-      "track",
-      `${request.toolName} targets \`${targetPath(request)}\`, and NODD's own artifacts are written by NODD, not by the model`,
-      "use `nodd_task` to add or check off tasks, and `nodd_declare` to set the objective and route",
-    );
+    // The emergency door. While the declared document does not exist, creating
+    // it is allowed — because when `nodd_declare` was broken this gate had no
+    // way out at all: it refused every write until the document existed, and
+    // the only tool that could create it was the broken one. Disabling the
+    // gate meant writing config, itself a mutation, and `/nodd-allow` is not
+    // reachable from a subagent. The gate blocked every repair of its own
+    // cause.
+    //
+    // Narrow on purpose: only this slug's own `feature.md`, and only while it
+    // is absent. That is faithful to what the branch below defends — a
+    // document the model can rewrite is one it can forge *after the fact* —
+    // while leaving the ledger and every other artifact extension-owned.
+    const creatingDeclaredDoc =
+      declaration !== null &&
+      !docExists(declaration.slug) &&
+      targetPath(request)?.endsWith(featureDocRelPath(declaration.slug)) === true;
+
+    if (!creatingDeclaredDoc) {
+      return refuse(
+        "track",
+        `${request.toolName} targets \`${targetPath(request)}\`, and NODD's own artifacts are written by NODD, not by the model`,
+        "use `nodd_task` to add or check off tasks, and `nodd_declare` to set the objective and route",
+      );
+    }
+
+    return allow();
   }
 
-  const declaration = committed.declaration;
   if (!declaration) return allow();
   if (declaration.route === "inline") return allow();
   if (!isMutation(request)) return allow();
@@ -53,6 +75,9 @@ export function trackGate(
   return refuse(
     "track",
     `route \`${declaration.route}\` was declared but \`${path}\` does not exist, and ${request.toolName} would be the first write`,
-    `call \`nodd_declare\` with slug \`${declaration.slug}\` to create ${path}`,
+    // Two remedies, because the first one can itself be unavailable: a
+    // subagent has no slash commands, and a broken `nodd_declare` used to
+    // leave no action at all. Writing the document is always reachable.
+    `call \`nodd_declare\` with slug \`${declaration.slug}\` to create ${path}, or write ${path} directly`,
   );
 }
