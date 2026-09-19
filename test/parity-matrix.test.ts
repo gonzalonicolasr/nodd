@@ -18,6 +18,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GATE_IDS } from "../src/gates/registry.ts";
+import { emptyDoc, parseFeatureDoc, renderFeatureDoc } from "../src/feature-doc.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const requirements = readFileSync(join(root, ".sdd", "nodd", "requirements.md"), "utf8");
@@ -217,12 +218,21 @@ test("row 13: the Outcome section is derived, so a pending check cannot be dropp
   assert.match(row(13).how, /renderOutcome|derived|task list/i, "the row must name the real mechanism");
 });
 
+// `includes` over a whole source file is H2's shape: renaming the fields while
+// leaving the words in a comment kept this green. The row claims the values are
+// recorded and survive, so the test round-trips them through the real renderer
+// and parser instead of reading the source for words.
 test("row 45: TDD mode, source and runner are recorded and reach the gate", () => {
-  const doc = sourceOf("src/feature-doc.ts");
-  for (const field of ["runner", "tdd", "source"]) {
-    assert.ok(doc.includes(field), `the feature doc must persist ${field}`);
-  }
-  assert.ok(doc.includes("## Verification") || doc.includes('"Verification"'), "the doc needs the section that holds them");
+  const doc = emptyDoc({ slug: "row45", title: "Row 45" });
+  doc.verification = { runner: "npm test", tdd: "strict", source: "nodd_declare", files: ["a.ts"] };
+
+  const parsed = parseFeatureDoc(renderFeatureDoc(doc));
+  assert.deepEqual(parsed.defects, [], "the rendered doc must parse cleanly");
+  assert.deepEqual(
+    parsed.doc.verification,
+    { runner: "npm test", tdd: "strict", source: "nodd_declare", files: ["a.ts"] },
+    "mode, source, runner and files must survive the round trip",
+  );
   assert.ok(
     sourceOf("extensions/nodd-kernel.ts").includes("tdd:"),
     "the kernel must pass the recorded mode to the evidence gate, or the row's RED clause is unreachable",
