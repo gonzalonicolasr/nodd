@@ -146,4 +146,26 @@ mutation row above shows the corresponding guarantee still fails closed.
 | T039 | 365 tests, 365 pass, 0 fail |
 | T040 | 372 tests, 372 pass, 0 fail |
 | T041 | 380 tests, 380 pass, 0 fail |
-| T042 (final) | **389 tests, 389 pass, 0 fail** |
+| T042 | 389 tests, 389 pass, 0 fail |
+| mutation coverage (final) | **391 tests, 391 pass, 0 fail** |
+
+## Mutation coverage of the gate registry
+
+The verdict's residual risk was that a gate could be wired and inert. Every
+registry row was deleted in turn and the suite re-run:
+
+| unwired gate | failures |
+| --- | --- |
+| `authorize` | 5 |
+| `track` | 1 |
+| `classify` | 7 |
+| `delegate` | 2 (was **0** — fixed in this round) |
+| `promotion` | 3 (was **0** — B1) |
+
+`gate-evidence` is not a registry row: it guards `nodd_task check`, not writes.
+Bypassing it there fails 9 tests.
+
+`gate-delegate` was a second instance of B1 found by running the same mutation
+across every gate rather than only the one the verdict named: it had thorough
+unit tests and no proof of being registered. Two end-to-end tests now drive the
+writer and mapping thresholds through the real handler.

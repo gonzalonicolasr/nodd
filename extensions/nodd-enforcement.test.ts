@@ -444,6 +444,36 @@ test("gates.promotion off lets the diverging write through", () => {
 });
 
 // ---------------------------------------------------------------------------
+// gate-delegate, on the real path
+//
+// The gate had thorough unit tests and no proof of being wired: deleting its
+// registry row left the whole suite green, the same defect the round-1 verdict
+// found in gate-promotion. Unit-testing a gate function and registering it are
+// two claims, and only the second one blocks anything.
+// ---------------------------------------------------------------------------
+test("a second non-trivial write without a delegate is refused through the registry", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "inline", slug: "del", summary: "x", runner: "npm test" });
+  s.observe("write", { path: "/repo/a.ts" }, "");
+
+  const blocked = s.call("write", { path: "/repo/b.ts", content: "x" });
+  assert.equal(blocked?.block, true, "the writer threshold must fire from the registered gate");
+  assert.match(blocked!.reason!, /nodd\/delegate/);
+});
+
+test("reading past the mapping threshold without a delegate is refused through the registry", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "inline", slug: "map", summary: "x", runner: "npm test" });
+  for (const path of ["/r/1.ts", "/r/2.ts", "/r/3.ts", "/r/4.ts", "/r/5.ts"]) {
+    s.observe("read", { path }, "");
+  }
+
+  const blocked = s.call("write", { path: "/r/1.ts", content: "x" });
+  assert.equal(blocked?.block, true, "the mapping threshold must fire from the registered gate");
+  assert.match(blocked!.reason!, /nodd\/delegate/);
+});
+
+// ---------------------------------------------------------------------------
 // Resume: the README's fail-closed promise, made true
 //
 // Round 1 replayed persisted observations into `committed.commandResults`, which
