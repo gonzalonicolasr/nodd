@@ -43,8 +43,18 @@ test("every module the README cites exists on disk", () => {
   }
 });
 
-test("the seven canonical steps are documented", () => {
-  for (const step of CANONICAL_STEPS) assert.ok(README.includes(step), `step ${step} is undocumented`);
+// `README.includes(step)` is a substring match over the whole file, so five of
+// the seven steps were held up by an unrelated word: `authorize` by
+// `gate-authorize`, `classify` by `gate-classify`, `track` by `tracked`,
+// `implement` by `implemented`, `close` by `fail-closed`. Deleting a step from
+// the chain left the suite green. The claim is about the documented chain, so
+// that is what this reads: scoped to its section, and by identity, not presence.
+test("the seven canonical steps are documented, in order, in their section", () => {
+  const steps = section(/The seven canonical steps/);
+  const chain = /(`[a-z-]+`(?:\s*→\s*`[a-z-]+`)+)\./.exec(steps);
+  assert.ok(chain, "the canonical chain is missing from its section");
+  const named = chain[1].split("→").map((step) => step.trim().replaceAll("`", ""));
+  assert.deepEqual(named, [...CANONICAL_STEPS], "the documented chain is not the canonical step list");
 });
 
 // ---------------------------------------------------------------------------
