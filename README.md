@@ -29,7 +29,7 @@ steps where a model actually does work.
 | `gate-classify` | the first write | nothing was declared at all |
 | `gate-track` | the first source write on a `tracked`/`forge` route | no feature doc exists yet |
 | `gate-delegate` | writes and mutating bash | the mapping, writer or long-session threshold fired and nothing was delegated |
-| `gate-evidence` | checking a task off | the outcome was not observed as a success |
+| `gate-evidence` | checking a task off | the declared runner was not observed succeeding after the task's last write |
 | `gate-promotion` | writes | the work diverged from what was declared |
 
 Every refusal names what was observed, the action that unblocks it, and a
@@ -119,6 +119,30 @@ What does not exist is an **aggregate whole-session total across parent and
 children**. NODD does not claim one. What it has is a per-process count plus a
 shared on-disk artifact.
 
+### What actually satisfies a checkoff
+
+An observed exit-0 is not enough. `gate-evidence` requires four facts to line
+up, because a green command proves something only about *which* command ran and
+*when*:
+
+1. **A success**, parsed from the observed tool result (`src/outcome.ts`).
+2. **The declared runner.** `nodd_declare` records a `runner` into the feature
+   doc's `## Verification` section, and only runs of that command count.
+   `npm test -- one.test.ts` counts; `echo "all tests pass"` does not, and
+   neither does any other command that merely mentions the runner.
+3. **After the task's last write.** A run observed before the edit it supposedly
+   verifies proves nothing about the edit. Ordering uses the kernel's
+   observation sequence rather than the wall clock, because a write and the run
+   after it routinely land in the same millisecond.
+4. **A RED first, under strict TDD**, when the declaration set `tdd: strict`.
+
+The honest limit: **the model still chooses the runner.** NODD cannot know what
+the right check for your project is. What it enforces is that the choice is made
+up front, in a durable artifact, before the work — so the command the work is
+judged by cannot be invented afterwards to fit whatever happened to pass. If no
+runner was declared, fact 2 is skipped and the recorded evidence says the runner
+was not pinned; it does not pretend otherwise.
+
 ### Resume: prior evidence comes back as `unverified`
 
 When you resume a feature in a new session, the previous session's evidence is
@@ -188,8 +212,16 @@ Turning off `track` is also the documented way to hand-edit a feature document.
 ODD selects the SDD route by predicted magnitude (`routing.go:68`: file count,
 changed lines, size, perceived risk). **NODD diverges here deliberately.**
 `gate-promotion` reads no size, no line count and no risk score. Its triggers
-are observables only: two consecutive non-success outcomes on one task, a task
-writing more distinct files than it declared, or an explicit request.
+are observables only, and there are exactly two: two consecutive non-success
+outcomes of the runner the task declared, and a task writing more distinct
+files than it declared.
+
+A third trigger, "the user asked", was specified and removed. `/nodd-promote`
+performs the promotion itself and holds no kernel state, so no gate can observe
+the asking and still have something useful to do about it — blocking a write to
+suggest the command you just ran is circular. It shipped once as a hardcoded
+`false`, which is precisely the overclaim this gate exists to prevent, so it is
+gone from the type and the docs rather than left looking operational.
 
 A big task that succeeds is not divergent. A three-line task that fails twice
 is. A source-scan test rejects every size-flavoured identifier in the promotion
@@ -239,8 +271,11 @@ The two most load-bearing `(P)` clauses:
 
 NODD injects two blocks per turn: block A (the session state) and block B (the
 forwarded prose for the current step only). They are capped at **1500** and
-**2500** characters, enforced by truncation and pinned by a test that fails if
-either grows.
+**2500** characters. The budget is asserted against the *corpus* — the text
+before any truncation — so adding a clause that does not fit turns the test red
+instead of silently pushing an existing clause out. If a block does overflow at
+runtime it is cut, and the cut announces itself inside the block and in the
+rendered result's `overBudget` list, never silently.
 
 The cap is the mechanism. gentle's guidance surface reached 105,993 bytes one
 individually-defensible clause at a time: no single addition was wrong, the sum

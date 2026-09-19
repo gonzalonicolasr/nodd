@@ -107,9 +107,33 @@ test("the escalation-divergence divergence from ODD is declared, naming routing.
   assert.match(around, /diverg/i, "and labelled as a deliberate divergence");
 });
 
-test("the parity matrix carries all three classes", () => {
-  for (const marker of ["(M)", "(P)", "(F)"]) {
-    assert.ok(README.includes(marker), `the matrix must classify ${marker}`);
+// This test used to be `assert.ok(README.includes("(M)"))` per marker, which
+// passes on any document containing those three substrings and was the stated
+// acceptance criterion for the whole matrix. The substance -- that every (M) row
+// names a mechanism that exists -- is checked against the code in
+// `test/parity-matrix.test.ts`. What belongs here is only that the README's
+// summary does not contradict the matrix it summarizes.
+test("the README's matrix summary agrees with the matrix itself", () => {
+  const requirements = readFileSync(new URL("../.sdd/nodd/requirements.md", import.meta.url), "utf8");
+  const matrix = requirements.slice(requirements.indexOf("# ODD parity matrix"));
+  const rows = matrix.split("\n").filter((line) => /^\| \d+ \|/.test(line));
+  assert.ok(rows.length >= 50, `the matrix must be present to be summarized, parsed ${rows.length}`);
+
+  // Every class the matrix uses must be explained in the README, and the README
+  // must not advertise a class the matrix never assigns.
+  for (const marker of ["M", "P", "F"] as const) {
+    assert.ok(
+      rows.some((row) => row.includes(`**${marker}**`)),
+      `the matrix assigns no (${marker}): fix the matrix or stop advertising the class`,
+    );
+    assert.ok(README.includes(`(${marker})`), `the README must explain what (${marker}) means`);
+  }
+
+  // A quoted total is how "fully classified" quietly stops being true as ODD's
+  // surface grows, so if the README states one it must be the real one.
+  const quoted = README.match(/(\d+)\s+(?:clauses|rows)\b/i);
+  if (quoted) {
+    assert.equal(Number(quoted[1]), rows.length, `the README says ${quoted[1]}, the matrix has ${rows.length}`);
   }
 });
 

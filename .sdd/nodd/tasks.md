@@ -841,7 +841,7 @@ or lower the claim to the truth where the mechanism is not derivable.
   that the ledger file exists after a checkoff.
 - review: ~220 changed lines
 
-## [ ] T042 — Every `(M)` row of the parity matrix names a mechanism that exists
+## [x] T042 — Every `(M)` row of the parity matrix names a mechanism that exists
 
 - files:
   - `.sdd/nodd/requirements.md`, `README.md`, `src/feature-doc.ts`
