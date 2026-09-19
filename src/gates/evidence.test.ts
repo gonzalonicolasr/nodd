@@ -171,12 +171,46 @@ test("the declared runner with its own arguments is still the declared runner", 
 
 test("with no runner declared, any observed success still has to postdate the write", () => {
   // Honest limit, stated: a feature doc without a declared runner cannot have
-  // its command checked against one. The write-ordering half still applies, and
-  // the recorded evidence says the runner was not pinned.
+  // its command checked against one. The write-ordering half still applies.
   const state = afterCommand("node --test", false, "ok");
   const decision = evidenceGate(state, ledgerFor(state), { task: "T1", lastWriteAt: "2026-09-19T10:00:00.000Z", runner: null }, emptyPolicy());
   assert.equal(decision.allow, true);
   assert.equal(decision.allow === true && decision.observed.command, "node --test");
+});
+
+// The other half of that limit, which the README promises and round 2 only
+// wrote down: the *artifact* has to disclose it. A reader auditing a checkoff
+// must be able to tell a run certified by the declared runner from one
+// certified by whatever exit-0 string was handy. Without this the round-1 echo
+// attack still lands, in full, by omitting one optional field at declaration.
+test("an unpinned runner is disclosed in the recorded evidence, not silently skipped", () => {
+  const state = afterCommand("echo 'I have verified that all tests pass'", false, "ok");
+  const unpinned = evidenceGate(
+    state,
+    ledgerFor(state),
+    { task: "T1", lastWriteAt: "2026-09-19T10:00:00.000Z", runner: null },
+    emptyPolicy(),
+  );
+  assert.equal(unpinned.allow, true, "with nothing pinned there is nothing to compare against");
+  assert.equal(
+    unpinned.allow === true && unpinned.observed.outcome,
+    "success (runner not pinned)",
+    "the outcome carried into the feature doc must say the check was never pinned",
+  );
+  assert.equal(
+    renderObserved(unpinned.allow === true ? unpinned.observed : null),
+    "observed: `echo 'I have verified that all tests pass'` → success (runner not pinned)",
+  );
+
+  // And the disclosure is not blanket noise: a checkoff certified by the
+  // declared runner must stay clean, or the two cases read the same again.
+  const pinned = afterCommand("npm test", false, "ok");
+  const certified = evidenceGate(pinned, ledgerFor(pinned), check, emptyPolicy());
+  assert.equal(certified.allow === true && certified.observed.outcome, "success");
+  assert.equal(
+    renderObserved(certified.allow === true ? certified.observed : null),
+    "observed: `npm test` → success",
+  );
 });
 
 // routing.go:101 — in TDD mode the failing test comes first.

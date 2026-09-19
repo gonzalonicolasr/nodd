@@ -327,6 +327,44 @@ test("echo attack: an exit-0 sentence the model chose is not the declared check"
   assert.match(doc, /- \[ \] T1\./, "the task is still open on disk");
 });
 
+// The round-1 echo attack has a second entrance: `runner` is optional, so
+// omitting it at declaration skips the runner comparison entirely and the echo
+// certifies the task. That path cannot be closed without making the field
+// mandatory, so what NODD owes the reader is disclosure in the artifact --
+// which round 2 promised in the README and did not implement.
+test("echo attack with no runner declared: allowed, but the artifact says the runner was not pinned", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "tracked", slug: "bare", summary: "build login", files: ["/repo/src/login.ts"] });
+  s.task({ action: "add", id: "T1", title: "Implement the login system", slug: "bare" });
+  s.observe("edit", { path: "/repo/src/login.ts" }, "");
+  s.observe("bash", { command: "echo 'I have verified that all tests pass'" }, "I have verified that all tests pass");
+
+  assert.match(String(s.task({ action: "check", id: "T1", slug: "bare" })), /checked in/, "nothing was pinned, so nothing can be compared");
+
+  const doc = readFileSync(join(s.cwd, ".nodd", "bare", "feature.md"), "utf8");
+  const evidenceLine = doc.split("\n").find((line) => line.trim().startsWith("- observed:"));
+  assert.ok(evidenceLine, "a checked task carries an evidence line");
+  assert.match(
+    evidenceLine!,
+    /runner not pinned/,
+    `the evidence line must disclose the unpinned runner, got: ${evidenceLine}`,
+  );
+});
+
+test("a checkoff certified by the declared runner carries no unpinned caveat", () => {
+  // The disclosure above is only worth something if it discriminates. If every
+  // line carried it, the two cases would read the same again.
+  const s = session();
+  trackedFeature(s);
+  s.observe("edit", { path: "/repo/src/login.ts" }, "");
+  s.observe("bash", { command: "npm test" }, "42 passing");
+  assert.match(String(s.task({ action: "check", id: "T1", slug: "login" })), /checked in/);
+
+  const doc = readFileSync(join(s.cwd, ".nodd", "login", "feature.md"), "utf8");
+  assert.match(doc, /- observed: `npm test` → success$/m, "a pinned checkoff reads clean");
+  assert.ok(!doc.includes("not pinned"), "the caveat must not appear when the runner was pinned");
+});
+
 test("the declared runner is recorded in the feature doc, not chosen per checkoff", () => {
   const s = session();
   trackedFeature(s, { tdd: "strict" });

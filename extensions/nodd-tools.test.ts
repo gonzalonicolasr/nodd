@@ -114,7 +114,10 @@ test("a checkoff with no observed run is refused by the evidence gate", () => {
 test("a checkoff records the observed command, never an invented one", () => {
   const cwd = tmp();
   const kernel = createKernel(undefined, cwd);
-  kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
+  // The runner is pinned here because that is the ordinary tracked declaration:
+  // an unpinned one records `success (runner not pinned)` instead, which is a
+  // different claim and has its own tests.
+  kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo", runner: "node --test" });
   kernel.task({ action: "add", id: "T1", title: "First", slug: "demo" });
   observeGreen(kernel, "node --test");
 

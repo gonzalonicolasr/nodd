@@ -25,7 +25,11 @@
 // doc's `## Verification` section, and the gate compares against it.
 //
 // Honest limit: when no runner was declared, fact 4 cannot be checked and is
-// skipped rather than faked. The refusal and the artifact both say so.
+// skipped rather than faked. The artifact says so in the evidence line itself —
+// `success (runner not pinned)` — because a reader auditing a checkoff has to
+// be able to tell a run certified by the declared runner from one certified by
+// whatever exit-0 string was handy. Saying it only in `## Verification` leaves
+// the line that is actually read indistinguishable from a pinned one.
 //
 // Plus a fourth, per the ledger integrity rule: the record must be one this
 // kernel observed. A record on disk is a claim about the past; only the
@@ -187,7 +191,9 @@ export function evidenceGate(
     allow: true,
     observed: {
       command: chosen.command,
-      outcome: describeOutcome(chosen.outcome),
+      outcome: request.runner === null
+        ? `${describeOutcome(chosen.outcome)} (runner not pinned)`
+        : describeOutcome(chosen.outcome),
       at: chosen.at,
       toolCallId: chosen.toolCallId,
       ...(request.tdd?.mode === "strict" ? { tdd: request.tdd } : {}),
