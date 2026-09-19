@@ -12,7 +12,8 @@ function fakePi() {
     tools,
     on() {},
     appendEntry() {},
-    registerTool(name: string, options: any) { tools.set(name, options); },
+    // Replica `loader.js:215-222`: pi pasa UN objeto y hace `tools.set(tool.name, …)`.
+    registerTool(tool: any) { tools.set(tool.name, tool); },
   };
 }
 

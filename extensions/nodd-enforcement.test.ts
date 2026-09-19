@@ -40,7 +40,8 @@ function session(options: { cwd?: string; entries?: Array<Record<string, unknown
   const entries = options.entries ?? [];
   const pi = {
     on: (event: string, handler: Handler) => handlers.set(event, handler),
-    registerTool: (name: string, opts: { handler: (args: never) => unknown }) => tools.set(name, opts.handler),
+    // Replica `loader.js:215-222`: pi pasa UN objeto y hace `tools.set(tool.name, …)`.
+    registerTool: (tool: { name: string; handler: (args: never) => unknown }) => tools.set(tool.name, tool.handler),
     appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
   };
   const cwd = options.cwd ?? mkdtempSync(join(tmpdir(), "nodd-enforce-"));

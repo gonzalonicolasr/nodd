@@ -57,7 +57,10 @@ type AgentStartEvent = { systemPrompt?: unknown };
 type PiApi = {
   on(event: string, handler: (event: never) => unknown): void;
   appendEntry?(type: string, data?: unknown): void;
-  registerTool?(name: string, options: unknown): void;
+  // Un solo objeto, con el nombre adentro. pi hace `tools.set(tool.name, …)`:
+  // pasarle (name, options) como a registerCommand deja el nombre en undefined
+  // y el provider rechaza el request entero con "tools[N].name is required".
+  registerTool?(tool: { name: string } & Record<string, unknown>): void;
 };
 
 const INTENTS: readonly Intent[] = ["read-only", "change"];
@@ -533,11 +536,13 @@ export default function register(pi?: PiApi, cwd: string = process.cwd()): Kerne
   // one-shot hatches on top of this at runtime.
   kernel.setPolicy(readPolicy());
 
-  pi.registerTool?.("nodd_declare", {
+  pi.registerTool?.({
+    name: "nodd_declare",
     ...DECLARE_SCHEMA,
     handler: (args: DeclareArgs) => kernel.declare(args).text,
   });
-  pi.registerTool?.("nodd_task", {
+  pi.registerTool?.({
+    name: "nodd_task",
     ...TASK_SCHEMA,
     handler: (args: TaskArgs) => kernel.task(args).text,
   });
