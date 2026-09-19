@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import register, { createKernel, featureDocPath } from "./nodd-kernel.ts";
+import { loadPiToolWrapper } from "./pi-tool-wrapper.ts";
 import { parseFeatureDoc } from "../src/feature-doc.ts";
 
 function fakePi() {
@@ -209,4 +210,73 @@ test("a checkoff after an observed commit records that SHA as the candidate", ()
 
   const task = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8")).doc.tasks[0];
   assert.equal(task.checked && task.candidate, "7c0ffee");
+});
+
+// ---------------------------------------------------------------------------
+// The tools as pi runs them.
+//
+// Every test above this line calls `kernel.declare()` directly, which is the
+// layer *below* the defect: pi never calls that. It calls `definition.execute`
+// through `wrapToolDefinition`, and NODD registered `handler`, so both tools
+// threw `definition.execute is not a function` for every published version.
+//
+// This is the third defect of that family — after the `registerTool` signature
+// and `file_path` vs `path` — and all three escaped for the same reason: the
+// double copied the wrong shape from the code it was checking. These tests go
+// through pi's own wrapper instead.
+// ---------------------------------------------------------------------------
+test("the registered tools run through pi's own wrapper", async (t) => {
+  const wrap = loadPiToolWrapper();
+  if (!wrap) return t.skip("pi is not installed beside us");
+
+  const pi = fakePi();
+  const cwd = tmp();
+  register(pi as never, cwd, tmp());
+
+  const wrapped = wrap(pi.tools.get("nodd_declare"), () => ({}));
+  const result = await wrapped.execute(
+    "call-1",
+    { intent: "change", route: "tracked", slug: "demo", title: "Demo", summary: "make it work" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  assert.ok(existsSync(featureDocPath(cwd, "demo")), "the feature doc must exist after pi runs the tool");
+  assert.equal(result.content?.[0]?.type, "text", "pi renders `content`, not a bare string");
+  assert.match(String(result.content?.[0]?.text), /demo/);
+});
+
+test("nodd_task runs through pi's wrapper too", async (t) => {
+  const wrap = loadPiToolWrapper();
+  if (!wrap) return t.skip("pi is not installed beside us");
+
+  const pi = fakePi();
+  const cwd = tmp();
+  register(pi as never, cwd, tmp());
+
+  const declare = wrap(pi.tools.get("nodd_declare"), () => ({}));
+  await declare.execute("c1", { intent: "change", route: "tracked", slug: "demo", title: "D", summary: "s" }, undefined, undefined, {});
+
+  const task = wrap(pi.tools.get("nodd_task"), () => ({}));
+  const result = await task.execute("c2", { action: "add", slug: "demo", id: "T1", title: "first" }, undefined, undefined, {});
+
+  const { doc } = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8"));
+  assert.equal(doc.tasks.length, 1, "the task must reach the document");
+  assert.match(String(result.content?.[0]?.text), /T1/);
+});
+
+test("every registered tool satisfies pi's ToolDefinition contract", () => {
+  // `types.d.ts:344-372`. `label` is what pi shows in the UI, and it was
+  // missing on both tools; `execute` is what pi calls.
+  const pi = fakePi();
+  register(pi as never, tmp(), tmp());
+
+  for (const [name, tool] of pi.tools) {
+    assert.equal(typeof tool.name, "string", `${name}: name`);
+    assert.equal(typeof tool.label, "string", `${name}: label is required and was missing`);
+    assert.equal(typeof tool.description, "string", `${name}: description`);
+    assert.equal(typeof tool.execute, "function", `${name}: pi calls execute, not handler`);
+    assert.equal(tool.parameters?.type, "object", `${name}: parameters`);
+  }
 });

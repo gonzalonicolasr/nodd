@@ -36,12 +36,14 @@ type Block = { block?: boolean; reason?: string; terminate?: boolean } | undefin
  */
 function session(options: { cwd?: string; entries?: Array<Record<string, unknown>> } = {}) {
   const handlers = new Map<string, Handler>();
-  const tools = new Map<string, (args: never) => unknown>();
+  const tools = new Map<string, { name: string; execute: (id: string, args: never) => { content?: Array<{ text?: string }> } }>();
   const entries = options.entries ?? [];
   const pi = {
     on: (event: string, handler: Handler) => handlers.set(event, handler),
     // Replica `loader.js:215-222`: pi pasa UN objeto y hace `tools.set(tool.name, …)`.
-    registerTool: (tool: { name: string; handler: (args: never) => unknown }) => tools.set(tool.name, tool.handler),
+    // Store the definition, not one field of it: a double that keeps only the
+    // field the code happens to set cannot notice when pi wants another one.
+    registerTool: (tool: { name: string }) => tools.set(tool.name, tool),
     appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
   };
   const cwd = options.cwd ?? mkdtempSync(join(tmpdir(), "nodd-enforce-"));
@@ -76,7 +78,14 @@ function session(options: { cwd?: string; entries?: Array<Record<string, unknown
     runTool(toolName: string, args: Record<string, unknown>): string {
       const toolCallId = `call-${nextId++}`;
       toolCall!({ toolName, toolCallId, input: args });
-      const text = String(tools.get(toolName)!(args as never));
+      // pi's `execute` is async; the kernel underneath it is not. These ~50
+      // call sites assert on the text synchronously, so they go through the
+      // kernel directly. The tools' own contract with pi — `execute`, `label`,
+      // `content` blocks — is covered in `nodd-tools.test.ts` through pi's
+      // real `wrapToolDefinition`.
+      const text = toolName === "nodd_declare"
+        ? kernel.declare(args as never).text
+        : kernel.task(args as never).text;
       toolResult!({ toolName, toolCallId, input: args, isError: false, content: text });
       return text;
     },

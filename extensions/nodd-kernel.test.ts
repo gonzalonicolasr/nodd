@@ -193,7 +193,7 @@ test("the footer follows the declared route", () => {
 
   const args = { intent: "change", route: "tracked", slug: "auth", title: "login", summary: "s" };
   handlers.get("tool_call")?.({ toolName: "nodd_declare", toolCallId: "d1", input: args }, ui);
-  const out = tools.get("nodd_declare")?.handler(args);
+  const out = tools.get("nodd_declare")?.execute("d1", args)?.content?.[0]?.text;
   handlers.get("tool_result")?.({ toolName: "nodd_declare", toolCallId: "d1", input: args, isError: false, content: out }, ui);
 
   assert.equal(status.get("nodd"), "nodd · tracked · auth");

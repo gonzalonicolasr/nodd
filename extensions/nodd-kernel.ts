@@ -460,6 +460,17 @@ const TASK_SCHEMA = {
   },
 };
 
+/**
+ * A kernel result in the shape pi renders.
+ *
+ * pi expects `content` blocks, not a string (`dynamic-tools.ts:41-44`), and
+ * reads `isError` to mark the call as failed — so a refusal the kernel reports
+ * as `ok: false` is shown as an error instead of quietly reading as success.
+ */
+function toolResult(result: { ok: boolean; text: string }) {
+  return { content: [{ type: "text" as const, text: result.text }], isError: result.ok === false };
+}
+
 /** pi's tool input, as a plain object a gate can read. */
 function normalizeInput(input: unknown): Record<string, unknown> {
   return typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
@@ -566,15 +577,22 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
   // one-shot hatches on top of this at runtime.
   kernel.reloadPolicy();
 
+  // pi calls `definition.execute` (`tool-definition-wrapper.js:11`) and renders
+  // `label` in the UI (`types.d.ts:344-372`). Registering a `handler` returning
+  // a bare string type-checked and did nothing: both tools threw
+  // `definition.execute is not a function` on every call, which made the
+  // `tracked` route unusable in every published version up to 0.5.0.
   pi.registerTool?.({
     name: "nodd_declare",
+    label: "NODD Declare",
     ...DECLARE_SCHEMA,
-    handler: (args: DeclareArgs) => kernel.declare(args).text,
+    execute: async (_toolCallId: string, params: DeclareArgs) => toolResult(kernel.declare(params)),
   });
   pi.registerTool?.({
     name: "nodd_task",
+    label: "NODD Task",
     ...TASK_SCHEMA,
-    handler: (args: TaskArgs) => kernel.task(args).text,
+    execute: async (_toolCallId: string, params: TaskArgs) => toolResult(kernel.task(params)),
   });
 
   // Enforcement. The gates are useless unless they run here: this is the only
