@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { emptyCommitted, type Committed } from "./state.ts";
 import { emptyPolicy, type Policy } from "./gates/policy.ts";
 import { CANONICAL_STEPS } from "./manifest.ts";
-import { BLOCK_A_BUDGET, BLOCK_B_BUDGET, renderPrompt } from "./prompt.ts";
+import { ODD_PROSE, type ProseEntry } from "./odd-prose.ts";
+import { BLOCK_A_BUDGET, BLOCK_B_BUDGET, renderBlockA, renderBlockB, renderPrompt } from "./prompt.ts";
 
 function committed(overrides: Partial<Committed> = {}): Committed {
   return { ...emptyCommitted(), ...overrides };
@@ -102,18 +103,58 @@ test("the budgets are the documented numbers", () => {
   assert.equal(BLOCK_B_BUDGET, 2500);
 });
 
-test("every step, every policy, stays inside both budgets", () => {
+// This is the anti-ratchet assertion, and it is deliberately made on the text
+// *before* `renderPrompt` cuts it. Asserting on the emitted block would be
+// `min(len, budget) <= budget` — an assertion no corpus on earth can fail,
+// which is exactly the shape the round-1 verdict caught. Here, one clause too
+// many turns this red.
+test("every step, every policy, stays inside both budgets BEFORE any truncation", () => {
   const states = [undeclared, tracked];
   const policies = [emptyPolicy(), allOff, { ...emptyPolicy(), hatches: { track: { reason: "x" } } }];
 
   for (const step of CANONICAL_STEPS) {
+    const blockB = renderBlockB(step);
+    assert.ok(blockB.length <= BLOCK_B_BUDGET, `block B at ${step} is ${blockB.length} > ${BLOCK_B_BUDGET} before truncation`);
     for (const state of states) {
       for (const policy of policies) {
-        const { blockA, blockB } = renderPrompt(state, policy, { step });
-        assert.ok(blockA.length <= BLOCK_A_BUDGET, `block A at ${step} is ${blockA.length} > ${BLOCK_A_BUDGET}`);
-        assert.ok(blockB.length <= BLOCK_B_BUDGET, `block B at ${step} is ${blockB.length} > ${BLOCK_B_BUDGET}`);
+        const blockA = renderBlockA(state, policy, step);
+        assert.ok(blockA.length <= BLOCK_A_BUDGET, `block A at ${step} is ${blockA.length} > ${BLOCK_A_BUDGET} before truncation`);
       }
     }
+  }
+});
+
+// The test above is only a defence if it can fail. This one proves it can, by
+// doing to the corpus exactly what the verdict did: growing it. If this ever
+// stops throwing, the assertion above has gone tautological again.
+test("growing the corpus past the budget makes the anti-ratchet assertion fail", () => {
+  const padding: ProseEntry[] = Array.from({ length: 40 }, (_, i) => ({
+    row: 1000 + i,
+    line: ":999",
+    step: "implement" as const,
+    clause: `Filler clause ${i}: individually defensible, collectively a wall of prose.`,
+    reason: "a padding entry, here only to prove the budget assertion is reachable",
+  }));
+  const grown = [...ODD_PROSE.filter((entry) => entry.step === "implement"), ...padding];
+
+  const rendered = renderBlockB("implement", grown);
+  assert.ok(
+    rendered.length > BLOCK_B_BUDGET,
+    "40 extra clauses must overflow the budget; if they do not, the budget is not measuring the corpus",
+  );
+  assert.throws(
+    () => assert.ok(rendered.length <= BLOCK_B_BUDGET),
+    "the anti-ratchet assertion must reject a grown corpus",
+  );
+});
+
+test("a real ODD clause is never silently dropped to make room", () => {
+  // The verdict's worst finding: with padding injected first, all four real
+  // `implement` clauses fell out of the emitted block and nothing said so.
+  const real = ODD_PROSE.filter((entry) => entry.step === "implement");
+  const blockB = renderBlockB("implement");
+  for (const entry of real) {
+    assert.ok(blockB.includes(entry.clause), `row ${entry.row} must survive into block B whole`);
   }
 });
 
@@ -122,12 +163,27 @@ test("a mid-implementation prompt stays under 4000 characters combined", () => {
   assert.ok(blockA.length + blockB.length <= 4000, `combined ${blockA.length + blockB.length}`);
 });
 
-test("the budget is enforced by truncation, not by hope", () => {
-  // If a future clause pushes a step over budget, the renderer must cut rather
-  // than emit an oversized block — and the cut must be visible.
-  const { blockB } = renderPrompt(tracked, emptyPolicy(), { step: "implement", blockBBudget: 200 });
+test("an over-budget block is cut, and the cut is announced in the block itself", () => {
+  // Production must not lose characters quietly. The cut stays — the budget is
+  // the point — but the block says it happened and by how much, so the next
+  // author meets the decision instead of the loss.
+  const { blockB, overBudget } = renderPrompt(tracked, emptyPolicy(), { step: "implement", blockBBudget: 200 });
   assert.ok(blockB.length <= 200, `truncated block is ${blockB.length}`);
-  assert.match(blockB, /…|\.\.\./, "a truncated block says it was truncated");
+  assert.match(blockB, /NODD/, "the notice names who cut it");
+  assert.match(blockB, /over budget|cut/i, "a truncated block says it was truncated");
+  assert.match(blockB, new RegExp(String(renderBlockB("implement").length)), "and reports the real pre-cut size");
+  assert.deepEqual(
+    overBudget.length,
+    1,
+    "an overflow is reported to the caller, not only buried in the text",
+  );
+  assert.match(overBudget[0], /block B/, overBudget[0]);
+});
+
+test("a block inside its budget reports no overflow and carries no notice", () => {
+  const { blockA, blockB, overBudget } = renderPrompt(tracked, emptyPolicy(), { step: "implement" });
+  assert.deepEqual(overBudget, [], "the shipped corpus fits, so nothing is announced");
+  assert.ok(!blockA.includes("over budget") && !blockB.includes("over budget"));
 });
 
 test("the renderer is pure: same inputs, same bytes, no file access", () => {

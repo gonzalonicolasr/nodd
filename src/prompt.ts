@@ -14,6 +14,20 @@
 // shorten another — which is exactly the conversation that never happened in
 // gentle.
 //
+// For that to be a defence rather than a story, two things have to hold, and
+// round 1 of this build had neither:
+//
+//   - **the test measures the corpus, not the cut.** `renderBlockA`/`renderBlockB`
+//     are exported *unbudgeted* so `prompt.test.ts` can assert on what the
+//     corpus renders to. Asserting on `renderPrompt`'s output instead compares
+//     the truncator's output to the truncator's own limit, which no corpus can
+//     fail.
+//   - **overflow is loud.** A cut still happens — the budget is the mechanism —
+//     but the emitted block says it was cut and by how much, and `renderPrompt`
+//     returns the overflows so the caller can surface them. A silently dropped
+//     clause is the exact failure this budget exists to prevent, so it must not
+//     be how the budget is enforced.
+//
 // ## Guidance survives the kill switch
 //
 // With every gate disabled, block A collapses to one line and block B still
@@ -23,7 +37,7 @@
 
 import { GATE_IDS, type GateId } from "./gates/registry.ts";
 import { resolveFlag, type Policy } from "./gates/policy.ts";
-import { proseForStep } from "./odd-prose.ts";
+import { proseForStep, type ProseEntry } from "./odd-prose.ts";
 import type { CanonicalStep } from "./manifest.ts";
 import type { Committed } from "./state.ts";
 
@@ -31,7 +45,12 @@ import type { Committed } from "./state.ts";
 export const BLOCK_A_BUDGET = 1500;
 export const BLOCK_B_BUDGET = 2500;
 
-export type Prompt = { blockA: string; blockB: string };
+export type Prompt = {
+  blockA: string;
+  blockB: string;
+  /** One line per block that did not fit. Empty when everything fitted. */
+  overBudget: string[];
+};
 
 export type RenderOptions = {
   step?: CanonicalStep;
@@ -51,13 +70,22 @@ function enabledGates(policy: Policy): GateId[] {
   return GATE_IDS.filter((gate) => resolveFlag(gate, policy).enabled);
 }
 
-/** Cut to budget, visibly. A silently trimmed clause is worse than a short one. */
-function fit(text: string, budget: number): string {
-  if (text.length <= budget) return text;
-  return `${text.slice(0, Math.max(0, budget - 1)).trimEnd()}…`;
+/**
+ * Cut to budget and say so, in the block and to the caller. The notice is part
+ * of the budget: it is rendered inside the remaining room, so an over-budget
+ * block is still an under-budget block, just a visibly damaged one.
+ */
+function fit(text: string, budget: number, label: string): { text: string; problem: string | null } {
+  if (text.length <= budget) return { text, problem: null };
+
+  const problem = `${label} is ${text.length} characters, over its ${budget}-character budget: ${text.length - budget} were cut. Shorten or remove a clause instead of raising the budget.`;
+  const notice = `\n[NODD: ${label} over budget — ${text.length}/${budget} characters, cut]`;
+  const room = Math.max(0, budget - notice.length);
+  return { text: `${text.slice(0, room).trimEnd()}${notice}`, problem };
 }
 
-function renderBlockA(committed: Committed, policy: Policy, step: CanonicalStep): string {
+/** Block A at full length, unbudgeted. The budget is applied by `renderPrompt`. */
+export function renderBlockA(committed: Committed, policy: Policy, step: CanonicalStep): string {
   const enabled = enabledGates(policy);
 
   if (enabled.length === 0) {
@@ -84,8 +112,11 @@ function renderBlockA(committed: Committed, policy: Policy, step: CanonicalStep)
   return lines.join("\n");
 }
 
-function renderBlockB(step: CanonicalStep): string {
-  const entries = proseForStep(step);
+/**
+ * Block B at full length, unbudgeted. `entries` is injectable so the anti-ratchet
+ * test can render a grown corpus and prove the budget assertion is reachable.
+ */
+export function renderBlockB(step: CanonicalStep, entries: readonly ProseEntry[] = proseForStep(step)): string {
   if (entries.length === 0) return "";
   // Only the clause text: the row number and the not-mechanizable reason are
   // there for the reader of the corpus, and spending budget on them would push
@@ -95,8 +126,11 @@ function renderBlockB(step: CanonicalStep): string {
 
 export function renderPrompt(committed: Committed, policy: Policy, options: RenderOptions = {}): Prompt {
   const step = options.step ?? currentStep(committed);
+  const a = fit(renderBlockA(committed, policy, step), options.blockABudget ?? BLOCK_A_BUDGET, "block A");
+  const b = fit(renderBlockB(step), options.blockBBudget ?? BLOCK_B_BUDGET, "block B");
   return {
-    blockA: fit(renderBlockA(committed, policy, step), options.blockABudget ?? BLOCK_A_BUDGET),
-    blockB: fit(renderBlockB(step), options.blockBBudget ?? BLOCK_B_BUDGET),
+    blockA: a.text,
+    blockB: b.text,
+    overBudget: [a.problem, b.problem].filter((problem): problem is string => problem !== null),
   };
 }

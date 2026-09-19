@@ -760,7 +760,7 @@ a budget with an assertion that measures the output of the truncator. No
 completed task is reopened: these are new tasks that add the missing mechanism,
 or lower the claim to the truth where the mechanism is not derivable.
 
-## [ ] T038 — The prompt budget fails loudly instead of truncating in silence
+## [x] T038 — The prompt budget fails loudly instead of truncating in silence
 
 - files:
   - `src/prompt.ts`
