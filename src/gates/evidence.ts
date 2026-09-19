@@ -36,7 +36,7 @@
 // not make the document assert something that was never verified.
 
 import type { Committed } from "../state.ts";
-import { classifyRecords, type LedgerRecord } from "../ledger.ts";
+import { classifyRecords, describeDegraded, type LedgerRecord } from "../ledger.ts";
 import { describeOutcome, isSuccess, parseOutcome } from "../outcome.ts";
 import { refuse, resolveFlag, type Policy, type Remedy } from "./policy.ts";
 
@@ -61,6 +61,8 @@ export type ObservedEvidence = {
   command: string;
   outcome: string;
   at?: string;
+  /** The call this evidence came from, so the caller can record exactly it. */
+  toolCallId?: string;
   tdd?: TddContext;
 };
 
@@ -106,9 +108,27 @@ export function evidenceGate(
     outcome: parseOutcome(result.isError, result.resultText),
   }));
 
-  // A ledger record this kernel did not observe is unverified, not evidence.
+  // A ledger record this kernel did not observe is unverified, not evidence; one
+  // it *did* observe and that says something else is a mismatch, which is a
+  // different and more serious failure. Passing the observed calls is what makes
+  // the second branch reachable at all.
   const observedIds = new Set(runs.map((run) => run.toolCallId));
-  const { degraded } = classifyRecords(ledger, observedIds);
+  const observedCalls = new Map(runs.map((run) => [
+    run.toolCallId,
+    { command: run.command, outcome: describeOutcome(run.outcome) },
+  ]));
+  const { degraded } = classifyRecords(ledger, observedIds, observedCalls);
+
+  const contradicted = degraded.filter((entry) => entry.reason === "mismatch");
+  if (contradicted.length > 0) {
+    // Fail closed and say which way: the ledger on disk disagrees with what this
+    // process watched happen, so neither can be trusted to back a checkoff.
+    return deny(
+      `the ledger contradicts this session's observations: ${describeDegraded(contradicted).join(" ")}`,
+      "re-run the verification command so a fresh, observed result replaces the contradicted record",
+    );
+  }
+
   if (runs.length === 0 && degraded.length > 0) {
     // Resuming in a new process lands here every time, by design: evidence
     // means "observed by this kernel", and a fresh process has observed
@@ -169,6 +189,7 @@ export function evidenceGate(
       command: chosen.command,
       outcome: describeOutcome(chosen.outcome),
       at: chosen.at,
+      toolCallId: chosen.toolCallId,
       ...(request.tdd?.mode === "strict" ? { tdd: request.tdd } : {}),
     },
   };

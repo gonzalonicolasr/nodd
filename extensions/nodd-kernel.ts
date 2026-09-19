@@ -34,7 +34,7 @@ import { delegateGate } from "../src/gates/delegate.ts";
 import { evidenceGate } from "../src/gates/evidence.ts";
 import { promotionGate } from "../src/gates/promotion.ts";
 import { isFileWrite, targetPath, type GateRequest } from "../src/gates/request.ts";
-import { readLedger } from "../src/ledger.ts";
+import { appendRecord, readLedger } from "../src/ledger.ts";
 import { isDeclaredRunner } from "../src/gates/evidence.ts";
 import { isSuccess, parseOutcome } from "../src/outcome.ts";
 import { candidateFor, candidateIdentity } from "../src/review-candidate.ts";
@@ -45,7 +45,13 @@ export const OBSERVATION_ENTRY = "nodd:observation";
 
 type ToolCallEvent = { toolName: string; toolCallId: string; input?: Record<string, unknown> };
 type ToolResultEvent = ToolCallEvent & { isError?: boolean; content?: unknown };
-type SessionStartEvent = { entries?: Array<{ type?: string; data?: unknown }> };
+/**
+ * pi's `session_start` carries no entries (`types.d.ts:416-422`): the session log
+ * is reached through the context, and custom entries arrive as
+ * `{ type: "custom", customType, data }` (`session-manager.d.ts:69-73`).
+ */
+type SessionEntry = { type?: string; customType?: string; data?: unknown };
+type SessionStartContext = { sessionManager?: { getEntries?(): SessionEntry[] } };
 type AgentStartEvent = { systemPrompt?: unknown };
 
 /** The slice of pi's API this extension uses. Declared locally: no pi import. */
@@ -108,7 +114,23 @@ export type Kernel = {
   task(args: TaskArgs): ToolReply;
   onToolCall(event: ToolCallEvent): void;
   onToolResult(event: ToolResultEvent): Observation;
-  replay(entries: SessionStartEvent["entries"]): void;
+  /**
+   * Rebuild what a new process can legitimately know from a previous one.
+   *
+   * Everything a gate needs for *context* comes back: the declaration, the files
+   * read and written, the delegation and tool-call counters. What deliberately
+   * does **not** come back is evidence — `commandResults`, which is what
+   * `gate-evidence` reads.
+   *
+   * Round 1 replayed those too, so a resumed process with zero commands run
+   * checked tasks off while the README promised the opposite. The entries are
+   * not forgeable by the model — the kernel writes them from real tool results,
+   * and `gate-track` refuses model writes into `.nodd/` — but "not forged" is a
+   * weaker claim than "observed here", and evidence is the one place NODD
+   * insists on the stronger one. A run this process did not see is a report
+   * about the past; the remedy is one command.
+   */
+  replay(entries: SessionEntry[] | undefined): void;
   /**
    * The evidence view. It returns `Committed` — not `NoddState` — so a gate
    * reading evidence physically cannot see a sibling call that has not
@@ -206,7 +228,8 @@ export function createKernel(
       // A checkoff is gated like any other claim: the evidence gate answers
       // from observed command results, and what it returns is what gets
       // written. NODD never invents a command it did not see run.
-      const { records } = readLedger(ledgerPath(cwd, doc.slug));
+      const ledger = ledgerPath(cwd, doc.slug);
+      const { records } = readLedger(ledger);
       const verdict = evidenceGate(
         state.committed,
         records,
@@ -223,6 +246,25 @@ export function createKernel(
         policy,
       );
       if (!verdict.allow) return { ok: false, text: verdict.reason };
+
+      // Record the evidence this checkoff relied on. Without this call the
+      // ledger never exists, `readLedger` always returns `[]`, and every
+      // integrity rule the README documents is unreachable code.
+      const used = state.committed.commandResults.find((run) => run.toolCallId === verdict.observed.toolCallId);
+      if (used) {
+        try {
+          appendRecord(ledger, {
+            toolCallId: used.toolCallId,
+            tool: "bash",
+            command: used.command,
+            outcome: parseOutcome(used.isError, used.resultText),
+            at: used.at,
+          });
+        } catch {
+          // A ledger NODD cannot write is a reported limitation, not a reason to
+          // discard a checkoff the gate already allowed on observed evidence.
+        }
+      }
 
       // The candidate is the observed commit SHA, or `pending-commit` when this
       // session has seen no commit. Never the checkbox (`routing.go:51`,`:102`).
@@ -297,10 +339,15 @@ export function createKernel(
     },
     replay(entries) {
       for (const entry of entries ?? []) {
-        if (entry?.type !== OBSERVATION_ENTRY) continue;
+        const isNodd = entry?.customType === OBSERVATION_ENTRY || entry?.type === OBSERVATION_ENTRY;
+        if (!isNodd) continue;
         const data = entry.data as Observation | undefined;
         if (!data?.toolCallId) continue;
+
         state.committed = fold(state.committed, observation(data));
+        // The context is rebuilt; the evidence is not. A command another process
+        // observed is not a command this one observed.
+        state.committed = { ...state.committed, commandResults: [] };
       }
     },
     evidenceView() {
@@ -358,7 +405,7 @@ function normalizeInput(input: unknown): Record<string, unknown> {
 }
 
 function ledgerPath(cwd: string, slug: string): string {
-  return join(cwd, ".nodd", slug, "ledger.jsonl");
+  return join(cwd, ".nodd", slug, "ledger.json");
 }
 
 /**
@@ -484,8 +531,8 @@ export default function register(pi?: PiApi, cwd: string = process.cwd()): Kerne
     }
   }) as never);
 
-  pi.on("session_start", ((event: SessionStartEvent) => {
-    kernel.replay(event?.entries);
+  pi.on("session_start", ((_event: unknown, ctx: SessionStartContext) => {
+    kernel.replay(ctx?.sessionManager?.getEntries?.());
   }) as never);
 
   // Chained, never replaced (`types.d.ts:806-810`): the incoming prompt is

@@ -819,7 +819,7 @@ or lower the claim to the truth where the mechanism is not derivable.
   suite red.
 - review: ~200 changed lines
 
-## [ ] T041 — Resume is fail-closed for evidence, and the ledger exists in production
+## [x] T041 — Resume is fail-closed for evidence, and the ledger exists in production
 
 - files:
   - `extensions/nodd-kernel.ts`, `src/state.ts`, `src/gates/evidence.ts`

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import register, { createKernel } from "./nodd-kernel.ts";
 
-type Handler = (event: any) => any;
+type Handler = (event: any, ctx?: any) => any;
 
 function fakePi() {
   const handlers = new Map<string, Handler>();
@@ -16,7 +16,7 @@ function fakePi() {
     on(event: string, handler: Handler) { handlers.set(event, handler); },
     registerTool() {},
     appendEntry(type: string, data: unknown) { entries.push({ type, data }); },
-    emit(event: string, payload: any) { return handlers.get(event)?.(payload); },
+    emit(event: string, payload: any, ctx?: unknown) { return handlers.get(event)?.(payload, ctx); },
   };
 }
 
@@ -66,18 +66,46 @@ test("session replay is idempotent by toolCallId", () => {
   assert.equal(kernel.state.committed.toolCalls, 1);
 });
 
-test("session_start replays appended entries into committed state", () => {
+// This test used to emit `{ entries: [...] }` on the event and read
+// `entry.type`. pi's SessionStartEvent has no `entries` field at all
+// (`dist/core/extensions/types.d.ts:416-422`) — the log is reached through
+// `ctx.sessionManager.getEntries()`, and a custom entry is
+// `{ type: "custom", customType, data }` (`dist/core/session-manager.d.ts:69-73`).
+// So the old test passed against a shape production never receives, and the
+// replay path it "covered" was dead code. It now uses pi's real contract.
+test("session_start replays the session log's nodd entries into committed state", () => {
   const pi = fakePi();
   const kernel = register(pi as never);
-  pi.emit("session_start", {
-    entries: [
-      { type: "nodd:observation", data: { toolName: "read", toolCallId: "r1", input: { path: "a.ts" }, isError: false, resultText: "", at: "t" } },
-      { type: "nodd:observation", data: { toolName: "write", toolCallId: "w1", input: { path: "b.ts" }, isError: false, resultText: "", at: "t" } },
-      { type: "something:else", data: { nope: true } },
-    ],
-  });
+  const entries = [
+    { type: "custom", customType: "nodd:observation", data: { toolName: "read", toolCallId: "r1", input: { path: "a.ts" }, isError: false, resultText: "", at: "t" } },
+    { type: "custom", customType: "nodd:observation", data: { toolName: "write", toolCallId: "w1", input: { path: "b.ts" }, isError: false, resultText: "", at: "t" } },
+    { type: "custom", customType: "something:else", data: { nope: true } },
+    { type: "message", role: "user" },
+  ];
+  pi.emit("session_start", { type: "session_start", reason: "resume" }, { sessionManager: { getEntries: () => entries } });
+
   assert.deepEqual([...kernel.state.committed.filesRead], ["a.ts"]);
   assert.deepEqual([...kernel.state.committed.filesWritten.keys()], ["b.ts"]);
+});
+
+test("replay restores context but never evidence: a run another process saw is not ours", () => {
+  const pi = fakePi();
+  const kernel = register(pi as never);
+  const entries = [
+    { type: "custom", customType: "nodd:observation", data: { toolName: "write", toolCallId: "w1", input: { path: "b.ts" }, isError: false, resultText: "", at: "t" } },
+    { type: "custom", customType: "nodd:observation", data: { toolName: "bash", toolCallId: "b1", input: { command: "npm test" }, isError: false, resultText: "42 passing", at: "t" } },
+  ];
+  pi.emit("session_start", { type: "session_start", reason: "resume" }, { sessionManager: { getEntries: () => entries } });
+
+  assert.deepEqual([...kernel.state.committed.filesWritten.keys()], ["b.ts"], "context comes back");
+  assert.deepEqual(kernel.state.committed.commandResults, [], "evidence does not");
+});
+
+test("a session_start with no session manager never throws", () => {
+  const pi = fakePi();
+  register(pi as never);
+  pi.emit("session_start", { type: "session_start", reason: "startup" });
+  pi.emit("session_start", { type: "session_start", reason: "startup" }, {});
 });
 
 test("terminate is never assigned anywhere in the extension", () => {

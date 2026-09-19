@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { emptyCommitted, fold, type Committed } from "../state.ts";
 import { observation } from "../observations.ts";
 import type { LedgerRecord } from "../ledger.ts";
+import { parseOutcome } from "../outcome.ts";
 import { emptyPolicy } from "./policy.ts";
 import { evidenceGate, renderObserved } from "./evidence.ts";
 
@@ -12,12 +13,21 @@ function afterCommand(command: string, isError: boolean, resultText = "", id = "
   }));
 }
 
+/**
+ * The ledger the kernel would have written for these observations.
+ *
+ * The outcome must come from `parseOutcome`, exactly as `appendRecord`'s caller
+ * derives it. An earlier version of this helper wrote `unknown` for every error
+ * result, which is not what production records for a failing run — once the
+ * gate started comparing the ledger against the session, that invented value
+ * read as tampering. The fixture was wrong, not the check.
+ */
 function ledgerFor(committed: Committed): LedgerRecord[] {
   return committed.commandResults.map((r) => ({
     toolCallId: r.toolCallId,
     tool: "bash",
     command: r.command,
-    outcome: r.isError ? { kind: "unknown" as const } : { kind: "success" as const },
+    outcome: parseOutcome(r.isError, r.resultText),
     at: r.at,
   }));
 }

@@ -7,34 +7,62 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import register from "./nodd-kernel.ts";
 
-type Handler = (event: unknown) => unknown;
+type Handler = (event: unknown, ctx?: unknown) => unknown;
+
+/**
+ * Tool call ids are unique within a session file, so a resumed session never
+ * re-mints one its predecessor already used. This counter is module-level for
+ * that reason: a per-session counter made session 2 emit `call-0` again, which
+ * the reducer correctly dropped as a replayed duplicate, and the test then
+ * looked like a fail-closed bug it was not. The helper was unfaithful to pi,
+ * so the helper changed.
+ */
+let nextId = 0;
 type Block = { block?: boolean; reason?: string; terminate?: boolean } | undefined;
 
-function session(options: { cwd?: string } = {}) {
+/**
+ * A session driven through the registered handlers.
+ *
+ * `entries` is pi's session log: the kernel appends to it through
+ * `pi.appendEntry` and reads it back on `session_start` through
+ * `ctx.sessionManager.getEntries()`, in pi's real `{ type: "custom",
+ * customType, data }` shape. Passing a previous session's array is how a resume
+ * is simulated: same session file, new process, empty in-memory state.
+ */
+function session(options: { cwd?: string; entries?: Array<Record<string, unknown>> } = {}) {
   const handlers = new Map<string, Handler>();
   const tools = new Map<string, (args: never) => unknown>();
+  const entries = options.entries ?? [];
   const pi = {
     on: (event: string, handler: Handler) => handlers.set(event, handler),
     registerTool: (name: string, opts: { handler: (args: never) => unknown }) => tools.set(name, opts.handler),
-    appendEntry: () => {},
+    appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
   };
   const cwd = options.cwd ?? mkdtempSync(join(tmpdir(), "nodd-enforce-"));
   const kernel = register(pi as never, cwd);
 
   const toolCall = handlers.get("tool_call");
   const toolResult = handlers.get("tool_result");
+  const sessionStart = handlers.get("session_start");
   assert.ok(toolCall, "the kernel must register a tool_call handler");
   assert.ok(toolResult, "the kernel must register a tool_result handler");
+  assert.ok(sessionStart, "the kernel must register a session_start handler");
 
-  let nextId = 0;
+  // pi fires session_start on every session, resume or not, and the entries
+  // come from the context, never from the event.
+  sessionStart!({ type: "session_start", reason: options.entries ? "resume" : "startup" }, {
+    sessionManager: { getEntries: () => entries },
+  });
+
   return {
     cwd,
     kernel,
+    entries,
     /** Fire one tool call through the real handler. */
     call(toolName: string, input: Record<string, unknown> = {}): Block {
       return toolCall!({ toolName, toolCallId: `call-${nextId++}`, input }) as Block;
@@ -413,6 +441,113 @@ test("gates.promotion off lets the diverging write through", () => {
   disabled.observe("subagent", { agent: "writer" }, "done");
   disabled.observe("write", { path: "/repo/a.ts" }, "");
   assert.equal(disabled.call("write", { path: "/repo/b.ts", content: "x" }), undefined, "off means off");
+});
+
+// ---------------------------------------------------------------------------
+// Resume: the README's fail-closed promise, made true
+//
+// Round 1 replayed persisted observations into `committed.commandResults`, which
+// is exactly what the evidence gate reads. A second process that ran no command
+// checked a task off, while the README promised the check had to be re-run.
+// ---------------------------------------------------------------------------
+function resumedSession(first: ReturnType<typeof session>) {
+  return session({ cwd: first.cwd, entries: first.entries });
+}
+
+test("a resumed session cannot check a task off on the previous session's evidence", () => {
+  const s1 = session();
+  s1.declare({
+    intent: "change", route: "tracked", slug: "resume", summary: "x",
+    runner: "npm test", files: ["/repo/a.ts"],
+  });
+  s1.task({ action: "add", id: "T1", title: "First", slug: "resume" });
+  s1.task({ action: "add", id: "T2", title: "Second", slug: "resume" });
+  s1.observe("write", { path: "/repo/a.ts" }, "");
+  s1.observe("bash", { command: "npm test" }, "42 passing");
+  assert.match(String(s1.task({ action: "check", id: "T1", slug: "resume" })), /checked in/, "session 1 earned its checkoff");
+
+  // New process, same session file. No command is run.
+  const s2 = resumedSession(s1);
+  const reply = String(s2.task({ action: "check", id: "T2", slug: "resume" }));
+
+  assert.match(reply, /nodd\/evidence/, "the resumed session must be refused");
+  assert.ok(!/checked in/.test(reply), "a task checked off with zero commands run is the whole bug");
+  assert.match(reply, /re-?run/i, "and the refusal says what to do, or it reads as NODD being broken");
+});
+
+test("the resumed session can check the task off once it re-runs the check", () => {
+  const s1 = session();
+  s1.declare({ intent: "change", route: "tracked", slug: "redo", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s1.task({ action: "add", id: "T1", title: "First", slug: "redo" });
+  s1.observe("write", { path: "/repo/a.ts" }, "");
+
+  const s2 = resumedSession(s1);
+  s2.observe("bash", { command: "npm test" }, "42 passing");
+  assert.match(String(s2.task({ action: "check", id: "T1", slug: "redo" })), /checked in/, "re-running is the documented remedy");
+});
+
+test("replay still rebuilds the gate context, so a resumed session is not un-gated", () => {
+  const s1 = session();
+  s1.declare({ intent: "read-only", route: "inline", slug: "audit", summary: "look only" });
+
+  const s2 = resumedSession(s1);
+  const blocked = s2.call("write", WRITE);
+  assert.equal(blocked?.block, true, "a read-only declaration must survive the reload");
+  assert.match(blocked!.reason!, /authorize/);
+});
+
+test("replay carries writes forward, so a resumed run cannot outrun its own edits", () => {
+  const s1 = session();
+  s1.declare({ intent: "change", route: "tracked", slug: "carry", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s1.task({ action: "add", id: "T1", title: "First", slug: "carry" });
+  s1.observe("bash", { command: "npm test" }, "42 passing");
+  s1.observe("write", { path: "/repo/a.ts" }, "");
+
+  const s2 = resumedSession(s1);
+  // The edit from session 1 is known; this fresh green must postdate it.
+  s2.observe("bash", { command: "npm test" }, "42 passing");
+  assert.match(String(s2.task({ action: "check", id: "T1", slug: "carry" })), /checked in/);
+});
+
+// ---------------------------------------------------------------------------
+// The ledger exists in production
+// ---------------------------------------------------------------------------
+test("a successful checkoff writes the evidence it relied on to the ledger", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "tracked", slug: "led", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s.task({ action: "add", id: "T1", title: "First", slug: "led" });
+  s.observe("write", { path: "/repo/a.ts" }, "");
+  s.observe("bash", { command: "npm test" }, "42 passing");
+  s.task({ action: "check", id: "T1", slug: "led" });
+
+  const path = join(s.cwd, ".nodd", "led", "ledger.json");
+  assert.ok(existsSync(path), `the ledger must exist at ${path}, or its integrity rules are dead code`);
+  const { records } = JSON.parse(readFileSync(path, "utf8")) as { records: Array<Record<string, unknown>> };
+  assert.equal(records.length, 1);
+  assert.equal(records[0].command, "npm test");
+  assert.ok(typeof records[0].toolCallId === "string" && records[0].toolCallId !== "", "a record without a toolCallId is not an observation");
+});
+
+test("a ledger contradicting what this session observed reads as a mismatch, not as staleness", () => {
+  const s = session();
+  s.declare({ intent: "change", route: "tracked", slug: "tamper", summary: "x", runner: "npm test", files: ["/repo/a.ts"] });
+  s.task({ action: "add", id: "T1", title: "First", slug: "tamper" });
+  s.observe("write", { path: "/repo/a.ts" }, "");
+  s.fail("bash", { command: "npm test" }, "FAIL\nCommand exited with code 1");
+
+  // Someone edits the ledger to claim the failing run passed, reusing the real
+  // toolCallId so it is not merely unobserved.
+  const path = join(s.cwd, ".nodd", "tamper", "ledger.json");
+  const id = s.kernel.state.committed.commandResults[0].toolCallId;
+  mkdirSync(join(s.cwd, ".nodd", "tamper"), { recursive: true });
+  writeFileSync(path, JSON.stringify({
+    records: [{ toolCallId: id, tool: "bash", command: "npm test", outcome: { kind: "success" }, at: "2026-09-19T10:00:00.000Z" }],
+  }), "utf8");
+
+  const reply = String(s.task({ action: "check", id: "T1", slug: "tamper" }));
+  assert.ok(!/checked in/.test(reply), "a forged ledger must not check anything off");
+  assert.match(reply, /contradict|mismatch/i, `the refusal must name the contradiction: ${reply}`);
+  assert.ok(!/previous session/i.test(reply), "a contradicted record is not a staleness problem");
 });
 
 // ---------------------------------------------------------------------------
