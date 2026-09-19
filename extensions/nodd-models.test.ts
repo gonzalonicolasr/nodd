@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { MECHANISM_PLACEHOLDER } from "../src/models/slots.ts";
 import register, { runModelsCommand, type ConfigIo } from "./nodd-models.ts";
@@ -162,6 +165,73 @@ test("quitting the picker produces zero writes; saving writes once", async () =>
   assert.equal(saveIo.writes.length, 1);
   assert.deepEqual(saveIo.writes[0].models, { implement: "anthropic/claude-opus-4-1" });
   assert.equal(saveIo.writes[0].unrelated, true, "the picker's save preserves unrelated keys");
+});
+
+test("the handler opens the picker on the saved profiles, not on an empty menu", async () => {
+  // The host built the picker from `models` and `groups` only, so the profiles
+  // on disk never reached it: a user with six saved profiles opened
+  // /nodd-models and the menu offered to create the first one.
+  const commands = new Map<string, any>();
+  register({ registerCommand: (name: string, options: unknown) => commands.set(name, options) } as never);
+
+  const config = {
+    models: { implement: "cliproxy/personal/claude-opus-5" },
+    thinking: { implement: "high" },
+    profiles: {
+      rapido: { models: { implement: "cliproxy/ds/deepseek-flash" }, thinking: { implement: "low" } },
+      lento: { models: { implement: "cliproxy/personal/claude-opus-5" }, thinking: { implement: "high" } },
+    },
+    activeProfile: "rapido",
+  };
+
+  const home = mkdtempSync(join(tmpdir(), "nodd-models-"));
+  mkdirSync(join(home, ".pi"), { recursive: true });
+  writeFileSync(join(home, ".pi", "nodd.json"), JSON.stringify(config));
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+
+  let rendered: string[] = [];
+  try {
+    await commands.get("nodd-models").handler("", {
+      ui: {
+        notify() {},
+        // Stand in for pi's custom-UI host: build the component, render it, and
+        // quit without saving.
+        async custom(build: any) {
+          let result: unknown;
+          const component = build({ requestRender() {} }, {}, {}, (r: unknown) => { result = r; });
+          rendered = component.render(80);
+          component.handleInput?.("q");
+          return result ?? { type: "quit" };
+        },
+      },
+      modelRegistry: { getAll: () => [{ provider: "cliproxy", id: "personal/claude-opus-5" }] },
+    } as never);
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+  }
+
+  const screen = rendered.join("\n");
+  assert.match(screen, /rapido/, "a saved profile is on the opening screen");
+  assert.match(screen, /lento/, "and so is the other one");
+  assert.doesNotMatch(screen, /modelos sin perfil/, "with profiles saved, the menu is not the no-profile one");
+});
+
+test("the picker input carries the profiles and the active one", () => {
+  const input = register.pickerInput(
+    {
+      models: { implement: "cliproxy/personal/claude-opus-5" },
+      thinking: { implement: "high" },
+      profiles: { rapido: { models: { implement: "cliproxy/ds/deepseek-flash" } } },
+      activeProfile: "rapido",
+    },
+    new Map([["cliproxy", ["personal/claude-opus-5"]]]),
+  );
+
+  assert.deepEqual(Object.keys(input.profiles), ["rapido"], "saved profiles reach the picker");
+  assert.equal(input.activeProfile, "rapido", "and so does the active one");
+  assert.deepEqual(input.thinking, { implement: "high" }, "and the levels, so editing does not wipe them");
 });
 
 test("the command is registered with pi under its own name", () => {

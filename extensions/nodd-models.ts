@@ -334,8 +334,12 @@ function register(pi?: PiApi): void {
         // deterministic text path, which is the whole command in a headless run.
         if (args.trim() === "" && typeof ctx?.ui?.custom === "function") {
           const groups = groupsFrom(ctx.modelRegistry);
+          // Everything the picker needs, including the saved profiles and the
+          // active one. Passing only the models opened the picker as though
+          // nothing had ever been saved.
+          const input = pickerInput(io.readConfig(), groups);
           const result = await ctx.ui.custom<EnterResult>((tui, _theme, _keys, done) =>
-            createComponent({ models: currentModels(io.readConfig()), groups }, done, () => tui.requestRender()),
+            createComponent(input, done, () => tui.requestRender()),
           );
           runPicker(result, io);
           notify?.(result.type === "save" ? "nodd · modelos guardados" : "nodd · sin cambios", "info");
@@ -352,5 +356,6 @@ function register(pi?: PiApi): void {
 
 register.runPicker = runPicker;
 register.createComponent = createComponent;
+register.pickerInput = pickerInput;
 
 export default register;
