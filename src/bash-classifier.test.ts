@@ -112,3 +112,34 @@ test("the bash-gate section claims no guarantee it cannot keep", () => {
     assert.ok(!section.includes(word), `the bash-gate section must not contain "${word}"`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// /dev/null is a sink, not a file. Treating a redirect into it as a workspace
+// write blocked `grep … 2>/dev/null` and `cat … 2>/dev/null` — pure reads —
+// four times in one session, on the author's own repo.
+// ---------------------------------------------------------------------------
+test("discarding stderr is not a write", () => {
+  assert.equal(classifyBash("grep -rn foo src 2>/dev/null"), "non-mutating");
+  assert.equal(classifyBash("cat ~/.config/app.json 2>/dev/null"), "non-mutating");
+});
+
+test("discarding stdout is not a write either", () => {
+  assert.equal(classifyBash("ls -la > /dev/null"), "non-mutating");
+  assert.equal(classifyBash("command -v node >/dev/null 2>&1"), "non-mutating");
+});
+
+test("the other standard sinks are not files", () => {
+  assert.equal(classifyBash("echo hi > /dev/stdout"), "non-mutating");
+  assert.equal(classifyBash("echo hi > /dev/stderr"), "non-mutating");
+});
+
+test("a real file is still a write, even beside a sink", () => {
+  // The fix must not become a hole: a command that discards stderr *and*
+  // writes a file is still a write.
+  assert.equal(classifyBash("build 2>/dev/null > out.txt"), "mutating");
+  assert.equal(classifyBash("echo hi > f.txt 2>/dev/null"), "mutating");
+});
+
+test("a mutating command is still caught when its output is discarded", () => {
+  assert.equal(classifyBash("rm -rf build > /dev/null 2>&1"), "mutating");
+});

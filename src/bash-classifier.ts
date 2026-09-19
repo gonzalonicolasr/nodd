@@ -32,7 +32,11 @@ function redirectsToFile(command: string): boolean {
   const withoutFdDuplication = command.replace(/\d*>&\d+/g, "").replace(/&>/g, ">");
   // A `>` inside quotes is data, not redirection (`grep -rn 'a>b' src`).
   const unquoted = withoutFdDuplication.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
-  return />>?\s*\S/.test(unquoted);
+  // The standard sinks discard output; they do not create a file. Counting
+  // them as writes refused `grep … 2>/dev/null` and `cat … 2>/dev/null` — pure
+  // reads — and a gate that blocks reading is a gate people turn off.
+  const withoutSinks = unquoted.replace(/>>?\s*\/dev\/(null|stdout|stderr)\b/g, "");
+  return />>?\s*\S/.test(withoutSinks);
 }
 
 export const COVERED_PATTERNS: CoveredPattern[] = [
