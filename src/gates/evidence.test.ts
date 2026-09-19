@@ -55,6 +55,36 @@ test("only a real successful tool_result satisfies a checkoff", () => {
   assert.equal(c.allow === true && c.observed.outcome, "success");
 });
 
+// The property the whole product sells, isolated: the model's prose is not an
+// input. Same real success, once with an assistant message asserting the
+// result and once without — the recorded evidence must be byte-identical.
+// Without this, the test above only proves "there was no evidence", which is a
+// weaker and different claim.
+test("an assistant message asserting the result changes nothing about what is recorded", () => {
+  const passed = afterCommand("npm test", false, "42 passing");
+  const withClaim = fold(passed, observation({
+    toolCallId: "a1", toolName: "assistant_message",
+    input: { text: "Tests pass. Evidence: 42/42 green, everything verified." },
+    isError: false, resultText: "", at: "2026-09-19T10:06:00.000Z",
+  }));
+
+  const silent = evidenceGate(passed, ledgerFor(passed), check, emptyPolicy());
+  const claiming = evidenceGate(withClaim, ledgerFor(withClaim), check, emptyPolicy());
+
+  assert.equal(silent.allow, true);
+  assert.equal(claiming.allow, true);
+  assert.deepEqual(
+    claiming.allow === true ? claiming.observed : null,
+    silent.allow === true ? silent.observed : null,
+    "the model's assertion must not alter the recorded evidence",
+  );
+  assert.equal(
+    renderObserved(claiming.allow === true ? claiming.observed : null),
+    renderObserved(silent.allow === true ? silent.observed : null),
+    "the rendered line must be byte-identical with and without the claim",
+  );
+});
+
 test("an empty ledger and no commands refuses", () => {
   const decision = evidenceGate(emptyCommitted(), [], check, emptyPolicy());
   assert.equal(decision.allow, false);
@@ -128,4 +158,23 @@ test("a ledger record the kernel never observed cannot satisfy a checkoff", () =
   assert.equal(decision.allow, false, "a record on disk is not an observation");
   assert.ok(decision.allow === false && /unverified|not observed/i.test(decision.reason),
     `the refusal must name the degradation: ${decision.allow === false ? decision.reason : ""}`);
+
+  // Resuming in a fresh session hits this every time. If the refusal does not
+  // say why and what to do, it reads as "NODD is broken" and gets switched off.
+  assert.ok(decision.allow === false && /previous session|earlier session/i.test(decision.reason),
+    "the refusal must explain that the ledger is from a previous session");
+  assert.ok(decision.allow === false && /re-?run/i.test(decision.remedy.action),
+    "the remedy must say to re-run the check");
+});
+
+test("a mismatching record reads differently from a merely unverified one", () => {
+  const state = afterCommand("npm test", true, "Command exited with code 1");
+  const flipped: LedgerRecord[] = [{
+    toolCallId: "b1", tool: "bash", command: "npm test",
+    outcome: { kind: "success" }, at: "2026-09-19T10:05:00.000Z",
+  }];
+  const decision = evidenceGate(state, flipped, check, emptyPolicy());
+  assert.equal(decision.allow, false);
+  assert.ok(decision.allow === false && !/previous session/i.test(decision.reason),
+    "a contradicted record is not a stale-session problem and must not be described as one");
 });

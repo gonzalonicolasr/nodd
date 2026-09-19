@@ -50,8 +50,8 @@ export type EvidenceDecision =
 
 const REMEDY = "run the verification command, then check the task off once it is observed to succeed";
 
-function deny(reason: string): EvidenceDecision {
-  const refusal = refuse("evidence", reason, REMEDY);
+function deny(reason: string, remedy: string = REMEDY): EvidenceDecision {
+  const refusal = refuse("evidence", reason, remedy);
   return { allow: false, gate: "evidence", reason: refusal.reason, remedy: refusal.remedy };
 }
 
@@ -74,8 +74,14 @@ export function evidenceGate(
   const observedIds = new Set(runs.map((run) => run.toolCallId));
   const { degraded } = classifyRecords(ledger, observedIds);
   if (runs.length === 0 && degraded.length > 0) {
+    // Resuming in a new process lands here every time, by design: evidence
+    // means "observed by this kernel", and a fresh process has observed
+    // nothing yet. Correct, but a bare "insufficient evidence" would read as a
+    // bug and get the gate switched off, so the refusal says what happened and
+    // what to do about it.
     return deny(
-      `the ledger holds ${degraded.length} record(s) this session did not observe, so they are unverified and cannot support a checkoff`,
+      `the ledger holds ${degraded.length} record(s) from a previous session, which this kernel did not observe, so they are unverified and cannot support a checkoff`,
+      "re-run the verification command in this session so the result is observed, then check the task off",
     );
   }
 
