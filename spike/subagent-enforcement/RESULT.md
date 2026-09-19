@@ -160,6 +160,54 @@ A `.pi/settings.json` listing the probe in an untrusted project directory
 produced no marker at all: the probe did not load even in the parent. Project-
 local extension config requires the project to be trusted.
 
+## Run E — does a child see the on-disk artifacts?
+
+Session state is not shared with children (Run C). The feature doc and the
+ledger are a different thing: they live on disk and are the agreed source of
+truth (`clarifications.md`). Probed separately.
+
+```sh
+rm -rf /tmp/nodd-disk-probe && mkdir -p /tmp/nodd-disk-probe/.nodd/demo
+# ... write .nodd/demo/feature.md containing MARKER-PARENT-WROTE-THIS-DOC-ON-DISK ...
+cd /tmp/nodd-disk-probe
+env -u PI_SUBAGENT_CHILD -u PI_SUBAGENT_CHILD_AGENT -u PI_SUBAGENT_RUN_ID \
+    -u PI_SUBAGENT_PARENT_SESSION \
+  pi -p "Delegate to the subagent named nodd-probe-writer this exact task: 'Read the \
+file .nodd/demo/feature.md relative to your current working directory. Report your cwd, \
+whether the file exists, and quote the line that starts with MARKER. Then append a line \
+MARKER-CHILD-WROTE-THIS to that same file […]' Do not read or write the file yourself."
+```
+
+Child's verbatim result, as relayed by the parent:
+
+> **cwd:** `/tmp/nodd-disk-probe` (confirmed via `pwd`)
+> **File exists:** Yes — `.nodd/demo/feature.md`, 169 bytes […]
+> **MARKER line, quoted verbatim:** `MARKER-PARENT-WROTE-THIS-DOC-ON-DISK`
+> **Append result:** Succeeded. […] `Successfully wrote 194 bytes`
+
+Raw evidence — the parent's own `cat` after the run:
+
+```
+$ cat /tmp/nodd-disk-probe/.nodd/demo/feature.md
+# Feature: Disk visibility probe
+<!-- nodd:slug demo -->
+## Objective
+MARKER-PARENT-WROTE-THIS-DOC-ON-DISK
+## Tasks
+- [ ] T1. Probe whether a child reads this file
+
+MARKER-CHILD-WROTE-THIS          <- written by the child process
+```
+
+**Result: yes.** The child inherits the parent's cwd and reads and writes the
+same `.nodd/<slug>/` artifacts. So `gate-track` transfers to children through
+the artifact, not merely per call: a child evaluating "does
+`.nodd/<slug>/feature.md` exist?" reads the same file the parent created.
+
+This also confirms why `write`/`edit` targeting `.nodd/**` must be blocked for
+children too, not only for the parent: the probe child rewrote the doc with a
+whole-file `write` because no append tool was offered to it.
+
 ## What NODD may and may not claim
 
 **May claim:** when NODD is installed as a pi package (the documented install
@@ -175,15 +223,35 @@ Enforcement scope is "parent and delegated children".
 2. **A capability ceiling with `denyExtensions`** has the same effect
    (`pi-args.ts:462-463,472-473`).
 3. **Grandchildren** were not probed. Only depth 1 was measured.
-4. **A child's own state is its own.** Each child process folds its own
-   observations; a child does not see the parent's committed counters, so
-   count-based gates (`delegate`, `promotion`) evaluate per-process. Only the
-   per-call gates (`authorize`, `classify`, `track` on `write`/`edit`/bash)
-   transfer meaningfully to a child.
+4. **Session state is per process.** Each child folds its own observations; a
+   child does not see the parent's in-memory committed counters. See the note
+   below for what that does and does not mean.
 5. This was measured on pi 0.84.2 with the pi-subagents build installed on
    2026-09-19. It is a behaviour of that argv construction, not a documented
    API guarantee, so it can change on upgrade.
 
-Point 4 is the honest limit: "NODD gates load in children" is not the same as
-"NODD's session state is shared with children". The README must say the former
-and not imply the latter.
+## What per-process counting means (and what it does not)
+
+"NODD gates load in children" is not the same as "NODD's session state is
+shared with children". Two different things sit under that sentence and only
+one of them is a limitation.
+
+**Per-process counting is the correct semantics for the context gates.** ODD's
+long-session backstop (~20 tool calls, 5 exploratory reads, 2 non-mechanical
+edits without delegating — `routing.go:82`) and the mapping/writer triggers
+(`:79-80`) exist to keep the *parent's context* thin enough to orchestrate. A
+child runs in its own process with its own context window, so counting per
+process is what those triggers are for. A child that reads 4 files has filled
+*its* context, not the parent's, and it is the child that should then delegate.
+This is not lost coverage.
+
+**The artifacts are shared, so the artifact-backed gates do transfer.** Run E
+shows a child inherits the cwd and reads `.nodd/<slug>/feature.md`. `gate-track`
+therefore transfers to children through the file, not merely per call. The
+ledger `.nodd/<slug>/state.json` lives in the same place and is read the same
+way.
+
+**The real limitation:** there is no aggregated whole-session total across
+parent and children. A counter that wanted to answer "how many files has this
+*feature* touched across every process?" does not exist, and NODD does not
+claim one. What exists is a per-process count plus a shared on-disk artifact.

@@ -39,7 +39,12 @@ unrecorded one was not.
    `~/.pi/agent/settings.json` under `extensions`). Back up that settings file
    before editing it and restore it afterwards.
 
-3. Read the observables, not the agent's prose:
+3. Run E to check artifact visibility: write `.nodd/demo/feature.md` with a
+   marker line in a scratch cwd, delegate a read of it, and `cat` the file
+   afterwards from the parent shell. Session state is per process, but the
+   artifacts are on disk and shared.
+
+4. Read the observables, not the agent's prose:
 
    - `$NODD_PROBE_DIR/loaded-<pid>.txt` — one file per process that loaded the
      probe, carrying `PI_SUBAGENT_CHILD`. Two files with one marked `=1` means
@@ -48,7 +53,7 @@ unrecorded one was not.
      that blocked it.
    - whether the target file exists on disk.
 
-4. Remove `~/.pi/agent/agents/nodd-probe-writer.md` and restore
+5. Remove `~/.pi/agent/agents/nodd-probe-writer.md` and restore
    `~/.pi/agent/settings.json`.
 
 The agent's self-report is *not* the evidence — the marker files and the
