@@ -142,17 +142,23 @@ export type Kernel = {
   /** Run the ordered registry against one call. `null` means let it run. */
   checkCall(request: GateRequest): { block: true; reason: string } | null;
   setPolicy(policy: Policy): void;
+  /** Re-read the configured flags, keeping runtime flags and hatches. */
+  reloadPolicy(): Policy;
   policy(): Policy;
 };
 
 export function createKernel(
   now: () => string = () => new Date().toISOString(),
   cwd: string = process.cwd(),
+  loadPolicy: () => Policy = emptyPolicy,
 ): Kernel {
   const state = emptyState();
   // Mutable because `/nodd-allow` grants a hatch mid-session and a refusal
   // spends it. The policy is session state, not a constant.
   let policy: Policy = emptyPolicy();
+  // Set by `setPolicy`: the caller owns the whole policy from then on, and
+  // `reloadPolicy` stops re-reading the file over their choice.
+  let policyIsPinned = false;
 
   const readDoc = (slug: string): FeatureDoc | null => {
     const path = featureDocPath(cwd, slug);
@@ -349,7 +355,20 @@ export function createKernel(
       return null;
     },
 
+    reloadPolicy() {
+      // Re-read rather than cache: `/nodd-gates off` writes the file, and a
+      // policy only read at startup leaves the gate blocking while disk already
+      // says it is off — a kill switch the user watches fail.
+      //
+      // An explicit `setPolicy` wins: it is the caller stating the whole policy,
+      // and re-reading over it would silently undo what they just set.
+      if (policyIsPinned) return policy;
+      policy = { ...loadPolicy(), flags: policy.flags, hatches: policy.hatches };
+      return policy;
+    },
+
     setPolicy(next) {
+      policyIsPinned = true;
       policy = next;
     },
 
@@ -518,23 +537,32 @@ function promotionSignals(committed: Committed, request: GateRequest) {
   };
 }
 
-/** Gate flags as configured. An unreadable config means nobody chose. */
-function readPolicy(): Policy {
+/**
+ * Gate flags as configured. An unreadable config means nobody chose.
+ *
+ * `home` is a parameter, not `homedir()` inside: the tests call `register()`
+ * directly, and reading the real `~/.pi/nodd.json` made the suite's verdict
+ * depend on the machine running it.
+ */
+function readPolicy(home?: string): Policy {
   try {
-    const { config } = parseConfig(readFileSync(noddConfigPath(), "utf8"));
+    const { config } = parseConfig(readFileSync(noddConfigPath(home), "utf8"));
     return { ...emptyPolicy(), config: config.gates };
   } catch {
     return emptyPolicy();
   }
 }
 
-export default function register(pi?: PiApi, cwd: string = process.cwd()): Kernel {
-  const kernel = createKernel(undefined, cwd);
-  if (!pi || typeof pi.on !== "function") return kernel;
+export default function register(pi?: PiApi, cwd: string = process.cwd(), home?: string): Kernel {
+  const kernel = createKernel(undefined, cwd, () => readPolicy(home));
+  if (!pi || typeof pi.on !== "function") {
+    kernel.reloadPolicy();
+    return kernel;
+  }
 
   // Flags the user set persist into the session's policy. `/nodd-allow` adds
   // one-shot hatches on top of this at runtime.
-  kernel.setPolicy(readPolicy());
+  kernel.reloadPolicy();
 
   pi.registerTool?.({
     name: "nodd_declare",
@@ -552,6 +580,10 @@ export default function register(pi?: PiApi, cwd: string = process.cwd()): Kerne
   pi.on("tool_call", ((event: ToolCallEvent) => {
     let decision: { block: true; reason: string } | null = null;
     try {
+      // Re-read the flags before deciding. `/nodd-gates disable` writes the
+      // config from another extension, and a policy read only at startup would
+      // keep blocking while disk already said the gate was off.
+      kernel.reloadPolicy();
       decision = kernel.checkCall({ toolName: event?.toolName ?? "", input: normalizeInput(event?.input) });
     } catch {
       // A gate that throws must not break the session. Failing open here is

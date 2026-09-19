@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import register, { createKernel } from "./nodd-kernel.ts";
@@ -19,6 +20,55 @@ function fakePi() {
     emit(event: string, payload: any, ctx?: unknown) { return handlers.get(event)?.(payload, ctx); },
   };
 }
+
+test("the config is read from the given home, so the suite never reads the user's", () => {
+  // Without an injectable home, `register()` reads the real `~/.pi/nodd.json`
+  // and the suite's verdict depends on the machine running it: measured on one
+  // commit, a local config with the gates off turned 434 passes into 408.
+  const home = mkdtempSync(join(tmpdir(), "nodd-home-"));
+  mkdirSync(join(home, ".pi"), { recursive: true });
+  writeFileSync(join(home, ".pi", "nodd.json"), JSON.stringify({ gates: { classify: { enabled: false } } }));
+
+  const kernel = register(fakePi() as never, mkdtempSync(join(tmpdir(), "nodd-cwd-")), home);
+  assert.deepEqual(kernel.policy().config, { classify: { enabled: false } }, "the given home is what was read");
+
+  const other = register(fakePi() as never, mkdtempSync(join(tmpdir(), "nodd-cwd-")), mkdtempSync(join(tmpdir(), "nodd-empty-")));
+  assert.deepEqual(other.policy().config, {}, "an empty home means nobody chose, whatever the real one says");
+});
+
+test("reloadPolicy picks up a config written after the session started", () => {
+  // `/nodd-gates off` writes the file; without a re-read the gate keeps blocking
+  // until pi restarts, while disk already says it is off. A user who turns off
+  // the kill switch and watches it keep blocking concludes it does not work.
+  const home = mkdtempSync(join(tmpdir(), "nodd-home-"));
+  mkdirSync(join(home, ".pi"), { recursive: true });
+  const kernel = register(fakePi() as never, mkdtempSync(join(tmpdir(), "nodd-cwd-")), home);
+  assert.deepEqual(kernel.policy().config, {}, "nothing configured yet");
+
+  writeFileSync(join(home, ".pi", "nodd.json"), JSON.stringify({ gates: { track: { enabled: false } } }));
+  kernel.reloadPolicy();
+  assert.deepEqual(kernel.policy().config, { track: { enabled: false } }, "the new config is in effect");
+});
+
+test("/nodd-gates disable takes effect without restarting pi", () => {
+  // The kill switch is user-owned: it must obey at once. Reading the config
+  // only at startup left the gate blocking while disk already said it was off,
+  // and the refusal kept offering /nodd-allow as though nobody had decided —
+  // a user who turns it off and watches it keep blocking concludes it is broken.
+  const home = mkdtempSync(join(tmpdir(), "nodd-home-"));
+  mkdirSync(join(home, ".pi"), { recursive: true });
+  const pi = fakePi();
+  register(pi as never, mkdtempSync(join(tmpdir(), "nodd-cwd-")), home);
+
+  const write = { toolName: "write", toolCallId: "c1", input: { file_path: "a.ts", content: "x" } };
+  assert.equal(pi.emit("tool_call", write)?.block, true, "undeclared writes are blocked while the gate is on");
+
+  // What `/nodd-gates disable classify` writes, mid-session.
+  writeFileSync(join(home, ".pi", "nodd.json"), JSON.stringify({ gates: { classify: { enabled: false } } }));
+
+  const after = pi.emit("tool_call", { ...write, toolCallId: "c2" });
+  assert.equal(after, undefined, "the very next call sees the gate off, with no restart");
+});
 
 test("a read-only session of read/grep/ls produces zero blocks", () => {
   const pi = fakePi();
