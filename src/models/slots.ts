@@ -22,8 +22,9 @@ export const MECHANISM_PLACEHOLDER = "mecanismo · sin modelo";
 
 const GLOBAL_SLOTS = ["default", "orchestrator"] as const;
 
-function isMechanism(step: string): boolean {
-  return (MECHANISM_STEPS as readonly string[]).includes(step);
+/** A canonical step NODD implements as mechanism, so it gets no slot. */
+export function isMechanismSlot(id: string): boolean {
+  return (MECHANISM_STEPS as readonly string[]).includes(id);
 }
 
 /**
@@ -33,7 +34,7 @@ function isMechanism(step: string): boolean {
 export const SLOT_ROWS: readonly SlotRow[] = Object.freeze([
   ...GLOBAL_SLOTS.map((id): SlotRow => ({ id, kind: "global", placeholder: "sin asignar" })),
   ...CANONICAL_STEPS.map((id): SlotRow =>
-    isMechanism(id)
+    isMechanismSlot(id)
       ? { id, kind: "mechanism", placeholder: MECHANISM_PLACEHOLDER }
       : { id, kind: "step", placeholder: "sin asignar" },
   ),
