@@ -860,6 +860,66 @@ or lower the claim to the truth where the mechanism is not derivable.
   not exist.
 - review: ~260 changed lines
 
+### Block 9 — Ronda 3: the last round of the cap
+
+## [x] T043 — The unpinned runner is disclosed in the artifact, and the README sweep
+
+- files:
+  - `src/gates/evidence.ts`, `src/gates/evidence.test.ts`
+  - `extensions/nodd-kernel.ts`, `extensions/nodd-enforcement.test.ts`
+  - `extensions/nodd-tools.test.ts`, `README.md`
+- detail: H1, the single open finding of round 2, plus the sweep it implies.
+  H1 itself: `README.md:142-144` promised that with no declared runner "the
+  recorded evidence says the runner was not pinned", and `renderObserved`
+  emitted the same line as a pinned checkoff, so the round-1 echo attack still
+  landed in full by omitting one optional field. Chose **option (a)** from the
+  verdict — implement the disclosure — over (b) making `runner` required,
+  because (b) changes the declare contract and the honest position is that an
+  unpinned feature is *allowed but not enforced*, which is exactly what a
+  caveat in the evidence line communicates and a hard requirement would hide.
+  The reason this finding existed at all is the ratchet: prose added beside a
+  fix promising slightly more than the fix did. So the second half of this task
+  is a sweep of **every** guarantee the README states, checking each for (1) a
+  mechanism and (2) a test that dies when the mechanism is neutralized. The
+  sweep found two more live instances of the same class, fixed as T044/T045,
+  and one structural one recorded as a limitation: no test parses the README's
+  English, so a new overclaiming sentence cannot turn the suite red. The README
+  now says that about itself instead of claiming every claim is asserted.
+- depends: T038, T039, T040, T041, T042
+- evidence: full suite green; the disclosure dies under mutation (removing the
+  caveat fails 2 tests, one unit and one end-to-end on the real handler).
+- review: ~120 changed lines
+
+## [x] T044 — A pinned runner cannot be re-pinned to fit a run that already passed
+
+- files: `extensions/nodd-kernel.ts`, `extensions/nodd-enforcement.test.ts`
+- detail: Found by the T043 sweep, by attacking the README claim that the
+  runner "cannot be invented afterwards to fit whatever happened to pass".
+  `nodd_declare` rewrote `## Verification` wholesale, so a refused checkoff was
+  repaired by re-declaring with the echo as the runner; the second attempt
+  passed and the artifact recorded the echo as the certified check. Re-pinning
+  a *different* runner is now refused and the original stands. Re-declaring
+  with the same runner, or with none, still works, so ordinary re-declaration
+  is unaffected.
+- depends: T043
+- evidence: RED observed (`.nodd/login/feature.md created with 1 tasks` where a
+  refusal was required); green after; neutralizing the check fails the test.
+- review: ~40 changed lines
+
+## [x] T045 — `tdd: strict` without a runner is refused instead of silently unenforced
+
+- files: `extensions/nodd-kernel.ts`, `extensions/nodd-enforcement.test.ts`
+- detail: Found by the T043 sweep, by attacking the README's fourth evidence
+  fact. The kernel built the TDD context only when a runner was *also* pinned,
+  so `tdd: strict` alone wrote `- tdd: strict` into the feature document and
+  enforced nothing: GREEN with no RED checked the task off. A document
+  asserting a discipline nobody verified is the precise failure NODD exists to
+  prevent, so the declaration is refused and names the missing runner.
+- depends: T043
+- evidence: RED observed (checkoff allowed with no RED run); green after;
+  neutralizing the requirement fails the test.
+- review: ~40 changed lines
+
 ---
 
 ## Constitution / Steering check

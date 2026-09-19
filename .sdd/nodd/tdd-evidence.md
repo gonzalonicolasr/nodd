@@ -147,7 +147,45 @@ mutation row above shows the corresponding guarantee still fails closed.
 | T040 | 372 tests, 372 pass, 0 fail |
 | T041 | 380 tests, 380 pass, 0 fail |
 | T042 | 389 tests, 389 pass, 0 fail |
-| mutation coverage (final) | **391 tests, 391 pass, 0 fail** |
+| mutation coverage (round 2 final) | **391 tests, 391 pass, 0 fail** |
+| T043 | 394 tests, 394 pass, 0 fail |
+| T044 | 395 tests, 395 pass, 0 fail |
+| T045 (round 3 final) | **396 tests, 396 pass, 0 fail** |
+
+## Round 3 cycles
+
+| task | RED (observed) | GREEN (observed) | notes |
+| --- | --- | --- | --- |
+| T043 | `an unpinned runner is disclosed...` fails: `actual: 'success', expected: 'success (runner not pinned)'` | 16/16 in `evidence.test.ts`, then 394/394 | H1. A second test drives the same property end-to-end through the registered handler and asserts the caveat is **absent** on a pinned checkoff, so the disclosure has to discriminate rather than decorate |
+| T044 | `the runner cannot be re-declared...` fails: got `.nodd/login/feature.md created with 1 tasks` where a refusal was required | 395/395 | Found by the sweep, not by the verdict |
+| T045 | `strict TDD without a pinned runner...` fails: got `.nodd/notdd/feature.md created with 0 tasks` | 396/396 | Found by the sweep, not by the verdict |
+
+One pre-existing fixture changed: `extensions/nodd-tools.test.ts:114` declared
+no runner and asserted the outcome was exactly `success`. Under T043 that path
+correctly records `success (runner not pinned)`. The fixture was made *more*
+specific — it now pins `runner: "node --test"`, which is what a tracked
+declaration ordinarily does — rather than relaxing the assertion to accept
+either string. The unpinned path keeps its own dedicated tests.
+
+## Round 3 mutation coverage
+
+Each round-3 mechanism was neutralized in place and the full suite re-run:
+
+| mutation | failures |
+| --- | --- |
+| `renderObserved` drops the `(runner not pinned)` caveat | 2 |
+| the re-pin refusal is short-circuited to `if (false)` | 1 |
+| the `tdd: strict` runner requirement is short-circuited to `if (false)` | 1 |
+
+## README sweep (round 3)
+
+Every guarantee the README states was checked for a mechanism **and** for a
+test that dies when that mechanism is neutralized. 15 mutations were run
+against the full suite; all but the noted exception killed at least one test.
+The three that had no mechanism became T043/T044/T045. The one guarantee that
+cannot be mechanized — "a sentence in this file does not promise more than the
+code does" — is now stated as a limitation in the README instead of being
+claimed as asserted.
 
 ## Mutation coverage of the gate registry
 
