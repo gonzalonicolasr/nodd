@@ -24,7 +24,9 @@
   "files": [
     "src",
     "extensions",
-    "README.md"
+    "test",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test --experimental-strip-types"
