@@ -1,0 +1,125 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { CANONICAL_STEPS, MECHANISM_STEPS } from "../manifest.ts";
+import { SLOT_ROWS, isConfigurableSlot, slotRow } from "./slots.ts";
+import { assignmentPatch, groupByProvider, parseAssignment, validateAssignment } from "./assign.ts";
+
+const registry = groupByProvider([
+  { provider: "anthropic", id: "claude-sonnet-4-5" },
+  { provider: "anthropic", id: "claude-opus-4-1" },
+  { provider: "openai-codex", id: "gpt-5-codex" },
+  { provider: "opencode-go", id: "claude-sonnet-4-5" },
+]);
+
+// ---------------------------------------------------------------------------
+// Slots: all seven steps visible, only five assignable.
+// ---------------------------------------------------------------------------
+test("the slot table displays all seven canonical steps in order", () => {
+  const stepRows = SLOT_ROWS.filter((row) => row.kind !== "global");
+  assert.deepEqual(stepRows.map((row) => row.id), [...CANONICAL_STEPS]);
+});
+
+test("the four mechanism steps are present and not assignable", () => {
+  for (const step of MECHANISM_STEPS) {
+    const row = slotRow(step);
+    assert.ok(row, `${step} must be displayed`);
+    assert.equal(row!.kind, "mechanism");
+    assert.equal(isConfigurableSlot(step), false, `${step} must not be assignable`);
+  }
+});
+
+test("the two global slots are assignable and are not canonical steps", () => {
+  for (const slot of ["default", "orchestrator"]) {
+    assert.equal(isConfigurableSlot(slot), true);
+    assert.equal(slotRow(slot)!.kind, "global");
+    assert.ok(!(CANONICAL_STEPS as readonly string[]).includes(slot));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A mechanism step rejects assignment, saying it is a mechanism.
+// ---------------------------------------------------------------------------
+test("classify=x/y is rejected as a mechanism step, not as an unknown model", () => {
+  const result = validateAssignment(parseAssignment("classify=anthropic/claude-sonnet-4-5")!, registry);
+  assert.equal(result.ok, false);
+  assert.ok(result.ok === false && /mecanismo/.test(result.message), result.ok === false ? result.message : "");
+  assert.ok(result.ok === false && result.message.includes("classify"));
+});
+
+test("every mechanism step rejects assignment", () => {
+  for (const step of MECHANISM_STEPS) {
+    const result = validateAssignment({ slot: step, provider: "anthropic", model: "claude-opus-4-1" }, registry);
+    assert.equal(result.ok, false, `${step} must reject assignment`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Model validation against the registry.
+// ---------------------------------------------------------------------------
+test("implement=unknown/model is rejected against the registry", () => {
+  const unknownProvider = validateAssignment(parseAssignment("implement=nope/some-model")!, registry);
+  assert.equal(unknownProvider.ok, false);
+  assert.ok(unknownProvider.ok === false && unknownProvider.message.includes("nope"));
+  assert.ok(unknownProvider.ok === false && unknownProvider.message.includes("anthropic"), "valid providers are listed");
+
+  const unknownModel = validateAssignment(parseAssignment("implement=anthropic/gpt-9")!, registry);
+  assert.equal(unknownModel.ok, false);
+  assert.ok(unknownModel.ok === false && unknownModel.message.includes("gpt-9"));
+});
+
+test("an ambiguous bare model id is rejected with qualified suggestions", () => {
+  const result = validateAssignment(parseAssignment("implement=claude-sonnet-4-5")!, registry);
+  assert.equal(result.ok, false);
+  if (result.ok !== false) return;
+  assert.ok(/ambiguo/.test(result.message), result.message);
+  assert.ok(result.message.includes("anthropic/claude-sonnet-4-5"));
+  assert.ok(result.message.includes("opencode-go/claude-sonnet-4-5"));
+});
+
+test("an unambiguous bare model id resolves to its only provider", () => {
+  const result = validateAssignment(parseAssignment("implement=gpt-5-codex")!, registry);
+  assert.equal(result.ok, true);
+  assert.equal(result.ok === true && result.provider, "openai-codex");
+});
+
+test("a qualified valid assignment is accepted", () => {
+  const result = validateAssignment(parseAssignment("implement=anthropic/claude-opus-4-1")!, registry);
+  assert.equal(result.ok, true);
+  assert.equal(result.ok === true && result.provider, "anthropic");
+});
+
+test("an empty registry is permissive: a headless context must not be unusable", () => {
+  const result = validateAssignment(parseAssignment("implement=whatever/model")!, new Map());
+  assert.equal(result.ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// Parsing and the config patch.
+// ---------------------------------------------------------------------------
+test("parseAssignment reads slot=provider/model and slot=model", () => {
+  assert.deepEqual(parseAssignment("implement=anthropic/claude-opus-4-1"), {
+    slot: "implement", provider: "anthropic", model: "claude-opus-4-1",
+  });
+  assert.deepEqual(parseAssignment("default=gpt-5-codex"), {
+    slot: "default", provider: null, model: "gpt-5-codex",
+  });
+  assert.equal(parseAssignment("implement"), null, "no `=` is not an assignment");
+  assert.equal(parseAssignment("=x/y"), null, "an empty slot is not an assignment");
+  assert.equal(parseAssignment("implement="), null, "an empty model is not an assignment");
+});
+
+test("a valid assignment produces a patch touching only models.<slot>", () => {
+  const patch = assignmentPatch({ models: { explore: "anthropic/claude-opus-4-1" }, unrelated: 42 } as never, {
+    slot: "implement", provider: "anthropic", model: "claude-opus-4-1",
+  });
+
+  assert.deepEqual(patch, {
+    models: { explore: "anthropic/claude-opus-4-1", implement: "anthropic/claude-opus-4-1" },
+  });
+  assert.ok(!("unrelated" in patch), "the patch names only what it changes; the merge preserves the rest");
+});
+
+test("a bare model resolved to one provider is written qualified", () => {
+  const patch = assignmentPatch({}, { slot: "implement", provider: "openai-codex", model: "gpt-5-codex" });
+  assert.deepEqual(patch, { models: { implement: "openai-codex/gpt-5-codex" } });
+});
