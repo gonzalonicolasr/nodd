@@ -18,6 +18,65 @@ than the code does will not turn it red. Prose added next to a fix is therefore
 the known way this document can drift ahead of the product, and the defence is
 review, not the suite. Round 3 found three such sentences and closed them.
 
+## Install
+
+```bash
+pi install npm:@gonrocca/nodd
+```
+
+Global installation is the path enforcement is verified on. A pi-subagent child
+process does its own ambient discovery and finds installed packages, so gates
+also run inside delegated work — see **Enforcement scope** for what that does
+and does not cover. `pi -e npm:@gonrocca/nodd` runs the package for one session
+without installing it, and in that mode children do **not** load it: the parent
+is gated and delegated work is not.
+
+Install into one project instead of the whole account with `-l`, which writes
+`.pi/settings.json`. Remove with `pi remove npm:@gonrocca/nodd`.
+
+Nothing is configured after install: every gate is on, the flags are documented
+under **Flags, the kill switch and the escape hatch**, and model slots keep
+pi's defaults until `/nodd-models` is run.
+
+## Using it
+
+NODD runs on its own. A normal session looks like this:
+
+**Read-only work stays read-only.** Ask a question and nothing changes. Declare
+intent `read-only` and a write is refused by `gate-authorize`.
+
+**Substantial work is declared before the first write.** The agent calls
+`nodd_declare` with the slug, the route, the files and — this is the part worth
+caring about — the `runner`: the command a checkoff will be measured against.
+
+```
+nodd_declare  slug: dark-mode  title: "Dark mode"  summary: "Theme the editor"
+              intent: change  route: tracked
+              runner: "npm test"  tdd: strict  files: [src/theme.ts]
+→ .nodd/dark-mode/feature.md created with 0 tasks
+```
+
+Until that file exists, the first write is refused. The refusal says what to do
+about it.
+
+**Tasks are checked off with observed runs, not with claims.** `nodd_task` marks
+an item done only when `gate-evidence` finds four facts lined up: a success, of
+the declared runner, after the task's last write, with a RED before it under
+strict TDD. A model writing "all tests pass" changes nothing — the evidence line
+in the document is rendered from the observed tool result, never from prose.
+
+**When a gate is wrong, turn it off.** `/nodd-gates off track` disables it
+entirely and stays disabled; `/nodd-allow track` grants exactly one override.
+Neither is argued with.
+
+**When the work outgrows NODD, promote it.** `/nodd-promote dark-mode` writes
+`.sdd/dark-mode/requirements.md` and `/forge --continue dark-mode` starts at its
+plan phase with the finished work as context.
+
+To watch it work on something disposable, run `pi` in an empty git repo and ask
+for a two-file change: the declaration is demanded before the first write, and
+the first checkoff without a real test run is refused.
+
 ## The seven canonical steps
 
 `authorize` → `explore` → `resolve-uncertainty` → `classify` → `track` →
