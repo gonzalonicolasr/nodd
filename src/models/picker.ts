@@ -664,9 +664,10 @@ function submitProfileName(
   const first = loaded.edits.activeProfile === null;
   return rebuildEntries({
     ...loaded,
-    edits: first
-      ? { ...loaded.edits, activeProfile: name, editingProfile: null }
-      : loaded.edits,
+    // `loadProfile` already set `editingProfile`, and it stays set: the slots
+    // being opened are this profile's, so the title has to say so. Blanking it
+    // made the first profile read "sin perfil" while editing it.
+    edits: first ? { ...loaded.edits, activeProfile: name } : loaded.edits,
     screen: "slots",
     cursor: 0,
     notice: first

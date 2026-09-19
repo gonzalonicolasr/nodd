@@ -299,6 +299,17 @@ test("the title names what is being edited and whether it is active", () => {
   assert.match(pickerTitle(press(open(), "edit-loose")), /sin perfil/);
 });
 
+test("creating the first profile names it in the title, not 'sin perfil'", () => {
+  // The first profile activates itself, and the slots opened right after are
+  // that profile's. A title reading "sin perfil" while editing «rapido» tells
+  // the user their choices are going somewhere other than where they are going.
+  const created = submitText(press(open(), "new-profile"), "rapido");
+
+  assert.equal(created.screen, "slots");
+  assert.match(pickerTitle(created), /rapido/);
+  assert.ok(!/sin perfil/.test(pickerTitle(created)), "the slots being edited belong to the new profile");
+});
+
 test("an edit lands in the profile being edited, not in the active one", () => {
   let state = open({
     profiles: { quick: { models: { implement: "openai-codex/gpt-5-codex" } }, slow: { models: {} } },
