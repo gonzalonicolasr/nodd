@@ -17,9 +17,14 @@ export type TaskEvidence = {
   outcome: string;
 };
 
+/**
+ * A checked task carries both its observed evidence and its review candidate,
+ * by type. The candidate is a commit SHA or the literal `pending-commit`
+ * (`src/review-candidate.ts`) — never the checkbox, per `routing.go:51`,`:102`.
+ */
 export type Task =
   | { id: string; title: string; checked: false }
-  | { id: string; title: string; checked: true; evidence: TaskEvidence };
+  | { id: string; title: string; checked: true; evidence: TaskEvidence; candidate: string };
 
 export type FeatureDoc = {
   slug: string;
@@ -56,7 +61,12 @@ const SECTIONS = ["Objective", "Problem", "Scope", "Constraints", "Route", "Task
 function renderTask(task: Task): string {
   const box = task.checked ? "x" : " ";
   const head = `- [${box}] ${task.id}. ${task.title}`;
-  return task.checked ? `${head}\n  - observed: \`${task.evidence.command}\` → ${task.evidence.outcome}` : head;
+  if (!task.checked) return head;
+  return [
+    head,
+    `  - observed: \`${task.evidence.command}\` → ${task.evidence.outcome}`,
+    `  - candidate: ${task.candidate}`,
+  ].join("\n");
 }
 
 export function renderFeatureDoc(doc: FeatureDoc): string {
@@ -138,8 +148,20 @@ function parseTasks(block: string, defects: string[]): Task[] {
       tasks.push({ id, title, checked: false });
       continue;
     }
-    i++;
-    tasks.push({ id, title, checked: true, evidence: { command: evidence[1], outcome: evidence[2] } });
+    const candidate = /^ {2}- candidate: (.+)$/.exec(lines[i + 2] ?? "");
+    if (!candidate) {
+      defects.push(`task ${id} is checked but carries no review candidate line`);
+      tasks.push({ id, title, checked: false });
+      continue;
+    }
+    i += 2;
+    tasks.push({
+      id,
+      title,
+      checked: true,
+      evidence: { command: evidence[1], outcome: evidence[2] },
+      candidate: candidate[1].trim(),
+    });
   }
   return tasks;
 }

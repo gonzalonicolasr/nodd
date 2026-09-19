@@ -14,7 +14,13 @@ function docWithTasks(n: number): FeatureDoc {
   for (let i = 1; i <= n; i++) {
     doc.tasks.push(
       i === 2
-        ? { id: `T${i}`, title: `Task ${i}`, checked: true, evidence: { command: "npm test", outcome: "success" } }
+        ? {
+            id: `T${i}`,
+            title: `Task ${i}`,
+            checked: true,
+            evidence: { command: "npm test", outcome: "success" },
+            candidate: "1a2b3c4",
+          }
         : { id: `T${i}`, title: `Task ${i}`, checked: false },
     );
   }
@@ -39,6 +45,21 @@ test("a checked task renders its observed evidence inline", () => {
   const rendered = renderFeatureDoc(docWithTasks(3));
   assert.match(rendered, /- \[x\] T2\. Task 2\n {2}- observed: `npm test` → success/);
   assert.match(rendered, /- \[ \] T1\. Task 1/);
+});
+
+test("a checked task renders its review candidate, never its checkbox", () => {
+  const rendered = renderFeatureDoc(docWithTasks(3));
+  assert.match(rendered, /- \[x\] T2\. Task 2\n {2}- observed: `npm test` → success\n {2}- candidate: 1a2b3c4/);
+});
+
+test("a checked task without a candidate parses as a defect, not as checked", () => {
+  const text = renderFeatureDoc(docWithTasks(3)).replace("  - candidate: 1a2b3c4\n", "");
+  const parsed = parseFeatureDoc(text);
+  assert.ok(
+    parsed.defects.some((d) => d.includes("T2") && d.includes("candidate")),
+    `defects should name the missing candidate: ${JSON.stringify(parsed.defects)}`,
+  );
+  assert.equal(parsed.doc.tasks[1].checked, false, "a checkoff NODD cannot attribute is not a checkoff");
 });
 
 test("a missing section returns a typed defect list, never a throw", () => {

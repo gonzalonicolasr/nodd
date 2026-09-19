@@ -23,6 +23,7 @@ import {
   type Route,
 } from "../src/feature-doc.ts";
 import { writeVerified } from "../src/io.ts";
+import { candidateFor, candidateIdentity } from "../src/review-candidate.ts";
 
 /** The NODD entry type appended to the session so a reload can rebuild state. */
 export const OBSERVATION_ENTRY = "nodd:observation";
@@ -161,12 +162,15 @@ export function createKernel(
       // will require a committed `success` observed after the task's last
       // write. Until then the checkoff records what it actually has, which is
       // nothing yet, rather than inventing a command it never saw.
+      // The candidate is the observed commit SHA, or `pending-commit` when this
+      // session has seen no commit. Never the checkbox (`routing.go:51`,`:102`).
       const task = doc.tasks[index];
       doc.tasks[index] = {
         id: task.id,
         title: task.title,
         checked: true,
         evidence: { command: "none", outcome: "unverified (evidence gate not yet active)" },
+        candidate: candidateIdentity(candidateFor(state.committed)),
       };
       const saved = saveDoc(doc);
       return saved.ok ? { ok: true, text: `${args.id} checked in .nodd/${doc.slug}/feature.md` } : saved;

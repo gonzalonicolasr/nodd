@@ -101,3 +101,33 @@ test("checkoff refusal wiring is present but open until the evidence gate lands"
   const parsed = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8"));
   assert.equal(parsed.doc.tasks[0].checked, true);
 });
+
+test("a checkoff with no observed commit records pending-commit", () => {
+  const cwd = tmp();
+  const kernel = createKernel(undefined, cwd);
+  kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
+  kernel.task({ action: "add", id: "T1", title: "First", slug: "demo" });
+  kernel.task({ action: "check", id: "T1", slug: "demo" });
+
+  const task = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8")).doc.tasks[0];
+  assert.equal(task.checked && task.candidate, "pending-commit");
+});
+
+test("a checkoff after an observed commit records that SHA as the candidate", () => {
+  const cwd = tmp();
+  const kernel = createKernel(undefined, cwd);
+  kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
+  kernel.task({ action: "add", id: "T1", title: "First", slug: "demo" });
+
+  kernel.onToolResult({
+    toolCallId: "g1",
+    toolName: "bash",
+    input: { command: "git commit -m 'feat: first'" },
+    isError: false,
+    content: "[main 7c0ffee] feat: first\n 1 file changed",
+  });
+  kernel.task({ action: "check", id: "T1", slug: "demo" });
+
+  const task = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8")).doc.tasks[0];
+  assert.equal(task.checked && task.candidate, "7c0ffee");
+});
