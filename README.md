@@ -7,9 +7,16 @@ artifacts into `/forge` artifacts.
 
 ODD's failure was promising compliance while shipping delivery. This file is
 where NODD refuses to repeat it: everything below states what is mechanized,
-what is only advice, and what is not carried at all. Every claim here is
-asserted by `test/readme-contract.test.ts`, which fails if the README names a
-gate, a module or a command that does not exist.
+what is only advice, and what is not carried at all.
+
+`test/readme-contract.test.ts` holds part of that line mechanically: it fails if
+the README names a gate, a module or a command that does not exist, drops a
+canonical step, quotes a matrix total that disagrees with the matrix, or lets
+the bash, enforcement-scope, resume and kill-switch sections stop stating their
+limits. It does **not** parse English: a newly written sentence promising more
+than the code does will not turn it red. Prose added next to a fix is therefore
+the known way this document can drift ahead of the product, and the defence is
+review, not the suite. Round 3 found three such sentences and closed them.
 
 ## The seven canonical steps
 
@@ -129,19 +136,31 @@ up, because a green command proves something only about *which* command ran and
 2. **The declared runner.** `nodd_declare` records a `runner` into the feature
    doc's `## Verification` section, and only runs of that command count.
    `npm test -- one.test.ts` counts; `echo "all tests pass"` does not, and
-   neither does any other command that merely mentions the runner.
+   neither does any other command that merely mentions the runner. A pinned
+   runner cannot be re-pinned: re-declaring with a different one is refused, so
+   a refused checkoff cannot be repaired by renaming the check to whatever did
+   pass.
 3. **After the task's last write.** A run observed before the edit it supposedly
    verifies proves nothing about the edit. Ordering uses the kernel's
    observation sequence rather than the wall clock, because a write and the run
    after it routinely land in the same millisecond.
 4. **A RED first, under strict TDD**, when the declaration set `tdd: strict`.
+   `tdd: strict` without a runner is refused at declaration, because a RED run
+   is a failing run *of the declared runner*: accepting it would write
+   `- tdd: strict` into the document while checking nothing.
 
 The honest limit: **the model still chooses the runner.** NODD cannot know what
 the right check for your project is. What it enforces is that the choice is made
 up front, in a durable artifact, before the work — so the command the work is
-judged by cannot be invented afterwards to fit whatever happened to pass. If no
-runner was declared, fact 2 is skipped and the recorded evidence says the runner
-was not pinned; it does not pretend otherwise.
+judged by cannot be invented afterwards to fit whatever happened to pass.
+
+Declaring no runner at all is still allowed, and then fact 2 cannot be checked.
+It is skipped rather than faked, and the evidence line itself discloses it:
+`observed: <cmd> → success (runner not pinned)`. That caveat appears only on
+an unpinned checkoff, so a reader auditing the artifact can tell a run certified
+by the declared runner from one certified by whatever exited 0. What NODD does
+**not** do on that path is refuse: with nothing pinned there is nothing to
+compare against, so an unpinned feature buys disclosure, not enforcement.
 
 ### Resume: prior evidence comes back as `unverified`
 
@@ -303,3 +322,27 @@ under `.sdd/` — a test scans every other source file to keep it that way.
 
 Forge is an optional dependency. When it is absent, the artifact is still
 written and the exact command to run by hand is reported.
+
+## Known limitations
+
+These are open, not fixed. They are here because a declared problem is a result
+and a hidden one makes everything above worthless.
+
+- **An unpinned feature is not enforced, only disclosed.** `runner` is optional
+  at declaration. Omit it and fact 2 cannot be checked, so any observed exit-0
+  after the write can check a task off. The evidence line says
+  `success (runner not pinned)` so the artifact never passes it off as a
+  certified run, but the checkoff does happen. Pin a runner to get enforcement.
+- **`isDeclaredRunner` matches whole tokens by prefix, so a flag that redirects
+  the working directory passes.** `npm test --prefix /tmp` is accepted as a run
+  of `npm test`; the gate cannot tell a flag that narrows scope from one that
+  moves it elsewhere. It requires the model to pin a runner and then invoke it
+  with a redirecting flag.
+- **`readLedger` reports defects that no production caller reads.** A corrupt
+  ledger is treated as empty, which is fail-closed for evidence (nothing to
+  support a checkoff) but the corruption itself is not surfaced to the user.
+- **No test parses the English in this file.** See the note at the top: the
+  README contract checks names, sections and totals, not whether a sentence
+  promises more than the code delivers.
+- **Enforcement in grandchildren was never measured.** Only depth 1 was probed;
+  see *Enforcement scope*.
