@@ -1,5 +1,5 @@
 {
-  "name": "nodd",
+  "name": "@gonrocca/nodd",
   "version": "0.1.0",
   "description": "Non-negotiable Organic Driven Development \u2014 the ODD protocol as runtime mechanism for pi: blocking gates, observed evidence, and promotion to /forge.",
   "type": "module",
@@ -30,6 +30,9 @@
   ],
   "scripts": {
     "test": "node --test --experimental-strip-types"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.84.0"
