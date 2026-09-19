@@ -44,6 +44,28 @@ test("route: tracked creates the feature doc and reports it in one line", () => 
   assert.equal(result.text, ".nodd/demo/feature.md created with 0 tasks");
 });
 
+// A runner is pinned once. `tdd: strict` was not: re-declaring while omitting
+// `tdd` rewrote the document to `- tdd: off`, with no refusal and no trace, and
+// a GREEN with no RED then checked the task off. Dropping a discipline is as
+// much a change to how the work is judged as swapping the runner is.
+test("strict TDD cannot be dropped by re-declaring without it", () => {
+  const cwd = tmp();
+  const kernel = createKernel(undefined, cwd);
+  kernel.declare({
+    intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo",
+    runner: "npm test", tdd: "strict",
+  } as never);
+
+  const second = kernel.declare({
+    intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo",
+    runner: "npm test",
+  } as never);
+
+  assert.equal(second.ok, false, "omitting tdd must not silently downgrade strict to off");
+  const parsed = parseFeatureDoc(readFileSync(featureDocPath(cwd, "demo"), "utf8"));
+  assert.equal(parsed.doc.verification.tdd, "strict", "the pinned discipline must survive the refused re-declaration");
+});
+
 test("route: inline creates no durable artifact", () => {
   const cwd = tmp();
   const kernel = createKernel(undefined, cwd);

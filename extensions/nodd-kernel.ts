@@ -206,6 +206,17 @@ export function createKernel(
         };
       }
 
+      // The runner is pinned once; the discipline it is run under has to be
+      // pinned the same way. Omitting `tdd` on a re-declaration rewrote the doc
+      // to `- tdd: off` silently, and a GREEN with no RED then checked the task
+      // off -- the re-pinning attack with one word removed instead of one added.
+      if (doc.verification.tdd === "strict" && args.tdd !== "strict") {
+        return {
+          ok: false,
+          text: `nodd_declare: ${args.slug} is pinned to tdd: strict, and dropping the discipline after the work changes what the checkoff means. Re-declare with tdd: strict, or declare a new feature.`,
+        };
+      }
+
       if (doc.verification.runner !== null && requested !== null && requested !== doc.verification.runner) {
         return {
           ok: false,
