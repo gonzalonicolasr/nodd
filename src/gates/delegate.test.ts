@@ -94,6 +94,14 @@ test("repeated runs of the declared runner do reach the long-session backstop", 
   );
   const decision = delegateGate(committed, write, emptyPolicy(), noPending);
   assert.equal(decision.allow, false, "25 tool calls without delegating must reach the backstop");
+  // Asserting only `allow === false` let a combined mutation -- backstop off,
+  // writer threshold at 1 -- keep this green through the wrong trigger. The
+  // row is about the backstop, so the reason has to name it.
+  assert.match(
+    "reason" in decision ? decision.reason : "",
+    /25 tool calls/,
+    "the refusal must come from the backstop, not from another trigger firing by accident",
+  );
 });
 
 test("the long-session backstop fires at 20 tool calls with no delegation", () => {
