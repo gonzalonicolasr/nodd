@@ -66,8 +66,11 @@ test("same-batch pending write intent counts toward the writer trigger", () => {
 });
 
 // routing.go:70 — tests, builds, installs and review actors may use fresh
-// workers without changing the route. They are not writer files.
-test("test, build and install commands never trip the gate", () => {
+// workers without changing the route. They are not writer files, so they never
+// reach the mapping or writer trigger. The long-session backstop is a separate
+// clause (routing.go:82) and it counts every tool call, these included — see
+// the test below it.
+test("test, build and install commands never trip the mapping or writer trigger", () => {
   n = 0;
   const committed = foldAll(emptyCommitted(), [
     obs("bash", { command: "npm test" }),
@@ -76,6 +79,21 @@ test("test, build and install commands never trip the gate", () => {
     obs("bash", { command: "git status" }),
   ]);
   assert.equal(delegateGate(committed, write, emptyPolicy(), noPending).allow, true);
+});
+
+// The claim "test/build/install never trip it" was covered by four commands,
+// which is under the backstop threshold, so the case that contradicts it was
+// never exercised. Run the declared runner past the threshold and the backstop
+// does fire — as ODD specifies. That is the behaviour; the requirement text now
+// says so.
+test("repeated runs of the declared runner do reach the long-session backstop", () => {
+  n = 0;
+  const committed = foldAll(
+    emptyCommitted(),
+    Array.from({ length: 25 }, () => obs("bash", { command: "npm test" })),
+  );
+  const decision = delegateGate(committed, write, emptyPolicy(), noPending);
+  assert.equal(decision.allow, false, "25 tool calls without delegating must reach the backstop");
 });
 
 test("the long-session backstop fires at 20 tool calls with no delegation", () => {
