@@ -38,6 +38,7 @@ import { appendRecord, readLedger } from "../src/ledger.ts";
 import { isSuccess, parseOutcome } from "../src/outcome.ts";
 import { candidateFor, candidateIdentity } from "../src/review-candidate.ts";
 import { reopenTask } from "../src/change-acceptance.ts";
+import { statusLine } from "../src/status.ts";
 
 /** The NODD entry type appended to the session so a reload can rebuild state. */
 export const OBSERVATION_ENTRY = "nodd:observation";
@@ -50,7 +51,8 @@ type ToolResultEvent = ToolCallEvent & { isError?: boolean; content?: unknown };
  * `{ type: "custom", customType, data }` (`session-manager.d.ts:69-73`).
  */
 type SessionEntry = { type?: string; customType?: string; data?: unknown };
-type SessionStartContext = { sessionManager?: { getEntries?(): SessionEntry[] } };
+type Ui = { ui?: { setStatus?(key: string, text?: string): void } };
+type SessionStartContext = { sessionManager?: { getEntries?(): SessionEntry[] } } & Ui;
 type AgentStartEvent = { systemPrompt?: unknown };
 
 /** The slice of pi's API this extension uses. Declared locally: no pi import. */
@@ -577,7 +579,7 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
 
   // Enforcement. The gates are useless unless they run here: this is the only
   // point in a session where NODD can refuse a call before it happens.
-  pi.on("tool_call", ((event: ToolCallEvent) => {
+  pi.on("tool_call", ((event: ToolCallEvent, ctx?: Ui) => {
     let decision: { block: true; reason: string } | null = null;
     try {
       // Re-read the flags before deciding. `/nodd-gates disable` writes the
@@ -593,21 +595,45 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
     // Record the call either way. A refused call still happened, and the
     // counters that decide the next refusal must see it.
     kernel.onToolCall(event);
+    showStatus(ctx);
     return decision ?? undefined;
   }) as never);
 
-  pi.on("tool_result", ((event: ToolResultEvent) => {
+  pi.on("tool_result", ((event: ToolResultEvent, ctx?: Ui) => {
     const obs = kernel.onToolResult(event);
     try {
       pi.appendEntry?.(OBSERVATION_ENTRY, obs);
     } catch {
       // Session persistence is best effort: the durable truth is on disk.
     }
+    showStatus(ctx);
   }) as never);
 
   pi.on("session_start", ((_event: unknown, ctx: SessionStartContext) => {
     kernel.replay(ctx?.sessionManager?.getEntries?.());
+    showStatus(ctx);
   }) as never);
+
+  /**
+   * Publish the kernel's state to pi's footer.
+   *
+   * Gates are invisible until one blocks, so a session where everything is fine
+   * looks exactly like one where the extension never loaded. This is the only
+   * standing answer to "is it on?".
+   *
+   * Entirely best effort: `ctx.ui` is absent in print mode
+   * (`extensions.md:947`), and a footer we cannot draw must never cost a tool
+   * call.
+   */
+  function showStatus(ctx?: Ui): void {
+    try {
+      const gates = kernel.policy();
+      const enabled = gates.flags.all !== false;
+      ctx?.ui?.setStatus?.("nodd", statusLine(kernel.state.committed, enabled));
+    } catch {
+      // Decoration, never enforcement.
+    }
+  }
 
   // Chained, never replaced (`types.d.ts:806-810`): the incoming prompt is
   // returned byte-for-byte with NODD's two blocks appended, so another

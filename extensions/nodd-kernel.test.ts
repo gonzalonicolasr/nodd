@@ -162,3 +162,47 @@ test("terminate is never assigned anywhere in the extension", () => {
   const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "nodd-kernel.ts"), "utf8");
   assert.ok(!/terminate\s*[:=]/.test(src), "blocking one sibling must never abort the batch");
 });
+
+// ---------------------------------------------------------------------------
+// Visibility. Gates do nothing until they block, so a healthy session is
+// indistinguishable from an extension that failed to load — unless it says so.
+// ---------------------------------------------------------------------------
+/** A pi whose tools are registered, plus a footer to read back. */
+function harnessWithUi() {
+  const tools = new Map<string, { name: string; handler: (args: unknown) => unknown }>();
+  const handlers = new Map<string, Handler>();
+  const status = new Map<string, string | undefined>();
+  const pi = {
+    on(event: string, handler: Handler) { handlers.set(event, handler); },
+    registerTool(tool: { name: string; handler: (args: unknown) => unknown }) { tools.set(tool.name, tool); },
+    appendEntry() {},
+  };
+  register(pi as never, mkdtempSync(join(tmpdir(), "nodd-ui-")), mkdtempSync(join(tmpdir(), "nodd-uih-")));
+  return { handlers, tools, ui: { ui: { setStatus: (k: string, v?: string) => status.set(k, v) } }, status };
+}
+
+test("the footer says nodd is running before anything has happened", () => {
+  const { handlers, ui, status } = harnessWithUi();
+  handlers.get("session_start")?.({}, { sessionManager: { getEntries: () => [] }, ...ui });
+  assert.equal(status.get("nodd"), "nodd · sin declarar");
+});
+
+test("the footer follows the declared route", () => {
+  const { handlers, tools, ui, status } = harnessWithUi();
+  handlers.get("session_start")?.({}, { sessionManager: { getEntries: () => [] }, ...ui });
+
+  const args = { intent: "change", route: "tracked", slug: "auth", title: "login", summary: "s" };
+  handlers.get("tool_call")?.({ toolName: "nodd_declare", toolCallId: "d1", input: args }, ui);
+  const out = tools.get("nodd_declare")?.handler(args);
+  handlers.get("tool_result")?.({ toolName: "nodd_declare", toolCallId: "d1", input: args, isError: false, content: out }, ui);
+
+  assert.equal(status.get("nodd"), "nodd · tracked · auth");
+});
+
+test("a host without a footer does not break the session", () => {
+  // `ctx.ui` is absent in print mode (`extensions.md:947`). A status update is
+  // decoration; losing it must never cost a tool call.
+  const { handlers } = harnessWithUi();
+  assert.doesNotThrow(() => handlers.get("session_start")?.({}, { sessionManager: { getEntries: () => [] } }));
+  assert.doesNotThrow(() => handlers.get("tool_call")?.({ toolName: "read", toolCallId: "r1", input: { file_path: "a" } }));
+});
