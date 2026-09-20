@@ -64,3 +64,27 @@ test("no code file imports pi outside extensions/", () => {
     assert.ok(!text.includes(`from "${piSpecifier}"`), `${file} imports pi outside extensions/`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// A release cannot silently skip the changelog.
+//
+// Twelve versions shipped with no published history, and one of them (0.6.0)
+// rewrites `~/.pi/nodd.json` on load. A package that edits user config across
+// a version boundary and publishes no changelog is asking to be trusted on
+// prose. These two assertions make the next release fail the suite if the
+// entry is missing, and make the file actually reach npm consumers.
+// ---------------------------------------------------------------------------
+test("the newest changelog entry is the version being shipped", () => {
+  const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+  const newest = /^## \[(\d+\.\d+\.\d+)\]/m.exec(changelog)?.[1];
+  const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.equal(newest, version, `CHANGELOG.md's newest entry is ${newest}, package.json says ${version}`);
+});
+
+test("the changelog is published to npm", () => {
+  const { files } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.ok(
+    (files as string[]).includes("CHANGELOG.md"),
+    "CHANGELOG.md is not in package.json files, so consumers never receive it",
+  );
+});

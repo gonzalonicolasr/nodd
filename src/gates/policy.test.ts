@@ -4,7 +4,6 @@ import { GATE_IDS } from "./registry.ts";
 import {
   allow,
   consumeHatch,
-  firstRefusal,
   grantHatch,
   refuse,
   resolveFlag,
@@ -56,13 +55,6 @@ test("every gate's refusal renders gate id, observation and both remedies", () =
     assert.ok(decision.reason.includes(`do the ${id} thing`), `${id}: reason names the action`);
     assert.ok(decision.reason.includes(`/nodd-allow ${id}`), `${id}: reason names the escape hatch`);
   }
-});
-
-test("the first refusal wins, so a call never gets two messages", () => {
-  const decisions = [allow(), refuse("classify", "a", "b"), refuse("track", "c", "d")];
-  const winner = firstRefusal(decisions);
-  assert.equal(winner?.gate, "classify");
-  assert.equal(firstRefusal([allow(), allow()]), null);
 });
 
 test("an escape hatch is one-shot and never crosses gates", () => {

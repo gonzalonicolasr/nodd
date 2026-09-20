@@ -64,13 +64,6 @@ export function refuse(gate: GateId, observed: string, action: string): GateDeci
   };
 }
 
-/** First refusal wins: a single call never collects two overlapping messages. */
-export function firstRefusal(decisions: GateDecision[]): Extract<GateDecision, { allow: false }> | null {
-  for (const decision of decisions) {
-    if (decision.allow === false) return decision;
-  }
-  return null;
-}
 
 export function grantHatch(policy: Policy, gate: GateId, reason: string, at?: string): Policy {
   return { ...policy, hatches: { ...policy.hatches, [gate]: { reason, ...(at ? { at } : {}) } } };
