@@ -54,6 +54,7 @@ way a model would and closed what it found, in two passes:
 | self-attack | `(node x.js)`, `$(node b.js)`, `nohup`, `env node x.js` | subshell chars break a token; wrappers are transparent |
 | veredicto round 3 | `/usr/bin/env node`, `/usr/bin/node`, `timeout 10 node`, `exec`, `setsid`, `node -- x.js`, `bash script\ name.sh` | interpreters and wrappers matched by basename; backslash escapes; `--` ends flags; numeric wrapper arguments |
 | veredicto round 4 | a **newline** — `ls\nnode build.js` — plus control-flow bodies | newline, `{`, `then` and `do` open a command, in `tokenise` *and* in `commandWord` |
+| veredicto round 5 | the round-4 fix made the gate **refuse reads**: `grep -rn 'then install' docs/` became a write | every regex row now matches against the command with quoted data blanked; the interpreter row is exempt because it tokenises quotes itself |
 
 `/usr/bin/env node` is the most idiomatic interpreter invocation there is and
 `timeout N` is this project's own test idiom; both evaded on the first try,
@@ -80,6 +81,18 @@ of agent work. It also exposed that the blind spot was never new code's fault:
 `commandWord` had been missing the newline since `19167a7`, so `ls\nrm -rf build`
 had been invisible to *every* pattern, not just the interpreter row. The fix
 lands in both places.
+
+Round 5 is the one that closes the loop. Widening the separators to `\n`, `(`,
+`{`, `then` and `do` widened `commandWord`'s quote-blindness along with them, and
+a regex that had been *almost* harmless became a gate that refused `grep`, `jq`
+and `git log`. The fix was already precedented one function above:
+`redirectsToFile` had blanked quoted data since the day it was written. Now every
+regex row does, and the interpreter row opts out because it parses quotes itself
+and needs the filename in `bash "my script.sh"` to survive.
+
+Two false positives remain and are declared rather than chased: a covered word
+in a bare comment, and a heredoc body. Closing those means parsing comments and
+heredocs, which is the sweep this run decided not to keep doing.
 
 That is also the argument for stopping. A denylist over a Turing-complete shell
 does not close by sweeping, so the README now states the posture plainly: this

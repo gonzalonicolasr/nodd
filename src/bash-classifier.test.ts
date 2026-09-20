@@ -339,3 +339,26 @@ test("a control-flow body is a place a command can hide", () => {
   // The keywords alone are not writes.
   assert.equal(classifyBash("if true; then ls; fi"), "non-mutating");
 });
+
+test("a covered word inside quoted data does not make a read a write", () => {
+  // Adding \n ( { then do as separators widened commandWord's quote-blind
+  // surface into ordinary prose: searching for the word "install" became a
+  // write. This file says twice that a gate refusing reads is a gate people
+  // turn off, and these are the commands a person runs while reading a repo.
+  assert.equal(classifyBash("grep -rn '(install)' README.md"), "non-mutating");
+  assert.equal(classifyBash("grep -rn 'then install' docs/"), "non-mutating");
+  assert.equal(classifyBash("jq '{install}' package.json"), "non-mutating");
+  assert.equal(classifyBash("git log --grep='then install the deps'"), "non-mutating");
+  assert.equal(classifyBash("rg 'do cp' docs/"), "non-mutating");
+  assert.equal(classifyBash("grep -n 'then mkdir -p' Makefile"), "non-mutating");
+  assert.equal(classifyBash("echo 'build, then install, then test'"), "non-mutating");
+});
+
+test("a subshell or a brace group is a place a write can hide", () => {
+  // Mutation found `(` and `{` load-bearing in commandWord and pinned by
+  // nothing: removing them left all 578 tests green while these four escaped.
+  assert.equal(classifyBash("(rm -rf build)"), "mutating");
+  assert.equal(classifyBash("{ rm -rf build; }"), "mutating");
+  assert.equal(classifyBash("ls && { chmod +x f; }"), "mutating");
+  assert.equal(classifyBash("ls | ( tee out.txt )"), "mutating");
+});

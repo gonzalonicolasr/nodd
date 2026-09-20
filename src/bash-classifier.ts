@@ -15,8 +15,21 @@ export type BashClass = "mutating" | "non-mutating";
 export type CoveredPattern = {
   label: string;
   example: string;
+  /** True when the pattern parses quotes itself and needs the raw command. */
+  tokenises?: boolean;
   test(command: string): boolean;
 };
+
+/**
+ * Blank the contents of quoted runs, keeping the quotes as empty markers.
+ *
+ * Quoted text is data, not syntax: `grep -rn 'then install' docs/` is a read
+ * and `grep -rn 'a>b' src` is a read. Every pattern here matches against the
+ * blanked form, because a gate that refuses reads is a gate people turn off.
+ */
+function blankQuotedData(command: string): string {
+  return command.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
+}
 
 /**
  * A command word at the start of the string or after a shell separator.
@@ -40,7 +53,7 @@ function commandWord(words: string[]): RegExp {
 function redirectsToFile(command: string): boolean {
   const withoutFdDuplication = command.replace(/\d*>&\d+/g, "").replace(/&>/g, ">");
   // A `>` inside quotes is data, not redirection (`grep -rn 'a>b' src`).
-  const unquoted = withoutFdDuplication.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
+  const unquoted = blankQuotedData(withoutFdDuplication);
   // The standard sinks discard output; they do not create a file. Counting
   // them as writes refused `grep … 2>/dev/null` and `cat … 2>/dev/null` — pure
   // reads — and a gate that blocks reading is a gate people turn off.
@@ -58,7 +71,7 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
   { label: "mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`)", example: "git commit -m 'x'", test: (c) => /\bgit\s+(apply|checkout|restore|reset|commit|stash|clean|mv|rm)\b/.test(c) },
   { label: "package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add)", example: "npm install lodash", test: (c) => /\b(npm|pnpm|yarn|pip|pip3|cargo)\s+(install|add|i)\b/.test(c) },
   { label: "inline interpreters (`node -e`, `python -c`)", example: "node -e \"require('fs').writeFileSync('f','x')\"", test: (c) => /\b(node|deno|bun)\s+(-e|--eval)\b/.test(c) || /\bpython3?\s+-c\b/.test(c) },
-  { label: "an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`)", example: "node script.js", test: (c) => runsScriptFile(c) },
+  { label: "an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`)", example: "node script.js", tokenises: true, test: (c) => runsScriptFile(c) },
 ];
 
 /**
@@ -174,6 +187,7 @@ export const NOT_COVERED: string[] = [
   "a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)",
   "an interpreter reached through a variable or an alias: `I=node; $I x.js`",
   "a wrapper carrying its own flag before the command: `nice -n 10 node x.js`, `sudo -u root node x.js`",
+  "a covered word inside a comment, or inside a heredoc body: `ls` then `# rm later`",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
   "a pre-existing background process",
@@ -185,5 +199,17 @@ export const NOT_COVERED: string[] = [
 export function classifyBash(command: string): BashClass {
   const text = (command ?? "").trim();
   if (!text) return "non-mutating";
-  return COVERED_PATTERNS.some((pattern) => pattern.test(text)) ? "mutating" : "non-mutating";
+  // Patterns see the command with quoted data blanked out. `redirectsToFile`
+  // has done this since it was written; `commandWord` did not, and once `\n`,
+  // `(`, `{`, `then` and `do` became separators, that blind spot turned every
+  // covered word inside a string or a comment into a refusal.
+  // The interpreter row is exempt: it tokenises quotes itself, and needs the
+  // filename in `bash "my script.sh"` to survive. Every other row is a regex
+  // that cannot tell data from syntax on its own.
+  const syntax = blankQuotedData(text);
+  return COVERED_PATTERNS.some((pattern) =>
+    pattern.tokenises ? pattern.test(text) : pattern.test(syntax),
+  )
+    ? "mutating"
+    : "non-mutating";
 }
