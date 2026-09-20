@@ -427,6 +427,12 @@ written and the exact command to run by hand is reported.
 These are open, not fixed. They are here because a declared problem is a result
 and a hidden one makes everything above worthless.
 
+- **There is no single switch that turns everything off.** `/nodd-gates disable
+  <gate>` is per gate, so stopping NODD entirely means disabling all six. A
+  global `all` flag exists in `resolveFlag` but nothing populates it, and
+  `gates.all` in the config file does *not* work. To remove NODD completely,
+  drop it from your pi config — the package owns no state outside
+  `~/.pi/nodd.json` and the repo's `.nodd/`.
 - **Only pi's builtin writers are gated.** Enforcement sees `write`, `edit` and
   `bash`. A write performed by any other tool — a filesystem MCP server, a tool
   from another harness — is invisible to every gate, because NODD classifies a
