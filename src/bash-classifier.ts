@@ -35,6 +35,18 @@ function blankQuotedData(command: string): string {
   return withoutQuotes.replace(/(^|\s)#[^\n]*/g, "$1");
 }
 
+/** Does this line hand its heredoc to an interpreter, rather than to a reader? */
+function feedsAnInterpreter(line: string): boolean {
+  // The heredoc operator binds to whatever precedes it: `python3 <<PY` runs
+  // the body just as `python3 - <<PY` does. Splitting on `<` keeps the command
+  // word visible to the tokeniser.
+  return tokenise(line.replace(/<</g, " << ")).some(
+    (token, at, all) =>
+      (token.startsCommand || all[at - 1]?.text === "|") &&
+      INTERPRETERS.has(token.text.slice(token.text.lastIndexOf("/") + 1)),
+  );
+}
+
 /**
  * Drop the body of a heredoc, keeping the line that opens it.
  *
@@ -51,11 +63,15 @@ function blankHeredocBodies(command: string): string {
     kept.push(lines[i]);
     const opener = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1/.exec(lines[i]);
     if (!opener) continue;
+    // A body stops being data the moment something runs it: `cat <<EOF | bash`
+    // and `bash <<EOF` smuggle a script inline, so those bodies stay visible.
+    if (feedsAnInterpreter(lines[i])) continue;
     const terminator = opener[2];
-    // Skip the body and the terminator alike: a terminator is a bare word and
-    // never carries syntax, so keeping it would change nothing.
-    while (i + 1 < lines.length && lines[i + 1].trim() !== terminator) i += 1;
-    i += 1;
+    const end = lines.findIndex((line, at) => at > i && line.trim() === terminator);
+    // An unterminated heredoc swallows nothing: without a terminator there is
+    // no body to trust, so the rest of the command is read as commands.
+    if (end === -1) continue;
+    i = end;
   }
   return kept.join("\n");
 }

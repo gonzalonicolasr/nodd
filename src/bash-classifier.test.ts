@@ -369,7 +369,7 @@ test("a heredoc body is data, like a quoted string", () => {
   // a write. Quoted data has been excluded since the beginning; a heredoc is
   // the same thing with different syntax.
   assert.equal(classifyBash("cat <<'EOF'\nconst f = (a) => a + 1;\nEOF"), "non-mutating");
-  assert.equal(classifyBash("python3 - <<'PY'\nprint(1 > 0)\nPY"), "non-mutating");
+  assert.equal(classifyBash("cat <<'PY'\nprint(1 > 0)\nPY"), "non-mutating");
   assert.equal(classifyBash("cat <<EOF\n# then install the deps\nEOF"), "non-mutating");
   // The command around the heredoc is still read normally.
   assert.equal(classifyBash("cat <<'EOF' > out.txt\nhello\nEOF"), "mutating");
@@ -394,4 +394,20 @@ test("a comment is not a command", () => {
   assert.equal(classifyBash("mv a#1.txt b"), "mutating");
   assert.equal(classifyBash("rm -rf build  # cleanup"), "mutating");
   assert.equal(classifyBash("ls\nrm -rf build  # cleanup"), "mutating");
+});
+
+test("a heredoc fed to an interpreter is a script, not data", () => {
+  // Blanking heredoc bodies stops a read being refused, but the body stops
+  // being data the moment something executes it. `cat <<EOF | bash` and
+  // `bash <<EOF` are how a shell block smuggles a script inline, and they were
+  // the cost of the previous fix.
+  assert.equal(classifyBash("cat <<'EOF' | bash\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("bash <<'EOF'\nrm -rf /\nEOF"), "mutating");
+  assert.equal(classifyBash("cat <<'EOF' | sh\nchmod +x f\nEOF"), "mutating");
+  assert.equal(classifyBash("python3 <<'PY'\nrm -rf build\nPY"), "mutating");
+  // An unterminated heredoc must not swallow the commands after it.
+  assert.equal(classifyBash("cat <<'EOF'\nx\nNOPE\nrm -rf build"), "mutating");
+  // A heredoc that only carries data is still a read.
+  assert.equal(classifyBash("cat <<'EOF'\nconst f = (a) => a + 1;\nEOF"), "non-mutating");
+  assert.equal(classifyBash("cat <<'PY'\nprint(1 > 0)\nPY"), "non-mutating");
 });
