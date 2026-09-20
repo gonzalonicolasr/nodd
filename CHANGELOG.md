@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-09-20
+
+### Fixed
+
+- Data is data for every pattern, not just redirection. A covered word inside
+  a quoted string, a `#` comment or a heredoc body is no longer read as a
+  command: `grep -rn 'then install' docs/`, `jq '{install}' package.json` and
+  `cat <<'EOF'` carrying an arrow function are reads again. Three reviewers hit
+  the heredoc case while reading this repository.
+- A heredoc handed to an interpreter keeps its body visible, because a body
+  stops being data once something runs it: `cat <<EOF | bash` and `bash <<EOF`
+  are writes. An unterminated heredoc swallows nothing.
+- `(rm -rf build)` and `ls && { chmod +x f; }` are writes; a subshell and a
+  brace group were load-bearing in the separator set and pinned by no test.
+
 ## [0.7.0] - 2026-09-20
 
 ### Changed

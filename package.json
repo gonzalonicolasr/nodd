@@ -1,6 +1,6 @@
 {
   "name": "@gonrocca/nodd",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Non-negotiable Organic Driven Development — the ODD protocol as runtime mechanism for pi: blocking gates, observed evidence, and promotion to /forge.",
   "type": "module",
   "keywords": [
