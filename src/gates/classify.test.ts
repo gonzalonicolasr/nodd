@@ -48,6 +48,19 @@ test("a declaration seen only in pending does not unblock, and the reason cites 
     "the reason must say how to resolve it");
 });
 
+test("the refusal offers a remedy reachable without nodd_declare or a slash command, for a subagent that has neither", () => {
+  const decision = classifyGate(emptyCommitted(), write, emptyPolicy(), noPending);
+  assert.equal(decision.allow, false);
+  assert.ok(
+    decision.allow === false && /nodd_declare/.test(decision.remedy.action),
+    "the existing nodd_declare remedy must remain, since it is correct for a parent session",
+  );
+  assert.ok(
+    decision.allow === false && /report (this|the refusal) (back )?to (whoever|the (caller|delegator|parent))/i.test(decision.remedy.action),
+    `remedy must also offer a path reachable without any tool: ${decision.allow === false ? decision.remedy.action : ""}`,
+  );
+});
+
 test("the flag off allows the undeclared write", () => {
   const policy = { ...emptyPolicy(), config: { classify: { enabled: false } } };
   assert.equal(classifyGate(emptyCommitted(), write, policy, noPending).allow, true);

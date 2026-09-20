@@ -9,6 +9,13 @@
 // enforcement. It mechanizes the *declaration*: until a `nodd_declare` result
 // is committed, the first write does not happen. A skipped classification stops
 // being invisible, which is all a mechanism can honestly do here.
+//
+// The remedy names two paths, not one, following `track.ts:41-50`'s precedent:
+// `nodd_declare` is correct and stays first, because it is the right answer for
+// a parent session. But a subagent has neither `nodd_declare` in its toolset
+// nor a slash command, so a refusal naming only that path was a dead end for
+// it — this is D4. The second clause, reporting the refusal back to the
+// delegator, needs no tool call at all and is reachable by any actor.
 
 import type { Committed } from "../state.ts";
 import type { PendingCall } from "../observations.ts";
@@ -40,6 +47,7 @@ export function classifyGate(
   return refuse(
     "classify",
     `no route has been declared for this session, and ${request.toolName} would be the first change`,
-    "call `nodd_declare` with an explicit intent and route (`inline`, `tracked` or `forge`)",
+    "call `nodd_declare` with an explicit intent and route (`inline`, `tracked` or `forge`), " +
+      "or, if that tool is unavailable, report this back to the delegator so it can declare one",
   );
 }
