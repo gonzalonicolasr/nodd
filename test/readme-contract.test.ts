@@ -180,3 +180,34 @@ test("the README does not promise a command the package does not register", () =
     assert.ok(registered.has(command), `README promises /${command}, which no extension registers`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// The contract above checks that every gate is *named*. The veredicto found
+// three README claims that were false while all of it stayed green, because
+// naming a gate says nothing about what the gate does. These pin behaviour.
+// ---------------------------------------------------------------------------
+test("the README does not claim authorize blocks all delegation", () => {
+  // `a24b1cf` made read-only delegation legal, which is what ODD :70/:92
+  // requires. A README that still promises a blanket block over-promises
+  // enforcement that no longer exists.
+  const row = /\|\s*`gate-authorize`\s*\|([^|]*)\|/.exec(README);
+  assert.ok(row, "expected a gate-authorize row in the gate table");
+  assert.ok(
+    !/delegation\s*(\||,|$)/.test(row[1]),
+    `the row claims authorize fires on delegation as such; it only fires on delegation to a writer: "${row[1].trim()}"`,
+  );
+});
+
+test("a user-config migration is documented where the config is explained", () => {
+  // Rewriting `~/.pi/nodd.json` on load is exactly the kind of surprise NODD
+  // exists to refuse, so it may not be silent.
+  const text = README;
+  assert.ok(
+    /orchestrator/.test(text),
+    "the orchestrator slot was removed and its config migration is undocumented",
+  );
+  assert.ok(
+    /backup/i.test(text),
+    "a migration that edits user config must say that it takes a backup",
+  );
+});

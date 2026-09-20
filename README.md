@@ -103,6 +103,18 @@ and `thinking:`. **Changes apply to the next pi session**, not the running one:
 the agent files are rewritten from the config when the extension loads, which
 happens at startup.
 
+### The `orchestrator` slot was removed
+
+Earlier versions let you assign a slot named `orchestrator`. Nothing read it:
+the main session runs on the model you picked in pi, so an assignment there
+looked like a choice and did nothing. It is gone from the picker.
+
+Because the slot was assignable, real configs contain it. On load, NODD moves
+`orchestrator` to `default` when `default` is unset, and drops it when both are
+set. The migration writes only when there is something to migrate, takes a
+backup of `~/.pi/nodd.json` before touching it, and leaves your profiles,
+active profile and everything else untouched.
+
 The text forms do the same without the UI:
 
 ```bash
@@ -115,7 +127,7 @@ The text forms do the same without the UI:
 
 | gate | fires on | refuses when |
 | --- | --- | --- |
-| `gate-authorize` | writes, mutating bash, delegation | intent was declared `read-only` |
+| `gate-authorize` | writes, mutating bash, delegation to a writer | intent was declared `read-only` |
 | `gate-classify` | the first write | nothing was declared at all |
 | `gate-track` | the first source write on a `tracked`/`forge` route | no feature doc exists yet |
 | `gate-delegate` | writes and mutating bash | the mapping, writer or long-session threshold fired and nothing was delegated |
