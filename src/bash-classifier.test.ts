@@ -221,3 +221,19 @@ test("an interpreter named inside quoted data is data, not a command", () => {
   assert.equal(classifyBash('rg "&& node cli.js" docs'), "non-mutating");
   assert.equal(classifyBash("git log --grep=';python3 a.py'"), "non-mutating");
 });
+
+test("quoting the script name does not hide the write", () => {
+  // Stripping quotes to stop reading data as a command opened the opposite
+  // hole: `bash "script.sh"` became invisible. Blanking a quoted run erases
+  // the filename too, so the argument stopped looking like a file. Quoting an
+  // argument is ordinary shell practice, and "add quotes" would have been the
+  // cheapest evasion in the product.
+  assert.equal(classifyBash('bash "script.sh"'), "mutating");
+  assert.equal(classifyBash("node 'app.js'"), "mutating");
+  assert.equal(classifyBash('python3 "gen.py"'), "mutating");
+  assert.equal(classifyBash('bash "./install.sh"'), "mutating");
+  assert.equal(classifyBash("deno run 'main.ts'"), "mutating");
+  // Still data, not a command: the interpreter is inside the quotes.
+  assert.equal(classifyBash("grep -rn ';python3 gen.py' src"), "non-mutating");
+  assert.equal(classifyBash('rg "&& node cli.js" docs'), "non-mutating");
+});

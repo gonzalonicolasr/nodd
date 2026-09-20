@@ -72,8 +72,17 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
  * project's own way of running one test file, as a write.
  */
 function runsScriptFile(command: string): boolean {
-  const unquoted = command.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
-  return /(^|[;&|])\s*(sudo\s+)?(node|deno|bun|python3?|ruby|perl|bash|sh|zsh)\b\s+(run\s+(--[\w-]+(=\S*)?\s+)*)?(?!-)\S*(\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)|\/)/.test(unquoted);
+  // Quotes do two opposite jobs here. A quoted run containing whitespace is
+  // data — `grep -rn ';python3 gen.py' src` is a read — so it is blanked. A
+  // quoted run without whitespace is just an argument someone quoted, which is
+  // ordinary shell practice: `bash "script.sh"` is a write, and blanking it
+  // would erase the filename and hide it. Whitespace is what tells them apart,
+  // and getting this wrong either refuses reads or makes "add quotes" the
+  // cheapest evasion in the product.
+  const normalised = command.replace(/(['"])(.*?)\1/g, (_m, _q, inner: string) =>
+    /\s/.test(inner) ? '""' : inner,
+  );
+  return /(^|[;&|])\s*(sudo\s+)?(node|deno|bun|python3?|ruby|perl|bash|sh|zsh)\b\s+(run\s+(--[\w-]+(=\S*)?\s+)*)?(?!-)\S*(\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)|\/)/.test(normalised);
 }
 
 export const NOT_COVERED: string[] = [
