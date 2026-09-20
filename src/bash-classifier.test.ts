@@ -223,17 +223,49 @@ test("an interpreter named inside quoted data is data, not a command", () => {
 });
 
 test("quoting the script name does not hide the write", () => {
-  // Stripping quotes to stop reading data as a command opened the opposite
-  // hole: `bash "script.sh"` became invisible. Blanking a quoted run erases
-  // the filename too, so the argument stopped looking like a file. Quoting an
-  // argument is ordinary shell practice, and "add quotes" would have been the
-  // cheapest evasion in the product.
+  // Quoting an argument is ordinary shell practice, including when the path
+  // has a space in it. "Add quotes" must never be the cheapest evasion.
   assert.equal(classifyBash('bash "script.sh"'), "mutating");
   assert.equal(classifyBash("node 'app.js'"), "mutating");
   assert.equal(classifyBash('python3 "gen.py"'), "mutating");
   assert.equal(classifyBash('bash "./install.sh"'), "mutating");
   assert.equal(classifyBash("deno run 'main.ts'"), "mutating");
-  // Still data, not a command: the interpreter is inside the quotes.
+  assert.equal(classifyBash('bash "my script.sh"'), "mutating");
+  assert.equal(classifyBash('node "/home/a b/app.js"'), "mutating");
+  assert.equal(classifyBash("sudo bash '/opt/My App/install.sh'"), "mutating");
+});
+
+test("an interpreter named inside an argument of another command is data", () => {
+  // What separates a needle from a script is *position*, not content: the
+  // interpreter has to be the command word. A quoted token with a space is
+  // simultaneously the shape of a grep pattern and the shape of a real path,
+  // so content cannot tell them apart — round 2 tried and broke both halves.
   assert.equal(classifyBash("grep -rn ';python3 gen.py' src"), "non-mutating");
   assert.equal(classifyBash('rg "&& node cli.js" docs'), "non-mutating");
+  assert.equal(classifyBash("git log --grep=';python3 a.py'"), "non-mutating");
+  assert.equal(classifyBash("grep -rn ';node' src/lib"), "non-mutating");
+  assert.equal(classifyBash("grep -rn '|node' src/"), "non-mutating");
+  assert.equal(classifyBash('rg "&&node" docs/'), "non-mutating");
+  assert.equal(classifyBash("grep ';sh' /etc/shells"), "non-mutating");
+});
+
+test("the not-covered list does not deny coverage the classifier has", () => {
+  // The drift test compares README text against code text, never against
+  // behaviour, so NOT_COVERED once published "a script that follows a flag is
+  // not covered" while `deno run --allow-write main.ts` classified as a write.
+  // Naming coverage that does not exist and denying coverage that does are the
+  // same defect; only this direction was unguarded.
+  const denied = NOT_COVERED.join(" ");
+  for (const example of denied.match(/`([^`]+)`/g) ?? []) {
+    const command = example.slice(1, -1);
+    // Entries name shapes as well as commands; only run the ones that look
+    // like a command, and skip anything the list marks as *covered* in an aside.
+    if (!/^[a-z.\/]/.test(command) || command.includes("…")) continue;
+    if (denied.includes(`covered: \`${command}\``)) continue;
+    assert.equal(
+      classifyBash(command),
+      "non-mutating",
+      `NOT_COVERED says "${command}" is not covered, but the classifier treats it as a write`,
+    );
+  }
 });

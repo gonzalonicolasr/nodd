@@ -172,7 +172,7 @@ pattern set (`src/bash-classifier.ts`) and asserted against by
 These mutation vectors reach the filesystem without this classifier noticing:
 
 - a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`
-- an interpreter whose script follows a flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'`
+- an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)
 - a script piped into an interpreter: `cat gen.py | python3`
 - compilers, formatters and codegen writing as a side effect
 - redirection hidden behind a variable or `eval`

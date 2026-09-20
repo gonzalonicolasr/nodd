@@ -24,7 +24,8 @@ Every command was run with an isolated `HOME`.
 | T003 delegation boundary | `test/gate-reachability.test.ts` | unit | 4/4 | ✅ trimmed the delegator clause → remedy fails `UNIVERSAL_REMEDY` | ✅ 5/5 | ✅ killed |
 | T004 CHANGELOG | `test/package-invariants.test.ts` | contract | 5/5 | ✅ `ENOENT: CHANGELOG.md` | ✅ 7/7 | ✅ stale heading → red; drop from `files` → red |
 | T005 delete `firstRefusal` | — | — | — | n/a — pure deletion, declared in the plan | ✅ `grep` empty, suite green | n/a |
-| veredicto round 1 fixes | `src/bash-classifier.test.ts` | unit | 13/15 | ✅ `deno run` and quoted-data cases failed | ✅ 570/570 | ✅ all three mutants die |
+| veredicto round 1 fixes | `src/bash-classifier.test.ts` | unit | 12 tests | ✅ `deno run` and quoted-data cases failed | ✅ 570/570 | ✅ all three mutants die |
+| veredicto round 2 fixes | `src/bash-classifier.test.ts` | unit | 15 tests | ✅ quoted paths with spaces, and reads regressed by round 2 | ✅ 573/573 | ✅ four mutants die |
 
 ## Where the plan was wrong and the measurement won
 
@@ -48,3 +49,23 @@ same result. The README states what was measured, not what was planned.
 whose mutant was verified to die. The `\b` guard in the interpreter pattern is a
 proven-equivalent mutant — a 400 000-character differ search found no input that
 distinguishes it — so it is deliberately unpinned.
+
+## Round 2, and why the classifier was rewritten rather than patched
+
+Round 2 rejected the whitespace heuristic, correctly. Blanking a quoted run
+that contains whitespace closes round 1's false positive and simultaneously
+opens two complementary holes, because *a quoted token with a space is both the
+shape of a grep needle and the shape of a real path*. The reviewer named the
+consequence precisely: content cannot separate them, position can.
+
+So `runsScriptFile` now tokenises the command — keeping a quoted run as one
+token — and fires only when an interpreter is a **command word**: the start of
+the line or of a `;`/`&&`/`|` segment. `bash "my script.sh"` is a write;
+`grep -rn ';node' src/` is a read. Both are pinned, and four mutants die:
+dropping the position check, the flag guard, the `run` handling, or quote-aware
+tokenisation each turns a test red.
+
+A second test now asserts that `NOT_COVERED` does not *deny* coverage the
+classifier has. Round 1's defect was a table naming coverage that did not
+exist; round 2 produced the inverse, and the drift test could not see either,
+because it compares README text to code text and never to behaviour.

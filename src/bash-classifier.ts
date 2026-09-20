@@ -57,37 +57,86 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
  * beside the covered table, because a partial mechanism that presents itself as
  * total is how ODD ended up promising compliance while shipping delivery.
  */
+const INTERPRETERS = new Set(["node", "deno", "bun", "python", "python3", "ruby", "perl", "bash", "sh", "zsh"]);
+const SCRIPT_FILE = /\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)$|\//;
+
+/**
+ * Split a command into tokens, keeping a quoted run — spaces and all — as one
+ * token, and remembering where each one started.
+ *
+ * Content cannot tell a grep needle from a script path: `'my script.sh'` is
+ * both the shape of a pattern and the shape of a real filename. Position can.
+ * So the tokens carry whether they open a command, and nothing else is guessed.
+ */
+function tokenise(command: string): { text: string; startsCommand: boolean }[] {
+  const tokens: { text: string; startsCommand: boolean }[] = [];
+  let text = "";
+  let quote: string | null = null;
+  let startsCommand = true;
+  let pendingBreak = true;
+
+  const flush = () => {
+    if (text === "") return;
+    tokens.push({ text, startsCommand });
+    text = "";
+    startsCommand = false;
+    pendingBreak = false;
+  };
+
+  for (const ch of command) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else text += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') { quote = ch; continue; }
+    if (ch === ";" || ch === "&" || ch === "|") { flush(); pendingBreak = true; startsCommand = true; continue; }
+    if (/\s/.test(ch)) { flush(); startsCommand = pendingBreak; continue; }
+    text += ch;
+  }
+  flush();
+  return tokens;
+}
+
 /**
  * An interpreter invoked with a script file, which is the form a model reaches
  * for the moment `node -e` is refused.
  *
- * Quotes are stripped first, for the same reason `redirectsToFile` strips them:
- * an interpreter named inside quoted data is data. Grepping for `node app.js`
- * is a read, and a gate that refuses reads is a gate people turn off.
+ * The interpreter must be a **command word** — the start of the command line or
+ * of a `;`/`&&`/`|` segment. An interpreter's name inside someone else's
+ * argument is data: `grep -rn ';node' src/` is a read, and a gate that refuses
+ * reads is a gate people turn off.
  *
- * The script must be the interpreter's *first* argument, or the first argument
- * after `run` — `deno run main.ts` and `bun run build.ts` are the only way to
- * execute a file with those runtimes. Flags are never skipped to find it:
+ * The script must be the interpreter's first argument, or the first argument
+ * after `run` and its flags — `deno run main.ts` is the only way to execute a
+ * file with that runtime. Flags are never skipped for a bare interpreter:
  * scanning past them would classify `node --test test/x.test.ts`, this
  * project's own way of running one test file, as a write.
  */
 function runsScriptFile(command: string): boolean {
-  // Quotes do two opposite jobs here. A quoted run containing whitespace is
-  // data — `grep -rn ';python3 gen.py' src` is a read — so it is blanked. A
-  // quoted run without whitespace is just an argument someone quoted, which is
-  // ordinary shell practice: `bash "script.sh"` is a write, and blanking it
-  // would erase the filename and hide it. Whitespace is what tells them apart,
-  // and getting this wrong either refuses reads or makes "add quotes" the
-  // cheapest evasion in the product.
-  const normalised = command.replace(/(['"])(.*?)\1/g, (_m, _q, inner: string) =>
-    /\s/.test(inner) ? '""' : inner,
-  );
-  return /(^|[;&|])\s*(sudo\s+)?(node|deno|bun|python3?|ruby|perl|bash|sh|zsh)\b\s+(run\s+(--[\w-]+(=\S*)?\s+)*)?(?!-)\S*(\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)|\/)/.test(normalised);
+  const tokens = tokenise(command);
+  for (let i = 0; i < tokens.length; i += 1) {
+    let head = tokens[i];
+    if (!head.startsCommand) continue;
+    if (head.text === "sudo" && tokens[i + 1]) head = tokens[++i];
+    if (!INTERPRETERS.has(head.text)) continue;
+
+    let arg = tokens[i + 1];
+    if (arg?.text === "run") {
+      let k = i + 2;
+      while (tokens[k]?.text.startsWith("--")) k += 1;
+      arg = tokens[k];
+    }
+    // A flag is not a script, and its own value is not one either.
+    if (!arg || arg.text.startsWith("-")) continue;
+    if (SCRIPT_FILE.test(arg.text)) return true;
+  }
+  return false;
 }
 
 export const NOT_COVERED: string[] = [
   "a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`",
-  "an interpreter whose script follows a flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'`",
+  "an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)",
   "a script piped into an interpreter: `cat gen.py | python3`",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
