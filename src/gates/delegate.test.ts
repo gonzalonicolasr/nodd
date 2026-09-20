@@ -125,3 +125,38 @@ test("the flag off allows everything", () => {
 test("the gate only speaks on writes, not on reads", () => {
   assert.equal(delegateGate(reads(10), { toolName: "read", input: { path: "z.ts" } }, emptyPolicy(), noPending).allow, true);
 });
+
+// The self-amplifying lockout, observed live in this run: three refused
+// writes to distinct paths, zero files ever landed on disk, and the writer
+// trigger still reported "written 3 distinct files" and refused every
+// further write forever -- a monotonic trap with no delegation able to clear
+// it, because delegation itself is a `subagent` call and would have been
+// refused too. This is the end-to-end shape a unit test of `fold` cannot
+// show: it exercises `delegateGate` against state built the same way the
+// kernel builds it, from raw observations.
+test("refused writes do not advance the writer trigger -- the auto-amplifying lockout is closed", () => {
+  n = 0;
+  const committed = foldAll(emptyCommitted(), [
+    obs("write", { path: "/tmp/jamas-existio-1.txt" }, true),
+    obs("write", { path: "/tmp/jamas-existio-2.txt" }, true),
+    obs("write", { path: "/tmp/jamas-existio-3.txt" }, true),
+  ]);
+  assert.equal(committed.filesWritten.size, 0, "none of the three refusals wrote a file");
+  const decision = delegateGate(committed, write, emptyPolicy(), noPending);
+  assert.equal(decision.allow, true, "a session with only refused writes must still be able to write");
+});
+
+test("refused writes followed by one real write leave the counter at 1, not 4", () => {
+  n = 0;
+  const committed = foldAll(emptyCommitted(), [
+    obs("write", { path: "/tmp/jamas-existio-1.txt" }, true),
+    obs("write", { path: "/tmp/jamas-existio-2.txt" }, true),
+    obs("write", { path: "/tmp/jamas-existio-3.txt" }, true),
+    obs("write", { path: "real.ts" }, false),
+  ]);
+  assert.equal(committed.filesWritten.size, 1, "only the real write counts");
+  // A second distinct real write should still cross the threshold normally --
+  // the fix must not have also broken the trigger for genuine writes.
+  const decision = delegateGate(committed, { toolName: "write", input: { path: "other-real.ts" } }, emptyPolicy(), noPending);
+  assert.equal(decision.allow, false, "two genuine distinct writes still trip the writer trigger");
+});
