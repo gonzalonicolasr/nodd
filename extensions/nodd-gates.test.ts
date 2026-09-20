@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GATE_IDS } from "../src/gates/registry.ts";
 import { emptyPolicy, resolveFlag } from "../src/gates/policy.ts";
-import { flagsFromCli, runGatesCommand } from "./nodd-gates.ts";
+import { fileConfigIo, flagsFromCli, runGatesCommand } from "./nodd-gates.ts";
 
 function ctx(config: Record<string, unknown> = {}) {
   const writes: Array<Record<string, unknown>> = [];
@@ -105,4 +106,21 @@ test("--nodd-off=<id> disables one gate and --nodd-off=all disables every gate",
 
   const every = runGatesCommand("status", ctx(), flagsFromCli("all"));
   for (const id of GATE_IDS) assert.match(every, new RegExp(`${id}\\s+off\\s+flag`));
+});
+
+// ---------------------------------------------------------------------------
+// The kill switch has to work on a machine that has never run pi before.
+//
+// `readConfig` tolerates a missing file, so a fresh user reaches the gates
+// fine. `writeConfig` did not create the directory, so the first attempt to
+// turn a gate off died with ENOENT — the one moment a kill switch exists for.
+// ---------------------------------------------------------------------------
+test("a gate can be turned off before ~/.pi exists", () => {
+  const home = mkdtempSync(join(tmpdir(), "nodd-nohome-"));
+  const path = join(home, ".pi", "nodd.json");
+  const io = fileConfigIo(path);
+
+  io.writeConfig({ gates: { track: { enabled: false } } });
+
+  assert.deepEqual(io.readConfig(), { gates: { track: { enabled: false } } });
 });

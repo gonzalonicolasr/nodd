@@ -427,6 +427,11 @@ written and the exact command to run by hand is reported.
 These are open, not fixed. They are here because a declared problem is a result
 and a hidden one makes everything above worthless.
 
+- **Only pi's builtin writers are gated.** Enforcement sees `write`, `edit` and
+  `bash`. A write performed by any other tool — a filesystem MCP server, a tool
+  from another harness — is invisible to every gate, because NODD classifies a
+  call by the tool that makes it. If you run an MCP that writes files, NODD does
+  not cover that path. Pinned in `src/gates/request.test.ts`.
 - **An unpinned feature is not enforced, only disclosed.** `runner` is optional
   at declaration. Omit it and fact 2 cannot be checked, so any observed exit-0
   after the write can check a task off. The evidence line says

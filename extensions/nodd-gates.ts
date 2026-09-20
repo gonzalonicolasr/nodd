@@ -15,7 +15,8 @@
 // The one inversion from ODD is the default: NODD's gates default *on*, because
 // enforcement is the product where RDD is opt-in. Everything else is unchanged.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { GATE_IDS, isGateId } from "../src/gates/registry.ts";
 import { mergeConfig, noddConfigPath, parseConfig } from "../src/config.ts";
 import { resolveFlag, type Policy } from "../src/gates/policy.ts";
@@ -35,6 +36,11 @@ export function fileConfigIo(path: string = noddConfigPath()): ConfigIo {
       }
     },
     writeConfig(next) {
+      // `readConfig` already tolerates a missing file, so a machine that has
+      // never run pi reaches the gates fine and then could not turn one off:
+      // the write died on the absent directory, at the one moment a kill
+      // switch exists for.
+      mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
     },
   };
