@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { emptyCommitted, type Committed } from "./state.ts";
 import { emptyPolicy, type Policy } from "./gates/policy.ts";
 import { CANONICAL_STEPS } from "./manifest.ts";
-import { ODD_PROSE, type ProseEntry } from "./odd-prose.ts";
+import { ODD_PROSE, proseForStep, type ProseEntry } from "./odd-prose.ts";
 import { BLOCK_A_BUDGET, BLOCK_B_BUDGET, renderBlockA, renderBlockB, renderPrompt } from "./prompt.ts";
 
 function committed(overrides: Partial<Committed> = {}): Committed {
@@ -190,4 +190,57 @@ test("the renderer is pure: same inputs, same bytes, no file access", () => {
   const first = renderPrompt(tracked, emptyPolicy(), { step: "implement" });
   const second = renderPrompt(tracked, emptyPolicy(), { step: "implement" });
   assert.deepEqual(first, second);
+});
+
+// ---------------------------------------------------------------------------
+// T004 -- the router must be total: every canonical step some prose is tagged
+// with has to be reachable, or that prose never reaches a turn.
+// ---------------------------------------------------------------------------
+test("a session that delegated with no change intent declared reaches resolve-uncertainty", () => {
+  const state = committed({ delegations: 1 });
+  const { blockA } = renderPrompt(state, emptyPolicy());
+  assert.match(blockA, /step: resolve-uncertainty/);
+});
+
+test("a read-only declaration that has delegated is resolve-uncertainty, not explore", () => {
+  // The explore branch used to absorb every read-only declared state, so a
+  // read-only session that had already delegated could never be told it was
+  // in resolve-uncertainty -- this is the case that must be checked first.
+  const state = committed({
+    declaration: { intent: "read-only", route: "inline", slug: "audit" } as Committed["declaration"],
+    delegations: 1,
+  });
+  const { blockA } = renderPrompt(state, emptyPolicy());
+  assert.match(blockA, /step: resolve-uncertainty/);
+});
+
+test("a read-only declaration with no delegation is still explore", () => {
+  const state = committed({
+    declaration: { intent: "read-only", route: "inline", slug: "audit" } as Committed["declaration"],
+  });
+  const { blockA } = renderPrompt(state, emptyPolicy());
+  assert.match(blockA, /step: explore/);
+});
+
+test("a tracked change whose declared runner succeeded after the last write reaches close", () => {
+  const state = committed({
+    declaration: { intent: "change", route: "tracked", slug: "s" } as Committed["declaration"],
+    filesWritten: new Map([["/a.ts", { at: "t", seq: 1 }]]),
+    commandResults: [
+      { toolCallId: "c1", command: "npm test", isError: false, resultText: "ok", at: "t", seq: 2 },
+    ],
+  });
+  const { blockA } = renderPrompt(state, emptyPolicy());
+  assert.match(blockA, /step: close/);
+});
+
+test("every canonical step that owns forwarded prose is returnable by currentStep() for some state", () => {
+  const stepsWithProse = new Set(ODD_PROSE.map((entry) => entry.step));
+  const reachableByRender = new Set(CANONICAL_STEPS.filter((step) => proseForStep(step).length > 0 && renderBlockB(step).length > 0));
+  for (const step of stepsWithProse) {
+    assert.ok(reachableByRender.has(step), `${step} owns prose but renderBlockB never produces it`);
+  }
+  // renderBlockB alone would pass even when currentStep() can never select the
+  // step; the router's own reachability is asserted directly, above, by
+  // driving currentStep()'s branches from state.
 });

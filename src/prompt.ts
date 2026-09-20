@@ -58,10 +58,34 @@ export type RenderOptions = {
   blockBBudget?: number;
 };
 
+/**
+ * Whether some command observed to succeed ran after the most recent write.
+ *
+ * `close`'s honest signal: `Committed` holds no feature-doc checkoff state (the
+ * doc lives on disk, and this module stays pure), so "the declared work is
+ * done" is narrowed to the simplest thing this reducer can actually see --
+ * writes happened, and a run after the last one succeeded. It is a heuristic
+ * over observed state, exactly like the other five branches, and it can be
+ * wrong in both directions; it is not a substitute for the evidence gate.
+ */
+function hasSuccessAfterLastWrite(committed: Committed): boolean {
+  let lastWriteSeq = 0;
+  for (const record of committed.filesWritten.values()) {
+    if (typeof record?.seq === "number" && record.seq > lastWriteSeq) lastWriteSeq = record.seq;
+  }
+  return committed.commandResults.some((run) => run.seq > lastWriteSeq && !run.isError);
+}
+
 /** Where the session is, derived from what it has actually done. */
 function currentStep(committed: Committed): CanonicalStep {
+  // Checked first: the shape of "research is in flight" -- delegated, with no
+  // change intent declared yet -- would otherwise be absorbed by the
+  // undeclared branch below or by the read-only `explore` branch, and its 740
+  // characters of corpus prose would never reach a turn.
+  if (committed.delegations > 0 && committed.declaration?.intent !== "change") return "resolve-uncertainty";
   if (committed.declaration === null) return committed.toolCalls === 0 ? "authorize" : "classify";
   if (committed.declaration.intent === "read-only") return "explore";
+  if (committed.filesWritten.size > 0 && hasSuccessAfterLastWrite(committed)) return "close";
   if (committed.filesWritten.size > 0) return "implement";
   return committed.declaration.route === "inline" ? "implement" : "track";
 }
