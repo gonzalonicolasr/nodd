@@ -370,3 +370,67 @@ test("the footer reports task progress from the feature doc", () => {
   const last = statuses.at(-1) ?? "";
   assert.match(last, /0\/2/, `expected the footer to count the two declared tasks, got: "${last}"`);
 });
+
+// ---------------------------------------------------------------------------
+// Defect #6, third path: the abort.
+//
+// `c16872c` attributed the missing `tool_result` to one `{kind:"immediate"}`
+// return. There are two more that fire *after* `beforeToolCall` has already
+// populated `pending`: the `signal?.aborted` checks at `agent-loop.js:411-416`
+// and `:426-430`. On those, NODD *allowed* the call, so the block-path cleanup
+// never runs and the entry leaks — the same monotonic trap, reached by
+// pressing Esc.
+// ---------------------------------------------------------------------------
+test("an aborted call does not block the write that follows it", () => {
+  const handlers = new Map<string, (event: unknown) => unknown>();
+  const kernel = register(
+    { on: (n: string, f: (e: unknown) => unknown) => handlers.set(n, f), registerTool: () => {}, appendEntry: () => {} } as never,
+    mkdtempSync(join(tmpdir(), "nodd-abort-")),
+    mkdtempSync(join(tmpdir(), "nodd-abort-h-")),
+  );
+  const declared = { intent: "change", route: "inline", slug: "p", summary: "s", title: "P" };
+  kernel.declare(declared as never);
+  const d = { toolName: "nodd_declare", toolCallId: "d1", input: declared };
+  handlers.get("tool_call")!(d);
+  handlers.get("tool_result")!({ ...d, isError: false, content: "" });
+
+  // Allowed by the gate, then aborted by the user: no result will ever arrive.
+  handlers.get("tool_call")!({ toolName: "write", toolCallId: "a1", input: { file_path: "/repo/aborted.ts" } });
+  handlers.get("turn_end")?.({});
+
+  const genuine = { toolName: "write", toolCallId: "g1", input: { file_path: "/repo/real.ts" } };
+  const decision = handlers.get("tool_call")!(genuine) as { reason?: string } | undefined;
+  assert.equal(
+    decision,
+    undefined,
+    `the first genuine write was refused over an abandoned call: ${decision?.reason ?? ""}`,
+  );
+});
+
+// The guard on the cleanup is load-bearing: `pending` is how gate-delegate sees
+// write intent that shares one assistant message, before any result exists.
+// Forgetting unconditionally would erase the siblings and let a divergent batch
+// through, so the guard needs a test of its own.
+test("write intent within one batch survives the pending cleanup", () => {
+  const handlers = new Map<string, (event: unknown) => unknown>();
+  const kernel = register(
+    { on: (n: string, f: (e: unknown) => unknown) => handlers.set(n, f), registerTool: () => {}, appendEntry: () => {} } as never,
+    mkdtempSync(join(tmpdir(), "nodd-batch-")),
+    mkdtempSync(join(tmpdir(), "nodd-batch-h-")),
+  );
+  const declared = { intent: "change", route: "inline", slug: "p", summary: "s", title: "P" };
+  kernel.declare(declared as never);
+  const d = { toolName: "nodd_declare", toolCallId: "d1", input: declared };
+  handlers.get("tool_call")!(d);
+  handlers.get("tool_result")!({ ...d, isError: false, content: "" });
+
+  // Three writes preflighted in one assistant message: none has a result yet.
+  const blocked = ["b1", "b2", "b3"].map((id, i) =>
+    Boolean(handlers.get("tool_call")!({ toolName: "write", toolCallId: id, input: { file_path: `/repo/n${i}.ts` } })),
+  );
+  assert.deepEqual(
+    blocked,
+    [false, true, true],
+    "a batch wide enough to trip the writer threshold must still be caught on intent alone",
+  );
+});

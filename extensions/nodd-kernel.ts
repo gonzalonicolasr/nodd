@@ -120,6 +120,8 @@ export type Kernel = {
   onToolCall(event: ToolCallEvent): void;
   /** Drop a call that produced no effect, because pi reports no result for it. */
   forgetPending(toolCallId: string): void;
+  /** Drop every in-flight call at a turn boundary, where none can still report. */
+  forgetAllPending(): void;
   onToolResult(event: ToolResultEvent): Observation;
   /**
    * Rebuild what a new process can legitimately know from a previous one.
@@ -393,6 +395,9 @@ export function createKernel(
     },
     forgetPending(toolCallId) {
       state.pending.delete(toolCallId);
+    },
+    forgetAllPending() {
+      state.pending.clear();
     },
     onToolResult(event) {
       state.pending.delete(event.toolCallId);
@@ -695,6 +700,21 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
       // Session persistence is best effort: the durable truth is on disk.
     }
     showStatus(ctx);
+  }) as never);
+
+  // A turn cannot end with a call still in flight, so anything left pending is
+  // a call that will never report: aborted by the user, or dropped on one of
+  // the `{kind:"immediate"}` returns that fire after `beforeToolCall`
+  // (`agent-loop.js:411-416`, `:426-430`). Those were *allowed*, so the
+  // block-path cleanup never saw them, and a leaked entry inflates the writer
+  // count for the rest of the session — defect #6, reached by pressing Esc.
+  //
+  // Clearing at the turn boundary rather than per event is what keeps
+  // same-batch intent intact: within a turn the entries are load-bearing,
+  // because `gate-delegate` reads them to see writes that share one assistant
+  // message before any result exists.
+  pi.on("turn_end", (() => {
+    kernel.forgetAllPending();
   }) as never);
 
   pi.on("session_start", ((_event: unknown, ctx: SessionStartContext) => {
