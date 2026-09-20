@@ -34,7 +34,7 @@ type Block = { block?: boolean; reason?: string; terminate?: boolean } | undefin
  * customType, data }` shape. Passing a previous session's array is how a resume
  * is simulated: same session file, new process, empty in-memory state.
  */
-function session(options: { cwd?: string; entries?: Array<Record<string, unknown>> } = {}) {
+function session(options: { cwd?: string; home?: string; entries?: Array<Record<string, unknown>> } = {}) {
   const handlers = new Map<string, Handler>();
   const tools = new Map<string, { name: string; execute: (id: string, args: never) => { content?: Array<{ text?: string }> } }>();
   const entries = options.entries ?? [];
@@ -47,7 +47,10 @@ function session(options: { cwd?: string; entries?: Array<Record<string, unknown
     appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
   };
   const cwd = options.cwd ?? mkdtempSync(join(tmpdir(), "nodd-enforce-"));
-  const kernel = register(pi as never, cwd);
+  // Undeclared home reads the real ~/.pi/agent/agents -- every existing test
+  // here relies on that default. Tests that need a controlled agent roster
+  // (T006) pass their own.
+  const kernel = register(pi as never, cwd, options.home);
 
   const toolCall = handlers.get("tool_call");
   const toolResult = handlers.get("tool_result");
@@ -683,4 +686,48 @@ test("a malformed event never throws and never blocks by accident", () => {
     assert.doesNotThrow(() => s.call("write", input as never));
   }
   assert.doesNotThrow(() => s.call("", {}));
+});
+
+// ---------------------------------------------------------------------------
+// T006 -- gate-authorize on the real path: read-only may delegate to a
+// read-only worker, distinguished by the target's own `tools:` frontmatter,
+// never by its name.
+// ---------------------------------------------------------------------------
+function agentHome(agents: Array<{ name: string; tools: string[] }>): string {
+  const home = mkdtempSync(join(tmpdir(), "nodd-agents-home-"));
+  const dir = join(home, ".pi", "agent", "agents", "test");
+  mkdirSync(dir, { recursive: true });
+  for (const agent of agents) {
+    writeFileSync(
+      join(dir, `${agent.name}.md`),
+      `---\nname: ${agent.name}\ntools: ${agent.tools.join(", ")}\n---\n\nbody\n`,
+      "utf8",
+    );
+  }
+  return home;
+}
+
+test("read-only may delegate to a target agent whose own tools: frontmatter has no write/edit", () => {
+  const home = agentHome([{ name: "mapper", tools: ["read", "grep", "ls", "bash"] }]);
+  const s = session({ home });
+  s.declare({ intent: "read-only", route: "inline", slug: "audit", summary: "look only" });
+  assert.equal(s.call("subagent", { agent: "mapper" }), undefined, "a read-only target must be allowed");
+});
+
+test("read-only still refuses delegating to a target agent whose tools: frontmatter includes write", () => {
+  const home = agentHome([{ name: "builder", tools: ["read", "grep", "ls", "write", "edit", "bash"] }]);
+  const s = session({ home });
+  s.declare({ intent: "read-only", route: "inline", slug: "audit", summary: "look only" });
+  const blocked = s.call("subagent", { agent: "builder" });
+  assert.equal(blocked?.block, true);
+  assert.match(blocked!.reason!, /nodd\/authorize/);
+});
+
+test("read-only refuses delegating to a target agent that does not exist on disk", () => {
+  const home = agentHome([]);
+  const s = session({ home });
+  s.declare({ intent: "read-only", route: "inline", slug: "audit", summary: "look only" });
+  const blocked = s.call("subagent", { agent: "nobody" });
+  assert.equal(blocked?.block, true);
+  assert.match(blocked!.reason!, /could not be determined/);
 });

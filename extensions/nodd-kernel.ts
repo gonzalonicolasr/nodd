@@ -11,7 +11,8 @@
 // sibling would take its innocent siblings with it.
 
 import { join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { observation, pendingCall, type Observation } from "../src/observations.ts";
 import { emptyState, fold, type Committed, type NoddState } from "../src/state.ts";
 import {
@@ -27,7 +28,7 @@ import { renderPrompt } from "../src/prompt.ts";
 import { consumeHatch, emptyPolicy, type GateDecision, type Policy } from "../src/gates/policy.ts";
 import { parseConfig, noddConfigPath } from "../src/config.ts";
 import { GATE_IDS } from "../src/gates/registry.ts";
-import { authorizeGate } from "../src/gates/authorize.ts";
+import { authorizeGate, type CapabilityLookup } from "../src/gates/authorize.ts";
 import { classifyGate } from "../src/gates/classify.ts";
 import { trackGate } from "../src/gates/track.ts";
 import { delegateGate } from "../src/gates/delegate.ts";
@@ -153,6 +154,7 @@ export function createKernel(
   now: () => string = () => new Date().toISOString(),
   cwd: string = process.cwd(),
   loadPolicy: () => Policy = emptyPolicy,
+  isReadOnlyAgent: CapabilityLookup = readOnlyAgentLookup(homedir()),
 ): Kernel {
   const state = emptyState();
   // Mutable because `/nodd-allow` grants a hatch mid-session and a refusal
@@ -332,7 +334,7 @@ export function createKernel(
       // Registry order, first refusal wins: one call never collects two
       // messages about the same missing declaration.
       const decisions: Array<[(typeof GATE_IDS)[number], () => GateDecision]> = [
-        ["authorize", () => authorizeGate(state.committed, request, policy)],
+        ["authorize", () => authorizeGate(state.committed, request, policy, isReadOnlyAgent)],
         ["classify", () => classifyGate(state.committed, request, policy, state.pending)],
         ["track", () => trackGate(state.committed, request, policy, (slug) => existsSync(featureDocPath(cwd, slug)))],
         ["delegate", () => delegateGate(state.committed, request, policy, state.pending)],
@@ -480,6 +482,50 @@ function ledgerPath(cwd: string, slug: string): string {
   return join(cwd, ".nodd", slug, "ledger.json");
 }
 
+/** `~/.pi/agent/agents`, where every agent definition (NODD's and the user's) lives. */
+function agentsRoot(home: string): string {
+  return join(home, ".pi", "agent", "agents");
+}
+
+/**
+ * `gate-authorize`'s capability lookup: read the target agent's own `tools:`
+ * frontmatter rather than trusting its name. Searches one level of
+ * subdirectory under `agentsRoot` (`nodd/`, `zero/`, any user namespace) for a
+ * file whose `name:` field matches, and answers whether `write`/`edit` is
+ * absent from its declared `tools:`.
+ *
+ * Best effort: any filesystem error, or a target that cannot be found, answers
+ * `null` -- "cannot be determined" -- which `authorizeGate` refuses, exactly as
+ * an unresolvable target should.
+ */
+function readOnlyAgentLookup(home: string): CapabilityLookup {
+  return (agentName: string): boolean | null => {
+    try {
+      const root = agentsRoot(home);
+      const dirs = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory());
+      for (const dir of dirs) {
+        const dirPath = join(root, dir.name);
+        for (const file of readdirSync(dirPath)) {
+          if (!file.endsWith(".md")) continue;
+          const path = join(dirPath, file);
+          if (!statSync(path).isFile()) continue;
+          const text = readFileSync(path, "utf8");
+          const frontmatter = /^---\n([\s\S]*?)\n---/.exec(text)?.[1];
+          if (!frontmatter) continue;
+          const name = /^name:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim();
+          if (name !== agentName) continue;
+          const toolsLine = /^tools:\s*(.+)$/m.exec(frontmatter)?.[1] ?? "";
+          const tools = toolsLine.split(",").map((t) => t.trim());
+          return !tools.includes("write") && !tools.includes("edit");
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+}
+
 /**
  * The most recent observed write that evidence must postdate.
  *
@@ -567,7 +613,7 @@ function readPolicy(home?: string): Policy {
 }
 
 export default function register(pi?: PiApi, cwd: string = process.cwd(), home?: string): Kernel {
-  const kernel = createKernel(undefined, cwd, () => readPolicy(home));
+  const kernel = createKernel(undefined, cwd, () => readPolicy(home), readOnlyAgentLookup(home ?? homedir()));
   if (!pi || typeof pi.on !== "function") {
     kernel.reloadPolicy();
     return kernel;
