@@ -285,3 +285,31 @@ test("a wrapper or a subshell does not hide the interpreter", () => {
   assert.equal(classifyBash("time npm test"), "non-mutating");
   assert.equal(classifyBash("grep '(node x.js)' src"), "non-mutating");
 });
+
+test("an interpreter reached by path, or behind one more wrapper, still counts", () => {
+  // `/usr/bin/env node` is the most idiomatic interpreter invocation there is,
+  // and `timeout N …` is this project's own test idiom. Both evaded on the
+  // first try, which is the only standard that matters for a denylist.
+  assert.equal(classifyBash("/usr/bin/env node x.js"), "mutating");
+  assert.equal(classifyBash("/usr/bin/node x.js"), "mutating");
+  assert.equal(classifyBash("/usr/local/bin/python3 gen.py"), "mutating");
+  assert.equal(classifyBash("timeout 10 node x.js"), "mutating");
+  assert.equal(classifyBash("exec node x.js"), "mutating");
+  assert.equal(classifyBash("setsid node x.js"), "mutating");
+  assert.equal(classifyBash("node -- x.js"), "mutating");
+  assert.equal(classifyBash("bash script\\ name.sh"), "mutating");
+  // The path rule must not swallow a command that merely lives in /usr/bin.
+  assert.equal(classifyBash("/usr/bin/grep -rn x src"), "non-mutating");
+  assert.equal(classifyBash("/bin/ls -la"), "non-mutating");
+  assert.equal(classifyBash("timeout 10 npm test"), "non-mutating");
+});
+
+test("a script named without an extension is still a script", () => {
+  // The slash branch of SCRIPT_FILE is load-bearing and was unpinned: deleting
+  // it left the suite green while `bash /usr/local/bin/setup` stopped being a
+  // write. Plenty of real scripts carry no extension at all.
+  assert.equal(classifyBash("bash /usr/local/bin/setup"), "mutating");
+  assert.equal(classifyBash("sh /opt/app/run"), "mutating");
+  assert.equal(classifyBash("node ./bin/cli"), "mutating");
+  assert.equal(classifyBash("python3 /srv/tools/migrate"), "mutating");
+});

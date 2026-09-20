@@ -173,7 +173,7 @@ These mutation vectors reach the filesystem without this classifier noticing:
 
 - a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`
 - an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)
-- a script piped into an interpreter: `cat gen.py | python3`
+- a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)
 - compilers, formatters and codegen writing as a side effect
 - redirection hidden behind a variable or `eval`
 - a pre-existing background process

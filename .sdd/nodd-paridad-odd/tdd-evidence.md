@@ -43,12 +43,39 @@ three times over.
 The veredicto independently rebuilt this scenario without the flag and got the
 same result. The README states what was measured, not what was planned.
 
+## Rounds 3 and 4
+
+Round 3 replaced the regex with a tokeniser, after round 2 proved content cannot
+separate a grep needle from a script path. Round 4 attacked the tokeniser the
+way a model would and closed what it found, in two passes:
+
+| pass | evasion found | closed by |
+| --- | --- | --- |
+| self-attack | `(node x.js)`, `$(node b.js)`, `nohup`, `env node x.js` | subshell chars break a token; wrappers are transparent |
+| veredicto round 3 | `/usr/bin/env node`, `/usr/bin/node`, `timeout 10 node`, `exec`, `setsid`, `node -- x.js`, `bash script\ name.sh` | interpreters and wrappers matched by basename; backslash escapes; `--` ends flags; numeric wrapper arguments |
+
+`/usr/bin/env node` is the most idiomatic interpreter invocation there is and
+`timeout N` is this project's own test idiom; both evaded on the first try,
+which is the only standard a denylist is measured against.
+
 ## Residual
 
-`(?!-)`, `run`-subcommand handling and quote-stripping are each pinned by a test
-whose mutant was verified to die. The `\b` guard in the interpreter pattern is a
-proven-equivalent mutant — a 400 000-character differ search found no input that
-distinguishes it — so it is deliberately unpinned.
+Every mechanism in `runsScriptFile` is pinned by a test whose mutant was
+verified to die: the command-word position check, quote-aware tokenising, the
+flag guard, the `run` subcommand and its flags, subshell characters, the
+wrapper loop, basename matching, backslash escapes, `--`, numeric wrapper
+arguments, and `SCRIPT_FILE`'s slash branch — which round 3 found load-bearing
+and unpinned, so deleting it left the suite green while
+`bash /usr/local/bin/setup` stopped being a write.
+
+Deliberately not covered, and disclosed in `NOT_COVERED`: an argument NODD
+cannot see is a file (`node x`, no extension and no path), a script piped into
+an interpreter, a bare flag's own value, and a script run without naming an
+interpreter.
+
+One mutant was found equivalent rather than pinned: skipping `$` in the
+tokeniser. `(` already ends the token, so the line did nothing and was deleted
+instead of defended by a test.
 
 ## Round 2, and why the classifier was rewritten rather than patched
 

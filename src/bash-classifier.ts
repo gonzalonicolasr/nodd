@@ -57,7 +57,9 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
  * beside the covered table, because a partial mechanism that presents itself as
  * total is how ODD ended up promising compliance while shipping delivery.
  */
-const WRAPPERS = new Set(["sudo", "env", "time", "nohup", "nice", "xargs", "command"]);
+const WRAPPERS = new Set([
+  "sudo", "env", "time", "nohup", "nice", "xargs", "command", "exec", "setsid", "timeout", "stdbuf",
+]);
 const INTERPRETERS = new Set(["node", "deno", "bun", "python", "python3", "ruby", "perl", "bash", "sh", "zsh"]);
 const SCRIPT_FILE = /\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)$|\//;
 
@@ -84,7 +86,10 @@ function tokenise(command: string): { text: string; startsCommand: boolean }[] {
     pendingBreak = false;
   };
 
+  let escaped = false;
   for (const ch of command) {
+    if (escaped) { text += ch; escaped = false; continue; }
+    if (ch === "\\" && !quote) { escaped = true; continue; }
     if (quote) {
       if (ch === quote) quote = null;
       else text += ch;
@@ -123,13 +128,21 @@ function runsScriptFile(command: string): boolean {
     if (!head.startsCommand) continue;
     // A prefix that runs its argument is transparent: `env node x.js` is
     // `node x.js`. `env`'s VAR=value assignments are skipped with it.
-    while (WRAPPERS.has(head.text) && tokens[i + 1]) {
+    // A wrapper is recognised by basename too: `/usr/bin/env node x.js`.
+    const baseOf = (t: string) => t.slice(t.lastIndexOf("/") + 1);
+    while (WRAPPERS.has(baseOf(head.text)) && tokens[i + 1]) {
       head = tokens[++i];
-      if (head.text === "env" || head.text.includes("=")) continue;
+      // `timeout 10 node …` and `nice -n 10 node …` take an argument of their
+      // own before the command they run.
+      if (baseOf(head.text) === "env" || head.text.includes("=")) continue;
+      if (/^\d+[smhd]?$/.test(head.text) && tokens[i + 1]) { head = tokens[++i]; continue; }
       break;
     }
     while (head.text.includes("=") && !head.text.startsWith("-") && tokens[i + 1]) head = tokens[++i];
-    if (!INTERPRETERS.has(head.text)) continue;
+    // `/usr/bin/env node x.js` is the most ordinary interpreter line there is,
+    // so an interpreter is recognised by the last path segment of its command
+    // word. `/usr/bin/grep` is unaffected: grep is not an interpreter.
+    if (!INTERPRETERS.has(baseOf(head.text))) continue;
 
     let arg = tokens[i + 1];
     if (arg?.text === "run") {
@@ -138,6 +151,7 @@ function runsScriptFile(command: string): boolean {
       arg = tokens[k];
     }
     // A flag is not a script, and its own value is not one either.
+    if (arg?.text === "--") arg = tokens[i + 2];
     if (!arg || arg.text.startsWith("-")) continue;
     if (SCRIPT_FILE.test(arg.text)) return true;
   }
@@ -147,7 +161,7 @@ function runsScriptFile(command: string): boolean {
 export const NOT_COVERED: string[] = [
   "a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`",
   "an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)",
-  "a script piped into an interpreter: `cat gen.py | python3`",
+  "a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
   "a pre-existing background process",
