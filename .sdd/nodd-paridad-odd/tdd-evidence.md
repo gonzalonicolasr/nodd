@@ -53,6 +53,7 @@ way a model would and closed what it found, in two passes:
 | --- | --- | --- |
 | self-attack | `(node x.js)`, `$(node b.js)`, `nohup`, `env node x.js` | subshell chars break a token; wrappers are transparent |
 | veredicto round 3 | `/usr/bin/env node`, `/usr/bin/node`, `timeout 10 node`, `exec`, `setsid`, `node -- x.js`, `bash script\ name.sh` | interpreters and wrappers matched by basename; backslash escapes; `--` ends flags; numeric wrapper arguments |
+| veredicto round 4 | a **newline** — `ls\nnode build.js` — plus control-flow bodies | newline, `{`, `then` and `do` open a command, in `tokenise` *and* in `commandWord` |
 
 `/usr/bin/env node` is the most idiomatic interpreter invocation there is and
 `timeout N` is this project's own test idiom; both evaded on the first try,
@@ -72,6 +73,19 @@ Deliberately not covered, and disclosed in `NOT_COVERED`: an argument NODD
 cannot see is a file (`node x`, no extension and no path), a script piped into
 an interpreter, a bare flag's own value, and a script run without naming an
 interpreter.
+
+Round 4's finding is the one worth remembering. Nine evasions needed an
+adversary; the tenth needed only two lines of bash, which is the ordinary shape
+of agent work. It also exposed that the blind spot was never new code's fault:
+`commandWord` had been missing the newline since `19167a7`, so `ls\nrm -rf build`
+had been invisible to *every* pattern, not just the interpreter row. The fix
+lands in both places.
+
+That is also the argument for stopping. A denylist over a Turing-complete shell
+does not close by sweeping, so the README now states the posture plainly: this
+gate catches the write a model reaches for after a refusal, not the write a
+model is determined to hide. The remaining known gaps — variables, aliases,
+flag-carrying wrappers — are declared rather than chased.
 
 One mutant was found equivalent rather than pinned: skipping `$` in the
 tokeniser. `(` already ends the token, so the line did nothing and was deleted

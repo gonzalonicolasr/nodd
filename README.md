@@ -174,6 +174,8 @@ These mutation vectors reach the filesystem without this classifier noticing:
 - a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`
 - an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)
 - a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)
+- an interpreter reached through a variable or an alias: `I=node; $I x.js`
+- a wrapper carrying its own flag before the command: `nice -n 10 node x.js`, `sudo -u root node x.js`
 - compilers, formatters and codegen writing as a side effect
 - redirection hidden behind a variable or `eval`
 - a pre-existing background process
@@ -185,6 +187,13 @@ The interpreter row over-approximates on purpose: a command string cannot say wh
 `node server.js` will do, so a named script file is treated as a write even when it
 only reads. The refusal carries its remedy and a one-shot escape hatch, so that cost
 is bounded; an unnoticed write is not.
+
+**What this gate is for.** It catches the write a model reaches for when it
+takes the shortest way out after a refusal — the next obvious form, not the
+next clever one. It does not catch a model determined to hide a write, and it
+cannot: the surface of a Turing-complete shell does not close by enumeration.
+Four review rounds on this list each found something, and the last one found a
+newline. Treat the covered table as the floor, never as the boundary.
 
 A partial gate that says which half it holds is worth more than a total one that
 is not.

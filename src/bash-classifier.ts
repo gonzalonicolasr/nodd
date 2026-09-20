@@ -18,9 +18,18 @@ export type CoveredPattern = {
   test(command: string): boolean;
 };
 
-/** A command word at the start of the string or after a shell separator. */
+/**
+ * A command word at the start of the string or after a shell separator.
+ *
+ * A newline separates commands exactly as `;` does, and a multi-line block is
+ * the ordinary shape of agent work — without it, everything after line one was
+ * invisible to every pattern here, not just the interpreter row. `then`, `do`
+ * and `{` open a command for the same reason.
+ */
 function commandWord(words: string[]): RegExp {
-  return new RegExp(String.raw`(^|[;&|]|&&|\|\|)\s*(sudo\s+)?(${words.join("|")})\b`);
+  return new RegExp(
+    String.raw`(^|[;&|\n({]|&&|\|\||\bthen\b|\bdo\b)\s*(sudo\s+)?(${words.join("|")})\b`,
+  );
 }
 
 /**
@@ -98,7 +107,7 @@ function tokenise(command: string): { text: string; startsCommand: boolean }[] {
     if (ch === "'" || ch === '"') { quote = ch; continue; }
     // `(`, `)` and a backtick open a command just as `;` does: a subshell is
     // still a place where an interpreter can be the command word.
-    if (";&|()`".includes(ch)) { flush(); pendingBreak = true; startsCommand = true; continue; }
+    if (";&|()`{}\n".includes(ch)) { flush(); pendingBreak = true; startsCommand = true; continue; }
     if (/\s/.test(ch)) { flush(); startsCommand = pendingBreak; continue; }
     text += ch;
   }
@@ -125,7 +134,8 @@ function runsScriptFile(command: string): boolean {
   const tokens = tokenise(command);
   for (let i = 0; i < tokens.length; i += 1) {
     let head = tokens[i];
-    if (!head.startsCommand) continue;
+    // `then` and `do` are keywords, not commands: what follows them starts one.
+    if (!head.startsCommand && !["then", "do"].includes(tokens[i - 1]?.text ?? "")) continue;
     // A prefix that runs its argument is transparent: `env node x.js` is
     // `node x.js`. `env`'s VAR=value assignments are skipped with it.
     // A wrapper is recognised by basename too: `/usr/bin/env node x.js`.
@@ -162,6 +172,8 @@ export const NOT_COVERED: string[] = [
   "a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`",
   "an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)",
   "a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)",
+  "an interpreter reached through a variable or an alias: `I=node; $I x.js`",
+  "a wrapper carrying its own flag before the command: `nice -n 10 node x.js`, `sudo -u root node x.js`",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
   "a pre-existing background process",

@@ -313,3 +313,29 @@ test("a script named without an extension is still a script", () => {
   assert.equal(classifyBash("node ./bin/cli"), "mutating");
   assert.equal(classifyBash("python3 /srv/tools/migrate"), "mutating");
 });
+
+test("a newline separates commands, like every other separator", () => {
+  // The tenth evasion, and the only one that fires by accident: a multi-line
+  // bash block is the ordinary shape of agent work, and the second line was
+  // invisible. This is not adversarial — a model writing two lines evaded
+  // without trying.
+  assert.equal(classifyBash("ls\nnode build.js"), "mutating");
+  assert.equal(classifyBash("cd src\nbash install.sh"), "mutating");
+  assert.equal(classifyBash("set -e\npython3 migrate.py"), "mutating");
+  // The same blind spot degraded every pre-existing row, not just the new one.
+  assert.equal(classifyBash("ls\nrm -rf build"), "mutating");
+  assert.equal(classifyBash("ls\nchmod +x f"), "mutating");
+  assert.equal(classifyBash("ls\necho x > f"), "mutating");
+  // A multi-line read is still a read.
+  assert.equal(classifyBash("grep -rn x src\nwc -l src/a.ts"), "non-mutating");
+  assert.equal(classifyBash("ls -la\ngit log --oneline"), "non-mutating");
+});
+
+test("a control-flow body is a place a command can hide", () => {
+  assert.equal(classifyBash("if true; then node x.js; fi"), "mutating");
+  assert.equal(classifyBash("for f in a b; do node x.js; done"), "mutating");
+  assert.equal(classifyBash("ls && { node x.js; }"), "mutating");
+  assert.equal(classifyBash("while read l; do rm $l; done"), "mutating");
+  // The keywords alone are not writes.
+  assert.equal(classifyBash("if true; then ls; fi"), "non-mutating");
+});
