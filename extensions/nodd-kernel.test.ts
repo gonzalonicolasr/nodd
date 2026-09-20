@@ -206,3 +206,79 @@ test("a host without a footer does not break the session", () => {
   assert.doesNotThrow(() => handlers.get("session_start")?.({}, { sessionManager: { getEntries: () => [] } }));
   assert.doesNotThrow(() => handlers.get("tool_call")?.({ toolName: "read", toolCallId: "r1", input: { file_path: "a" } }));
 });
+
+// ---------------------------------------------------------------------------
+// T003 -- D1's blast radius: gate-promotion and gate-evidence both read
+// `filesWritten`, and both were contaminated by a refused write counting as a
+// real one. These go through the registered `tool_call`/`tool_result`
+// handlers, exactly as `nodd-enforcement.test.ts` does, so they exercise the
+// real path rather than a gate function in isolation.
+// ---------------------------------------------------------------------------
+function handlerSession(cwd: string) {
+  const handlers = new Map<string, Handler>();
+  const tools = new Map<string, { execute: (id: string, args: unknown) => Promise<{ content?: Array<{ text?: string }> }> }>();
+  const pi = {
+    on(event: string, handler: Handler) { handlers.set(event, handler); },
+    registerTool(tool: { name: string; execute: (id: string, args: unknown) => Promise<unknown> }) { tools.set(tool.name, tool as never); },
+    appendEntry() {},
+  };
+  register(pi as never, cwd);
+  handlers.get("session_start")?.({}, { sessionManager: { getEntries: () => [] } });
+  let n = 0;
+  return {
+    call(toolName: string, input: Record<string, unknown>) {
+      return handlers.get("tool_call")?.({ toolName, toolCallId: `c${++n}`, input });
+    },
+    observe(toolName: string, input: Record<string, unknown>, isError = false) {
+      handlers.get("tool_result")?.({ toolName, toolCallId: `c${++n}`, input, isError, content: "" });
+    },
+    async runTool(toolName: string, args: Record<string, unknown>) {
+      const id = `c${++n}`;
+      handlers.get("tool_call")?.({ toolName, toolCallId: id, input: args });
+      const result = await tools.get(toolName)?.execute(id, args);
+      const text = result?.content?.[0]?.text;
+      handlers.get("tool_result")?.({ toolName, toolCallId: id, input: args, isError: false, content: text });
+      return text;
+    },
+  };
+}
+
+test("gate-promotion: a refused write does not inflate observedFiles into false divergence", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "nodd-t003-"));
+  const s = handlerSession(cwd);
+  await s.runTool("nodd_declare", {
+    intent: "change", route: "tracked", slug: "scope", summary: "one file",
+    runner: "npm test", files: ["/repo/a.ts"],
+  });
+  s.observe("subagent", { agent: "writer" });
+  // Two writes refused, to files never declared -- must not count toward
+  // `observedFiles`, or the next real write on the one declared file would be
+  // refused as "3 written against 1 declared".
+  s.observe("write", { path: "/repo/never-1.ts" }, true);
+  s.observe("write", { path: "/repo/never-2.ts" }, true);
+
+  const blocked = s.call("write", { path: "/repo/a.ts", content: "x" });
+  assert.equal((blocked as { block?: boolean } | undefined)?.block, undefined, "the one declared file must not read as divergence");
+});
+
+test("gate-evidence: a refused write does not advance lastWriteSeq past evidence that legitimately postdates the real write", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "nodd-t003-"));
+  const s = handlerSession(cwd);
+  await s.runTool("nodd_declare", {
+    intent: "change", route: "tracked", slug: "login", summary: "build login",
+    runner: "npm test", files: ["/repo/src/login.ts"],
+  });
+  await s.runTool("nodd_task", { action: "add", id: "T1", title: "Implement login", slug: "login" });
+
+  s.observe("edit", { path: "/repo/src/login.ts" }); // the real write
+  s.observe("bash", { command: "npm test" }); // the genuine, postdating green
+  // A refused edit of the *same declared file*, after the green run: it must
+  // not advance `lastWriteSeq` past the green, or the genuine evidence would
+  // read as stale-green and be refused for a write that never happened.
+  s.observe("edit", { path: "/repo/src/login.ts" }, true);
+
+  const reply = String(await s.runTool("nodd_task", { action: "check", id: "T1", slug: "login" }));
+  assert.match(reply, /checked in/, `a refused write after the green run must not invalidate it, got: ${reply}`);
+});
+
+
