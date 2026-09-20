@@ -269,3 +269,19 @@ test("the not-covered list does not deny coverage the classifier has", () => {
     );
   }
 });
+
+test("a wrapper or a subshell does not hide the interpreter", () => {
+  // The cheapest evasions once a bare `node x.js` is refused, in the order a
+  // model would try them. A prefix that runs its argument is transparent, and
+  // a subshell opens a command just as `;` does.
+  assert.equal(classifyBash("(node x.js)"), "mutating");
+  assert.equal(classifyBash("$(node build.js)"), "mutating");
+  assert.equal(classifyBash("nohup node x.js &"), "mutating");
+  assert.equal(classifyBash("env node x.js"), "mutating");
+  assert.equal(classifyBash("time node x.js"), "mutating");
+  assert.equal(classifyBash("env FOO=1 node x.js"), "mutating");
+  // The wrapper alone is not a write, and the prefix rule must not leak.
+  assert.equal(classifyBash("env"), "non-mutating");
+  assert.equal(classifyBash("time npm test"), "non-mutating");
+  assert.equal(classifyBash("grep '(node x.js)' src"), "non-mutating");
+});

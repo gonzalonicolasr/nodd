@@ -57,6 +57,7 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
  * beside the covered table, because a partial mechanism that presents itself as
  * total is how ODD ended up promising compliance while shipping delivery.
  */
+const WRAPPERS = new Set(["sudo", "env", "time", "nohup", "nice", "xargs", "command"]);
 const INTERPRETERS = new Set(["node", "deno", "bun", "python", "python3", "ruby", "perl", "bash", "sh", "zsh"]);
 const SCRIPT_FILE = /\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)$|\//;
 
@@ -90,7 +91,9 @@ function tokenise(command: string): { text: string; startsCommand: boolean }[] {
       continue;
     }
     if (ch === "'" || ch === '"') { quote = ch; continue; }
-    if (ch === ";" || ch === "&" || ch === "|") { flush(); pendingBreak = true; startsCommand = true; continue; }
+    // `(`, `)` and a backtick open a command just as `;` does: a subshell is
+    // still a place where an interpreter can be the command word.
+    if (";&|()`".includes(ch)) { flush(); pendingBreak = true; startsCommand = true; continue; }
     if (/\s/.test(ch)) { flush(); startsCommand = pendingBreak; continue; }
     text += ch;
   }
@@ -118,7 +121,14 @@ function runsScriptFile(command: string): boolean {
   for (let i = 0; i < tokens.length; i += 1) {
     let head = tokens[i];
     if (!head.startsCommand) continue;
-    if (head.text === "sudo" && tokens[i + 1]) head = tokens[++i];
+    // A prefix that runs its argument is transparent: `env node x.js` is
+    // `node x.js`. `env`'s VAR=value assignments are skipped with it.
+    while (WRAPPERS.has(head.text) && tokens[i + 1]) {
+      head = tokens[++i];
+      if (head.text === "env" || head.text.includes("=")) continue;
+      break;
+    }
+    while (head.text.includes("=") && !head.text.startsWith("-") && tokens[i + 1]) head = tokens[++i];
     if (!INTERPRETERS.has(head.text)) continue;
 
     let arg = tokens[i + 1];
