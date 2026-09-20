@@ -4,6 +4,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { CANONICAL_STEPS } from "./manifest.ts";
 import { GATE_IDS } from "./gates/registry.ts";
 import { ODD_PROSE, proseForStep, type ProseEntry } from "./odd-prose.ts";
+import { BLOCK_B_BUDGET, renderBlockB, renderPrompt } from "./prompt.ts";
+import { emptyCommitted, type Committed } from "./state.ts";
+import { emptyPolicy } from "./gates/policy.ts";
 
 // The `(P)`-bearing rows of `REQ: odd-parity-matrix`. Listed here by number so
 // that adding a row to the matrix without adding its clause fails loudly.
@@ -79,6 +82,43 @@ test("selecting a step returns that step's entries and nothing else", () => {
 test("every entry is reachable through some step, so nothing is stranded", () => {
   const reachable = CANONICAL_STEPS.flatMap((step) => proseForStep(step).map((entry) => entry.row));
   assert.deepEqual(reachable.sort((a, b) => a - b), P_ROWS);
+});
+
+// A state whose currentStep() selects each step, built the same way
+// prompt.test.ts's T004 cases are: from observed fields only, never from an
+// options.step override, so this exercises the router itself.
+const STATE_FOR_STEP: Record<(typeof CANONICAL_STEPS)[number], Committed> = {
+  authorize: emptyCommitted(),
+  explore: { ...emptyCommitted(), declaration: { intent: "read-only", route: "inline", slug: "audit", runner: null, tdd: "off", files: [] } },
+  "resolve-uncertainty": { ...emptyCommitted(), delegations: 1 },
+  classify: { ...emptyCommitted(), toolCalls: 1 },
+  track: { ...emptyCommitted(), declaration: { intent: "change", route: "tracked", slug: "s", runner: null, tdd: "off", files: [] } },
+  implement: {
+    ...emptyCommitted(),
+    declaration: { intent: "change", route: "tracked", slug: "s", runner: null, tdd: "off", files: [] },
+    filesWritten: new Map([["/a.ts", { at: "t", seq: 1 }]]),
+  },
+  close: {
+    ...emptyCommitted(),
+    declaration: { intent: "change", route: "tracked", slug: "s", runner: null, tdd: "off", files: [] },
+    filesWritten: new Map([["/a.ts", { at: "t", seq: 1 }]]),
+    commandResults: [{ toolCallId: "c1", command: "npm test", isError: false, resultText: "ok", at: "t", seq: 2 }],
+  },
+};
+
+// This is the test T004 exists for: the (P) rows passed while six of them were
+// tagged with a step `currentStep()` could never select. Existence in the
+// corpus is not enough -- the router has to actually land there, and
+// `renderBlockB` for that step has to come out non-empty and inside budget.
+test("every (P) row's step is reachable by the router, and its block B is non-empty and in budget", () => {
+  for (const entry of ODD_PROSE) {
+    const state = STATE_FOR_STEP[entry.step];
+    assert.ok(state, `row ${entry.row}: no state fixture for step ${entry.step}`);
+    const { blockA, blockB } = renderPrompt(state, emptyPolicy());
+    assert.match(blockA, new RegExp(`step: ${entry.step}\\b`), `row ${entry.row}: currentStep() never selects ${entry.step} for this state`);
+    assert.ok(blockB.length > 0, `row ${entry.row}: block B for ${entry.step} is empty`);
+    assert.ok(renderBlockB(entry.step).length <= BLOCK_B_BUDGET, `row ${entry.row}: block B for ${entry.step} exceeds budget before truncation`);
+  }
 });
 
 test("implement carries the two line-heuristic clauses together", () => {
