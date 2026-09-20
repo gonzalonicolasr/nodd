@@ -477,3 +477,42 @@ test("--nodd-off=all disables every gate", () => {
     assert.equal(handlers.get("tool_call")!(event), undefined, `${event.toolName} still blocked with --nodd-off=all`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// A broken config must not silently re-enable gates the user turned off.
+//
+// `parseConfig` reports defects; `readPolicy` dropped them and returned an
+// empty policy, so a trailing comma in `nodd.json` turned every gate back on
+// with no warning — against an explicit user decision, in a product that
+// promises "off is not a fault to diagnose". Failing closed on enforcement is
+// defensible; doing it silently is not, and the diagnostic was already
+// computed.
+// ---------------------------------------------------------------------------
+test("a corrupt config is reported, not silently ignored", () => {
+  const home = mkdtempSync(join(tmpdir(), "nodd-corrupt-"));
+  mkdirSync(join(home, ".pi"), { recursive: true });
+  writeFileSync(join(home, ".pi", "nodd.json"), '{"gates":{"classify":{"enabled":false},}', "utf8");
+
+  const notices: string[] = [];
+  const handlers = new Map<string, (event: unknown, ctx?: unknown) => unknown>();
+  register(
+    {
+      on: (n: string, f: (e: unknown, c?: unknown) => unknown) => handlers.set(n, f),
+      registerTool: () => {},
+      appendEntry: () => {},
+    } as never,
+    mkdtempSync(join(tmpdir(), "nodd-corrupt-cwd-")),
+    home,
+  );
+
+  handlers.get("session_start")!({}, {
+    sessionManager: { getEntries: () => [] },
+    ui: { notify: (m: string) => notices.push(m), setStatus: () => {} },
+  });
+
+  assert.match(
+    notices.join(" "),
+    /nodd\.json/,
+    "a config NODD could not read must say so: the user's disabled gates are back on and nothing told them",
+  );
+});

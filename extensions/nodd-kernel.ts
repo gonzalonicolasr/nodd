@@ -645,6 +645,26 @@ function readPolicy(home?: string): Policy {
 }
 
 /**
+ * Why the config could not be used, if it could not be used.
+ *
+ * A file that fails to parse resets every gate to its default, which quietly
+ * re-enables whatever the user turned off. `parseConfig` already computes the
+ * diagnosis; dropping it left the user with gates they had disabled and no
+ * reason given.
+ */
+function configComplaint(home?: string): string | null {
+  const path = noddConfigPath(home);
+  if (!existsSync(path)) return null;
+  try {
+    const { defects } = parseConfig(readFileSync(path, "utf8"));
+    if (defects.length === 0) return null;
+    return `nodd: ${defects.join("; ")}. Every gate is at its default until this is fixed (${path}).`;
+  } catch (err) {
+    return `nodd: could not read ${path} (${err instanceof Error ? err.message : String(err)}). Every gate is at its default until this is fixed.`;
+  }
+}
+
+/**
  * One-shot overrides granted by `/nodd-allow`, which runs in another module.
  * Disk is the only channel between the two, and it is the same channel the
  * gate config already uses.
@@ -772,6 +792,8 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
 
   pi.on("session_start", ((_event: unknown, ctx: SessionStartContext) => {
     kernel.replay(ctx?.sessionManager?.getEntries?.());
+    const complaint = configComplaint(home);
+    if (complaint) (ctx as { ui?: { notify?(m: string, t?: string): void } })?.ui?.notify?.(complaint, "warning");
     showStatus(ctx);
   }) as never);
 
