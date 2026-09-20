@@ -28,12 +28,21 @@ test("the four mechanism steps are present and not assignable", () => {
   }
 });
 
-test("the two global slots are assignable and are not canonical steps", () => {
-  for (const slot of ["default", "orchestrator"]) {
-    assert.equal(isConfigurableSlot(slot), true);
-    assert.equal(slotRow(slot)!.kind, "global");
-    assert.ok(!(CANONICAL_STEPS as readonly string[]).includes(slot));
-  }
+test("the global default slot is assignable and is not a canonical step", () => {
+  assert.equal(isConfigurableSlot("default"), true);
+  assert.equal(slotRow("default")!.kind, "global");
+  assert.ok(!(CANONICAL_STEPS as readonly string[]).includes("default"));
+});
+
+test("orchestrator is no longer a slot: it was inert, and default replaces it", () => {
+  assert.equal(isConfigurableSlot("orchestrator"), false);
+  assert.equal(slotRow("orchestrator"), undefined);
+});
+
+test("validateAssignment refuses orchestrator, naming what replaced it", () => {
+  const result = validateAssignment(parseAssignment("orchestrator=anthropic/claude-opus-4-1")!, registry);
+  assert.equal(result.ok, false);
+  assert.match((result as { message: string }).message, /default/);
 });
 
 // ---------------------------------------------------------------------------

@@ -49,10 +49,9 @@ export const MECHANISM_STEPS = Object.freeze([
 
 export type MechanismStep = (typeof MECHANISM_STEPS)[number];
 
-/** The five slots `/nodd-models` can assign: two global, three model-backed steps. */
+/** The four slots `/nodd-models` can assign: one global fallback, three model-backed steps. */
 export const CONFIGURABLE_SLOTS = Object.freeze([
   "default",
-  "orchestrator",
   "explore",
   "resolve-uncertainty",
   "implement",

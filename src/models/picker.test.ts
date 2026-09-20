@@ -93,11 +93,11 @@ test("with no profiles the menu offers editing the loose config; the row goes on
 // ---------------------------------------------------------------------------
 // The slot screen: NODD's slots, with the four mechanisms shown but inert.
 // ---------------------------------------------------------------------------
-test("the slot screen shows the two globals and all seven canonical steps in order", () => {
+test("the slot screen shows the default global and all seven canonical steps in order", () => {
   const slots = press(open(), "edit-loose");
   assert.equal(slots.screen, "slots");
   const shown = slots.entries.filter((e) => e.kind === "slot" || e.kind === "mechanism");
-  assert.deepEqual(shown.map((e) => e.value), ["default", "orchestrator", ...CANONICAL_STEPS]);
+  assert.deepEqual(shown.map((e) => e.value), ["default", ...CANONICAL_STEPS]);
 });
 
 test("the four mechanism rows say mecanismo · sin modelo and cannot be entered", () => {

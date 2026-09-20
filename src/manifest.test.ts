@@ -39,7 +39,6 @@ test("the four mechanism steps are absent from the configurable slot set", () =>
   }
   assert.deepEqual(CONFIGURABLE_SLOTS, [
     "default",
-    "orchestrator",
     "explore",
     "resolve-uncertainty",
     "implement",

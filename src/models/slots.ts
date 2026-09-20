@@ -6,7 +6,7 @@
 // model — they are comparators and file writers — so they get no slot. A
 // decorative slot on a step that never calls a model is a lie with a dropdown.
 //
-// Assignable: the two global slots plus the three model-backed steps.
+// Assignable: the global `default` fallback plus the three model-backed steps.
 
 import { CANONICAL_STEPS, CONFIGURABLE_SLOTS, MECHANISM_STEPS, type ConfigurableSlot } from "../manifest.ts";
 
@@ -20,7 +20,7 @@ export type SlotRow = {
 
 export const MECHANISM_PLACEHOLDER = "mecanismo · sin modelo";
 
-const GLOBAL_SLOTS = ["default", "orchestrator"] as const;
+const GLOBAL_SLOTS = ["default"] as const;
 
 /** A canonical step NODD implements as mechanism, so it gets no slot. */
 export function isMechanismSlot(id: string): boolean {
@@ -28,11 +28,17 @@ export function isMechanismSlot(id: string): boolean {
 }
 
 /**
- * The display model: the two global slots first, then the seven canonical steps
- * in protocol order. The order is the contract — a test asserts it.
+ * The display model: the global `default` fallback first, then the seven
+ * canonical steps in protocol order. The order is the contract — a test
+ * asserts it.
  */
 export const SLOT_ROWS: readonly SlotRow[] = Object.freeze([
-  ...GLOBAL_SLOTS.map((id): SlotRow => ({ id, kind: "global", placeholder: "sin asignar" })),
+  ...GLOBAL_SLOTS.map((id): SlotRow => ({
+    id,
+    kind: "global",
+    // The model used when a step's own slot is unset.
+    placeholder: "sin asignar",
+  })),
   ...CANONICAL_STEPS.map((id): SlotRow =>
     isMechanismSlot(id)
       ? { id, kind: "mechanism", placeholder: MECHANISM_PLACEHOLDER }

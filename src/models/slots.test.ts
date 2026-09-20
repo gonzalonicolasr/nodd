@@ -18,26 +18,29 @@ import { groupByProvider, parseAssignment, validateAssignment } from "./assign.t
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
-test("CONFIGURABLE_SLOTS today includes orchestrator alongside default, explore, resolve-uncertainty, implement", () => {
+// T008 removed the inert `orchestrator` slot. These three tests pinned it as
+// present before the removal (T007); they are rewritten, not deleted, to pin
+// its absence now -- the delta the removal produced.
+test("CONFIGURABLE_SLOTS no longer includes orchestrator; default, explore, resolve-uncertainty, implement remain", () => {
   assert.deepEqual(
     [...CONFIGURABLE_SLOTS].sort(),
-    ["default", "explore", "implement", "orchestrator", "resolve-uncertainty"].sort(),
+    ["default", "explore", "implement", "resolve-uncertainty"].sort(),
   );
 });
 
-test("the slot table today shows orchestrator as a global, assignable row", () => {
+test("the slot table no longer shows an orchestrator row", () => {
   const row = SLOT_ROWS.find((r) => r.id === "orchestrator");
-  assert.ok(row, "orchestrator must be a row today");
-  assert.equal(row!.kind, "global");
-  assert.equal(isConfigurableSlot("orchestrator"), true, "orchestrator is assignable today");
+  assert.equal(row, undefined, "orchestrator must be gone");
+  assert.equal(isConfigurableSlot("orchestrator"), false);
 });
 
-test("validateAssignment accepts orchestrator=provider/model today", () => {
+test("validateAssignment refuses orchestrator=provider/model, naming what replaced it", () => {
   const groups = groupByProvider([{ provider: "anthropic", id: "claude-opus-4-1" }]);
   const assignment = parseAssignment("orchestrator=anthropic/claude-opus-4-1");
   assert.ok(assignment);
   const result = validateAssignment(assignment!, groups);
-  assert.equal(result.ok, true, "orchestrator is accepted by validateAssignment today");
+  assert.equal(result.ok, false);
+  assert.match((result as { message: string }).message, /default/);
 });
 
 /** Every `.ts` file under a directory, one level of nesting included. */
@@ -51,16 +54,23 @@ function tsFiles(dir: string): string[] {
   return out;
 }
 
-test("orchestrator is inert today: no non-test source under src/ or extensions/ reads the orchestrator slot, besides its own definition and two unrelated comments about forge's orchestrator.md", () => {
-  // This is the fact T008's removal acts on: `orchestrator` exists in the slot
-  // surface but nothing consumes it. Documented here so the removal's delta is
-  // visible, not inferred.
+test("orchestrator is gone as a real slot from every non-test source under src/ and extensions/, save for its explicit refusal in assign.ts and two unrelated comments about forge's orchestrator.md", () => {
   const files = [...tsFiles(join(REPO_ROOT, "src")), ...tsFiles(join(REPO_ROOT, "extensions"))];
   const hits = files.filter((f) => readFileSync(f, "utf8").includes("orchestrator"));
   for (const file of hits) {
-    assert.ok(
-      /[\\/](slots|manifest|promote)\.ts$|nodd-promote\.ts$/.test(file),
-      `unexpected consumer of "orchestrator": ${file}`,
-    );
+    assert.ok(/promote\.ts$|[\\/]assign\.ts$/.test(file), `unexpected consumer of "orchestrator": ${file}`);
+  }
+});
+
+test("every id in CONFIGURABLE_SLOTS is read by at least one non-test source under src/ or extensions/", () => {
+  // Guards against the next inert slot: an id that no consumer reads is a
+  // dropdown for a setting nothing uses, exactly what `orchestrator` was.
+  const files = [
+    ...tsFiles(join(REPO_ROOT, "src")).filter((f) => !f.endsWith(join("models", "slots.ts")) && !f.endsWith("manifest.ts")),
+    ...tsFiles(join(REPO_ROOT, "extensions")),
+  ];
+  const text = files.map((f) => readFileSync(f, "utf8")).join("\n");
+  for (const slot of CONFIGURABLE_SLOTS) {
+    assert.ok(text.includes(slot), `no consumer under src/ or extensions/ reads the "${slot}" slot`);
   }
 });

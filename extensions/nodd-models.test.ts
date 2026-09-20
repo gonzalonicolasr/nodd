@@ -47,10 +47,9 @@ test("the no-arg output lists all seven steps with the four mechanisms marked", 
   assert.equal(io.writes.length, 0, "displaying writes nothing");
 });
 
-test("the two global slots are listed alongside the steps", () => {
+test("the default global slot is listed alongside the steps", () => {
   const output = runModelsCommand("", memoryIo(), registry);
   assert.ok(output.includes("default"));
-  assert.ok(output.includes("orchestrator"));
 });
 
 // ---------------------------------------------------------------------------

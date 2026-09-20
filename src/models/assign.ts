@@ -118,6 +118,9 @@ function suggest(groups: Map<string, string[]>, model: string): string[] {
 }
 
 export function validateAssignment(assignment: Assignment, groups: Map<string, string[]>): Validation {
+  if (assignment.slot === "orchestrator") {
+    return { ok: false, message: "orchestrator ya no existe: fue reemplazado por default" };
+  }
   const row = slotRow(assignment.slot);
   if (!row) {
     return { ok: false, message: `slot desconocido: ${assignment.slot}` };
