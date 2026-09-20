@@ -39,7 +39,7 @@ import { appendRecord, readLedger } from "../src/ledger.ts";
 import { isSuccess, parseOutcome } from "../src/outcome.ts";
 import { candidateFor, candidateIdentity } from "../src/review-candidate.ts";
 import { reopenTask } from "../src/change-acceptance.ts";
-import { statusLine } from "../src/status.ts";
+import { statusLine, type TaskProgress } from "../src/status.ts";
 
 /** The NODD entry type appended to the session so a reload can rebuild state. */
 export const OBSERVATION_ENTRY = "nodd:observation";
@@ -144,6 +144,8 @@ export type Kernel = {
    * finished. The hazard is made unrepresentable rather than documented.
    */
   evidenceView(): Committed;
+  /** Checked-vs-total for the declared slug, or null when there is no task list. */
+  taskProgress(): TaskProgress | null;
   /** Run the ordered registry against one call. `null` means let it run. */
   checkCall(request: GateRequest): { block: true; reason: string } | null;
   setPolicy(policy: Policy): void;
@@ -417,6 +419,15 @@ export function createKernel(
         // observed is not a command this one observed.
         state.committed = { ...state.committed, commandResults: [] };
       }
+    },
+    taskProgress() {
+      // The doc on disk is the source of truth, as everywhere else in NODD:
+      // a counter read from memory could disagree with the file the user sees.
+      const slug = state.committed.declaration?.slug;
+      if (!slug) return null;
+      const doc = readDoc(slug);
+      if (!doc || doc.tasks.length === 0) return null;
+      return { done: doc.tasks.filter((t) => t.checked).length, total: doc.tasks.length };
     },
     evidenceView() {
       return state.committed;
@@ -706,7 +717,10 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
     try {
       const gates = kernel.policy();
       const enabled = gates.flags.all !== false;
-      ctx?.ui?.setStatus?.("nodd", statusLine(kernel.state.committed, enabled));
+      ctx?.ui?.setStatus?.(
+        "nodd",
+        statusLine(kernel.state.committed, enabled, kernel.taskProgress() ?? undefined),
+      );
     } catch {
       // Decoration, never enforcement.
     }

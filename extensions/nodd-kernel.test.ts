@@ -334,3 +334,39 @@ test("a blocked call does not inflate the counter that blocked it", () => {
     `refusals must not count themselves: the gate escalated to ${escalating.length} higher counts over writes that never happened`,
   );
 });
+
+// ---------------------------------------------------------------------------
+// The footer counts tasks.
+//
+// `statusLine` has taken a `TaskProgress` since it was written and it is
+// tested, but the kernel never passed one, so the counter could not appear:
+// a tested capability wired to nothing. The doc on disk is the source of
+// truth, same as everywhere else in NODD.
+// ---------------------------------------------------------------------------
+test("the footer reports task progress from the feature doc", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "nodd-footer-"));
+  const handlers = new Map<string, (event: unknown) => unknown>();
+  const statuses: string[] = [];
+  const pi = {
+    on: (name: string, handler: (event: unknown) => unknown) => handlers.set(name, handler),
+    registerTool: () => {},
+    appendEntry: () => {},
+  };
+  const kernel = register(pi as never, cwd, mkdtempSync(join(tmpdir(), "nodd-footer-h-")));
+  const declared = {
+    intent: "change", route: "tracked", slug: "counted",
+    title: "C", summary: "s", runner: "npm test",
+  };
+  kernel.declare(declared as never);
+  kernel.task({ action: "add", slug: "counted", id: "T1", title: "one" } as never);
+  kernel.task({ action: "add", slug: "counted", id: "T2", title: "two" } as never);
+
+  // The footer is drawn from the hooks, which is how pi drives it.
+  const ctx = { ui: { setStatus: (_k: string, text: string) => statuses.push(text) } };
+  const d = { toolName: "nodd_declare", toolCallId: "d1", input: declared };
+  handlers.get("tool_call")!(d, ctx);
+  handlers.get("tool_result")!({ ...d, isError: false, content: "" }, ctx);
+
+  const last = statuses.at(-1) ?? "";
+  assert.match(last, /0\/2/, `expected the footer to count the two declared tasks, got: "${last}"`);
+});
