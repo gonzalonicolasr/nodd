@@ -35,6 +35,42 @@ function blankQuotedData(command: string): string {
   return withoutQuotes.replace(/(^|\s)#[^\n]*/g, "$1");
 }
 
+/**
+ * Where the command word of segment `i` actually is, after transparent
+ * wrappers, or `null` when `i` does not open a command.
+ *
+ * One definition, used by both the script-file check and the heredoc check.
+ * They kept diverging while they were two loops: one gained `then`/`do` and the
+ * other did not, one broke after a wrapper's argument and the other walked
+ * past it onto a flag's *value*, turning `command -v bash` into a write.
+ */
+function commandHeadAt(tokens: Token[], start: number): { head: Token; at: number } | null {
+  // `then` and `do` are keywords, not commands: what follows them starts one.
+  if (!tokens[start].startsCommand && !["then", "do"].includes(tokens[start - 1]?.text ?? "")) return null;
+
+  let at = start;
+  let head = tokens[at];
+  // A prefix that runs its argument is transparent: `env node x.js` is
+  // `node x.js`. `env`'s VAR=value assignments are skipped with it, and a
+  // wrapper's own numeric argument (`timeout 10 node …`) goes with it too.
+  // Exactly one argument, never a run of them — walking further lands on the
+  // value of a flag like `command -v bash`, which names a command instead of
+  // running one.
+  while (WRAPPERS.has(baseOf(head.text)) && tokens[at + 1]) {
+    head = tokens[++at];
+    if (baseOf(head.text) === "env" || head.text.includes("=")) continue;
+    // A wrapper's own long flags belong to it: `timeout --preserve-status 5`.
+    // Short flags do not get the same treatment, because `command -v bash`
+    // and `sudo -u bash` put a *command name* in the next slot rather than a
+    // command — walking onto it is what refused a documentation heredoc.
+    while (head.text.startsWith("--") && tokens[at + 1]) head = tokens[++at];
+    if (/^\d+[smhd]?$/.test(head.text) && tokens[at + 1]) { head = tokens[++at]; continue; }
+    break;
+  }
+  while (head.text.includes("=") && !head.text.startsWith("-") && tokens[at + 1]) head = tokens[++at];
+  return { head, at };
+}
+
 /** Does this line hand its heredoc to an interpreter, rather than to a reader? */
 function feedsAnInterpreter(line: string): boolean {
   // The heredoc operator binds to whatever precedes it: `python3 <<PY` runs
@@ -42,17 +78,8 @@ function feedsAnInterpreter(line: string): boolean {
   // word visible to the tokeniser.
   const tokens = tokenise(line.replace(/<</g, " << "));
   for (let i = 0; i < tokens.length; i += 1) {
-    if (!tokens[i].startsCommand) continue;
-    // Walk the same wrapper set the rest of this file uses. Recognising the
-    // interpreter only as a bare token made `sudo bash <<EOF` a one-word
-    // evasion, while `commandWord` and `runsScriptFile` both saw through it.
-    let at = i;
-    while (WRAPPERS.has(baseOf(tokens[at].text)) && tokens[at + 1]) {
-      at += 1;
-      // A wrapper's own argument goes with it: `timeout 5 bash`, `nice -n 10`.
-      while (tokens[at + 1] && (/^\d+[smhd]?$/.test(tokens[at].text) || tokens[at].text.startsWith("-") || tokens[at].text.includes("="))) at += 1;
-    }
-    if (INTERPRETERS.has(baseOf(tokens[at].text))) return true;
+    const found = commandHeadAt(tokens, i);
+    if (found && INTERPRETERS.has(baseOf(found.head.text))) return true;
   }
   return false;
 }
@@ -143,6 +170,9 @@ const baseOf = (token: string) => token.slice(token.lastIndexOf("/") + 1);
 
 const SCRIPT_FILE = /\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)$|\//;
 
+/** A shell word, and whether it sits where a command can start. */
+type Token = { text: string; startsCommand: boolean };
+
 /**
  * Split a command into tokens, keeping a quoted run — spaces and all — as one
  * token, and remembering where each one started.
@@ -151,8 +181,8 @@ const SCRIPT_FILE = /\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)$|\//;
  * both the shape of a pattern and the shape of a real filename. Position can.
  * So the tokens carry whether they open a command, and nothing else is guessed.
  */
-function tokenise(command: string): { text: string; startsCommand: boolean }[] {
-  const tokens: { text: string; startsCommand: boolean }[] = [];
+function tokenise(command: string): Token[] {
+  const tokens: Token[] = [];
   let text = "";
   let quote: string | null = null;
   let startsCommand = true;
@@ -204,24 +234,13 @@ function tokenise(command: string): { text: string; startsCommand: boolean }[] {
 function runsScriptFile(command: string): boolean {
   const tokens = tokenise(command);
   for (let i = 0; i < tokens.length; i += 1) {
-    let head = tokens[i];
-    // `then` and `do` are keywords, not commands: what follows them starts one.
-    if (!head.startsCommand && !["then", "do"].includes(tokens[i - 1]?.text ?? "")) continue;
-    // A prefix that runs its argument is transparent: `env node x.js` is
-    // `node x.js`. `env`'s VAR=value assignments are skipped with it.
-    while (WRAPPERS.has(baseOf(head.text)) && tokens[i + 1]) {
-      head = tokens[++i];
-      // `timeout 10 node …` and `nice -n 10 node …` take an argument of their
-      // own before the command they run.
-      if (baseOf(head.text) === "env" || head.text.includes("=")) continue;
-      if (/^\d+[smhd]?$/.test(head.text) && tokens[i + 1]) { head = tokens[++i]; continue; }
-      break;
-    }
-    while (head.text.includes("=") && !head.text.startsWith("-") && tokens[i + 1]) head = tokens[++i];
+    const found = commandHeadAt(tokens, i);
+    if (!found) continue;
+    i = found.at;
     // `/usr/bin/env node x.js` is the most ordinary interpreter line there is,
     // so an interpreter is recognised by the last path segment of its command
     // word. `/usr/bin/grep` is unaffected: grep is not an interpreter.
-    if (!INTERPRETERS.has(baseOf(head.text))) continue;
+    if (!INTERPRETERS.has(baseOf(found.head.text))) continue;
 
     let arg = tokens[i + 1];
     if (arg?.text === "run") {

@@ -11,8 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A wrapper no longer hides a heredoc body. `sudo bash <<EOF`,
   `cat <<EOF | env bash` and `cat <<EOF | timeout 5 bash` were classified as
-  reads while their bodies held real writes; the heredoc check now walks the
-  same wrapper set the rest of the classifier already used.
+  reads while their bodies held real writes.
+- The heredoc check and the script-file check now resolve a command word
+  through one shared helper. They were two loops that kept drifting apart:
+  one learned about `then`/`do` and the other did not, so
+  `for f in a; do bash <<EOF` hid its body.
 
 ## [0.7.1] - 2026-09-20
 

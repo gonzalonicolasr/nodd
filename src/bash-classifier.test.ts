@@ -412,8 +412,26 @@ test("a heredoc fed to an interpreter is a script, not data", () => {
   assert.equal(classifyBash("cat <<'EOF' | env bash\nrm -rf build\nEOF"), "mutating");
   assert.equal(classifyBash("cat <<'EOF' | timeout 5 bash\nrm -rf build\nEOF"), "mutating");
   assert.equal(classifyBash("cat <<'EOF' | /usr/bin/env bash\nrm -rf build\nEOF"), "mutating");
+  // A heredoc opened inside a loop or a conditional is still executed.
+  assert.equal(classifyBash("for f in a; do bash <<'EOF'\nrm -rf build\nEOF\ndone"), "mutating");
+  assert.equal(classifyBash("if true; then bash <<'EOF'\nrm -rf build\nEOF\nfi"), "mutating");
+  assert.equal(classifyBash("while read l; do sh <<'EOF'\nrm -rf build\nEOF\ndone"), "mutating");
+  // A full-path interpreter behind a wrapper: recognised by basename.
+  assert.equal(classifyBash("sudo /bin/bash <<'EOF'\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("env /usr/bin/python3 <<'PY'\nrm -rf build\nPY"), "mutating");
   // A pipe into something that only reads is still a read.
   assert.equal(classifyBash("cat <<'EOF' | grep x\na > b\nEOF"), "non-mutating");
+  // A wrapper's own long flags go with it, but its argument run is bounded:
+  // one step past a flag lands on the flag's value, which names a command
+  // instead of running one.
+  assert.equal(classifyBash("timeout --preserve-status 5 bash <<'EOF'\nrm -rf build\nEOF"), "mutating");
+  // A flag's value is not the command word: `command -v bash` asks where bash
+  // is, it does not run it, so the heredoc after it is documentation.
+  assert.equal(classifyBash("command -v node && cat <<'EOF'\nnpm install foo\nEOF"), "non-mutating");
+  assert.equal(classifyBash("command -v bash && cat <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
+  // The interpreter has to be a command word, not a word in someone's argument.
+  assert.equal(classifyBash("grep -rn bash src <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
+  assert.equal(classifyBash("echo bash <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
   assert.equal(classifyBash("cat <<'EOF' | sudo tee\nplain data\nEOF"), "mutating");
   assert.equal(classifyBash("python3 <<'PY'\nrm -rf build\nPY"), "mutating");
   // An unterminated heredoc must not swallow the commands after it.
