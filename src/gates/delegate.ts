@@ -54,7 +54,16 @@ export function delegateGate(
   if (!isFileWrite(request) && classifyBash(String(request.input?.command ?? "")) !== "mutating") return allow();
   if (committed.delegations > 0) return allow();
 
-  const remedy = "delegate the work with the `subagent` tool, or declare this as small inline work";
+  // Three paths, not two, following `track.ts:41-50` and `classify.ts`'s
+  // precedent (D4). A generated writer like `nodd-implement` holds
+  // `read, grep, ls, write, edit, bash` and nothing else: it cannot call
+  // `subagent`, cannot call `nodd_declare`, and has no slash commands. Both
+  // original remedies were unreachable by the actor this gate refuses most
+  // often — a writer, mid-write. Reporting the block back to the delegator
+  // needs no tool at all, so it is reachable by anyone.
+  const remedy =
+    "delegate the work with the `subagent` tool, or declare this as small inline work, " +
+    "or report the block to whoever delegated this work";
 
   const written = writtenFiles(committed, request, pending);
   if (written.size >= THRESHOLDS.writerMinNonTrivialFiles) {

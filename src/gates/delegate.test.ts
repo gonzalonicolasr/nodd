@@ -160,3 +160,25 @@ test("refused writes followed by one real write leave the counter at 1, not 4", 
   const decision = delegateGate(committed, { toolName: "write", input: { path: "other-real.ts" } }, emptyPolicy(), noPending);
   assert.equal(decision.allow, false, "two genuine distinct writes still trip the writer trigger");
 });
+
+// ---------------------------------------------------------------------------
+// D4's reachability invariant, applied to this gate (T011).
+//
+// `nodd-implement` is a real generated agent whose frontmatter grants
+// `read, grep, ls, write, edit, bash` — no `subagent`, no `nodd_declare`, and
+// no slash commands. Both halves of the old remedy were therefore unreachable
+// by the very actor this gate most often refuses: a writer, mid-write.
+// ---------------------------------------------------------------------------
+test("the remedy is reachable by a writer that cannot delegate or declare", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs("write", { path: "a.ts" }, false),
+    obs("write", { path: "b.ts" }, false),
+  ]);
+  const decision = delegateGate(committed, { toolName: "write", input: { path: "c.ts" } }, emptyPolicy(), noPending);
+
+  assert.equal(decision.allow, false);
+  assert.ok(
+    decision.allow === false && /report|delegator/i.test(decision.remedy.action),
+    `a refusal whose every remedy needs a tool the actor lacks is a deadlock; got: ${decision.allow === false ? decision.remedy.action : ""}`,
+  );
+});
