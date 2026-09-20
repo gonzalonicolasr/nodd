@@ -121,11 +121,18 @@ export function fold(committed: Committed, obs: Observation): Committed {
   // (`write.js:99`, `edit.js:92`). Reading only `path` left filesWritten empty
   // on every real write, which is what evidence and delegate count.
   //
-  // `toolCalls` above counts every attempt, refused or not — it measures
-  // session activity. `filesRead`/`filesWritten`/`delegations` below model
-  // observed outcomes — what the workspace and this session actually gained —
-  // so a refused call must not advance them, the same rule `commandResults`
-  // already applies via `isError`.
+  // `toolCalls` above counts every *executed* call, failed or not: `fold` runs
+  // on `tool_result`, and a gate-blocked call never produces one, so refusals
+  // are invisible here. That is a real limit, not a design: the long-session
+  // backstop in `delegate.ts` never sees a refused attempt. It is left that
+  // way because the alternative — counting refusals — is what made defect #6
+  // self-amplifying, and a session must not be locked out by a number it has
+  // no way to lower.
+  //
+  // `filesRead`/`filesWritten`/`delegations` below model observed outcomes —
+  // what the workspace and this session actually gained — so a failed call
+  // must not advance them, the same rule `commandResults` already applies via
+  // `isError`.
   const path = str(obs.input.file_path) || str(obs.input.path);
   if (!obs.isError) {
     if (READ_TOOLS.has(obs.toolName) && path) next.filesRead.add(path);

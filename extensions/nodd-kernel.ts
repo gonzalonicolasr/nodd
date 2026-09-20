@@ -677,8 +677,10 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
       // deliberate: NODD refuses work it understands, never work it crashed on.
       decision = null;
     }
-    // Record the call either way. A refused call still happened, and the
-    // counters that decide the next refusal must see it.
+    // Record the call either way: within this turn the entry is what lets
+    // `gate-classify` and `gate-delegate` see intent that shares one assistant
+    // message, before any result exists. (It does not reach `toolCalls`, which
+    // only advances on `tool_result` — see the note in `src/state.ts`.)
     kernel.onToolCall(event);
     // But a blocked call produces no effect, and pi will never report a result
     // for it: `agent-loop.js:419-428` returns `{ kind: "immediate" }`, which
