@@ -20,8 +20,17 @@ function section(heading: RegExp): string {
 // Every mechanism named is a mechanism that exists
 // ---------------------------------------------------------------------------
 test("every registered gate id appears in the README", () => {
+  // `README.includes("evidence")` is satisfied by the word "evidence" in
+  // ordinary prose — it appears 15 times — so the old assertion would pass for
+  // a gate the document never documents. A gate counts as mentioned only where
+  // it is named as a gate, in the table that says when it fires and when it
+  // refuses.
+  const table = section(/gates/i);
   for (const gate of GATE_IDS) {
-    assert.ok(README.includes(gate), `gate ${gate} is unmentioned`);
+    assert.ok(
+      new RegExp("\\bgate-" + gate + "\\b").test(table),
+      `gate ${gate} is not documented in the gate table; a bare mention in prose is not documentation`,
+    );
   }
 });
 
