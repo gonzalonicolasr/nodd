@@ -1,3 +1,7 @@
 node_modules/
 *.tgz
 .nodd/
+
+# Per-machine runtime state, not part of the project.
+.pi/
+.sdd/.executions/
