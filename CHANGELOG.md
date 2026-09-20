@@ -5,6 +5,40 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-20
+
+### Changed
+
+- **The bash gate sees a whole command, not a first line.** A newline now
+  separates commands, as do `(`, `{`, `then` and `do`. Everything after line
+  one used to be invisible to *every* pattern — `ls` followed by `rm -rf build`
+  classified as a read — so this is more enforcement than any previous version
+  had, on the nine pre-existing rows as well as the new one.
+- Quoted data is excluded from every pattern, not just redirection. Searching
+  for a covered word is a read: `grep -rn 'then install' docs/` and
+  `jq '{install}' package.json` are not writes.
+
+### Added
+
+- An interpreter running a script file is a write: `node script.js`,
+  `deno run main.ts`, `bash "my script.sh"`, `/usr/bin/env node app.js`,
+  `timeout 10 node x.js`, `(node x.js)`, `sudo bash /opt/setup`. Ten evasions
+  were found and closed across five review rounds; the README now states the
+  posture plainly — this gate catches the write a model reaches for after a
+  refusal, not the write a model is determined to hide.
+- `Known limitations` records two limits that had no mechanism and no
+  disclosure: two pi sessions in one repo lose observations through an
+  unlocked read-modify-write, and a delegated worker cannot declare its own
+  route, so each one costs a delegator round-trip. Both are pinned by tests of
+  the underlying fact.
+- A published CHANGELOG, asserted against `package.json` so a release cannot
+  skip it.
+
+### Removed
+
+- `firstRefusal`, which had no production caller. First-refusal-wins is
+  defined once, in the kernel.
+
 ## [0.6.2] - 2026-09-20
 
 ### Fixed
