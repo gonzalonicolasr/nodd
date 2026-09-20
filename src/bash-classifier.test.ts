@@ -40,6 +40,17 @@ const CASES: Array<[string, "mutating" | "non-mutating"]> = [
   ["node -e \"require('fs').writeFileSync('f','x')\"", "mutating"],
   ["python -c \"open('f','w').write('x')\"", "mutating"],
   ["ls && echo x > f", "mutating"],
+  // --- mutating: an interpreter running a script file as its first argument ---
+  ["node script.js", "mutating"],
+  ["python3 file.py", "mutating"],
+  ["bash script.sh", "mutating"],
+  ["sh ./run.sh", "mutating"],
+  ["node ./bin/cli.mjs", "mutating"],
+  ["python3 manage.py migrate", "mutating"],
+  ["ruby rakefile.rb", "mutating"],
+  ["perl script.pl", "mutating"],
+  ["sudo bash install.sh", "mutating"],
+  ["ls && node build.js", "mutating"],
 
   // --- non-mutating: the ones a wrong gate would break ---
   ["ls -la", "non-mutating"],
@@ -58,6 +69,20 @@ const CASES: Array<[string, "mutating" | "non-mutating"]> = [
   ["pwd", "non-mutating"],
   ["wc -l src/*.ts", "non-mutating"],
   ["rg 'pattern' --files-with-matches", "non-mutating"],
+  // --- non-mutating: the interpreter row must not reach these ---
+  ["node --test --experimental-strip-types", "non-mutating"],
+  ["node --test test/parity-matrix.test.ts", "non-mutating"],
+  ["node --version", "non-mutating"],
+  ["python3 -m pytest", "non-mutating"],
+  ["python3 -m http.server", "non-mutating"],
+  ["bash -lc 'grep x'", "non-mutating"],
+  ["bun test", "non-mutating"],
+  ["deno task build", "non-mutating"],
+  ["shellcheck script.sh", "non-mutating"],
+  ["nodemon server.js", "non-mutating"],
+  ["python3-config --includes", "non-mutating"],
+  ["cat gen.py | python3", "non-mutating"],
+  ["./run.sh", "non-mutating"],
 ];
 
 test(`the classifier labels ${CASES.length} commands correctly`, () => {
@@ -142,4 +167,22 @@ test("a real file is still a write, even beside a sink", () => {
 
 test("a mutating command is still caught when its output is discarded", () => {
   assert.equal(classifyBash("rm -rf build > /dev/null 2>&1"), "mutating");
+});
+
+// ---------------------------------------------------------------------------
+// The script has to be the interpreter's *first* argument. Scanning past flags
+// to find it would classify this repository's own way of running one test file
+// — `node --test test/parity-matrix.test.ts` — as a write, and the gate would
+// refuse the suite it exists to protect.
+// ---------------------------------------------------------------------------
+test("a flag is not a script file: the interpreter row stops at the first argument", () => {
+  assert.equal(classifyBash("node --test test/parity-matrix.test.ts"), "non-mutating");
+  assert.equal(classifyBash("node --experimental-strip-types src/bash-classifier.test.ts"), "non-mutating");
+  assert.equal(classifyBash("bash -lc 'grep x'"), "non-mutating");
+});
+
+test("a command that merely contains an interpreter's name is not an interpreter", () => {
+  assert.equal(classifyBash("shellcheck script.sh"), "non-mutating");
+  assert.equal(classifyBash("nodemon server.js"), "non-mutating");
+  assert.equal(classifyBash("python3-config --includes"), "non-mutating");
 });

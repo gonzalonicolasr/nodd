@@ -165,18 +165,26 @@ pattern set (`src/bash-classifier.ts`) and asserted against by
 | mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`) | `git commit -m 'x'` |
 | package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add) | `npm install lodash` |
 | inline interpreters (`node -e`, `python -c`) | `node -e "require('fs').writeFileSync('f','x')"` |
+| an interpreter running a script file as its first argument (`node script.js`, `bash script.sh`) | `node script.js` |
 
 ### Not covered
 
 These mutation vectors reach the filesystem without this classifier noticing:
 
-- a script or build target that writes: `./build.sh`, `make`, `npm run build`
+- a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`
+- an interpreter whose script is not its first argument, or a script passed as a string: `node --flag s.js`, `bash -lc '…'`
+- a script piped into an interpreter: `cat gen.py | python3`
 - compilers, formatters and codegen writing as a side effect
 - redirection hidden behind a variable or `eval`
 - a pre-existing background process
 - writes performed by other extensions' or MCP tools
 - writes performed outside pi entirely
 - a delegated child launched with its own `extensions:` list, which pi-subagents starts with `--no-extensions`
+
+The interpreter row over-approximates on purpose: a command string cannot say what
+`node server.js` will do, so a named script file is treated as a write even when it
+only reads. The refusal carries its remedy and a one-shot escape hatch, so that cost
+is bounded; an unnoticed write is not.
 
 A partial gate that says which half it holds is worth more than a total one that
 is not.

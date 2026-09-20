@@ -49,6 +49,7 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
   { label: "mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`)", example: "git commit -m 'x'", test: (c) => /\bgit\s+(apply|checkout|restore|reset|commit|stash|clean|mv|rm)\b/.test(c) },
   { label: "package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add)", example: "npm install lodash", test: (c) => /\b(npm|pnpm|yarn|pip|pip3|cargo)\s+(install|add|i)\b/.test(c) },
   { label: "inline interpreters (`node -e`, `python -c`)", example: "node -e \"require('fs').writeFileSync('f','x')\"", test: (c) => /\b(node|deno|bun)\s+(-e|--eval)\b/.test(c) || /\bpython3?\s+-c\b/.test(c) },
+  { label: "an interpreter running a script file as its first argument (`node script.js`, `bash script.sh`)", example: "node script.js", test: (c) => /(^|[;&|])\s*(sudo\s+)?(node|deno|bun|python3?|ruby|perl|bash|sh|zsh)\b\s+(?!-)\S*(\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)|\/)/.test(c) },
 ];
 
 /**
@@ -57,7 +58,9 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
  * total is how ODD ended up promising compliance while shipping delivery.
  */
 export const NOT_COVERED: string[] = [
-  "a script or build target that writes: `./build.sh`, `make`, `npm run build`",
+  "a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`",
+  "an interpreter whose script is not its first argument, or a script passed as a string: `node --flag s.js`, `bash -lc '…'`",
+  "a script piped into an interpreter: `cat gen.py | python3`",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
   "a pre-existing background process",

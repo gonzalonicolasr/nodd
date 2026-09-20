@@ -249,13 +249,22 @@ in-place editors (`sed -i`, `perl -i`), file movers/removers (`mv`, `cp`, `rm`,
 `rmdir`, `ln`, `install`, `dd`, `truncate`, `touch`, `mkdir`), permission
 changes (`chmod`, `chown`), `patch`, mutating `git` subcommands (`apply`,
 `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`),
-package installers (`npm|pnpm|yarn|pip|cargo` install/add), and inline
-interpreters (`node -e`, `python -c`).
+package installers (`npm|pnpm|yarn|pip|cargo` install/add), inline
+interpreters (`node -e`, `python -c`), and an interpreter running a script
+file as its **first** argument (`node script.js`, `bash script.sh`). Only the
+first argument is inspected: an interpreter given flags before its script
+(`node --test test/parity-matrix.test.ts`) is deliberately not covered, because
+scanning past flags would classify this project's own test invocation as a
+write. A named script file is assumed to mutate, since the command string does
+not say otherwise.
 
 **The gate is imperfect by design and must say so.** The shipped documentation
 declares, in the same place, which mutation vectors are covered and which are
-**not**: a script or build target that writes (`./build.sh`, `make`,
-`npm run build`), compilers/formatters/codegen that write as a side effect,
+**not**: a script run without naming an interpreter, or a build target
+(`./build.sh`, `make`, `npm run build`), an interpreter whose script is not its
+first argument or is passed as a string (`node --flag s.js`, `bash -lc '…'`), a
+script piped into an interpreter (`cat gen.py | python3`),
+compilers/formatters/codegen that write as a side effect,
 redirection hidden behind a variable or `eval`, a pre-existing background
 process, writes performed by other extensions' or MCP tools, writes outside pi
 entirely, and — pending `REQ: subagent-enforcement-truth` — writes performed
