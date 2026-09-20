@@ -362,3 +362,36 @@ test("a subshell or a brace group is a place a write can hide", () => {
   assert.equal(classifyBash("ls && { chmod +x f; }"), "mutating");
   assert.equal(classifyBash("ls | ( tee out.txt )"), "mutating");
 });
+
+test("a heredoc body is data, like a quoted string", () => {
+  // Reported by three separate reviewers, who each hit it while reading this
+  // repo: a heredoc carrying an arrow function or a comparison was refused as
+  // a write. Quoted data has been excluded since the beginning; a heredoc is
+  // the same thing with different syntax.
+  assert.equal(classifyBash("cat <<'EOF'\nconst f = (a) => a + 1;\nEOF"), "non-mutating");
+  assert.equal(classifyBash("python3 - <<'PY'\nprint(1 > 0)\nPY"), "non-mutating");
+  assert.equal(classifyBash("cat <<EOF\n# then install the deps\nEOF"), "non-mutating");
+  // The command around the heredoc is still read normally.
+  assert.equal(classifyBash("cat <<'EOF' > out.txt\nhello\nEOF"), "mutating");
+  assert.equal(classifyBash("cat <<'EOF'\nx\nEOF\nrm -rf build"), "mutating");
+  // The terminator line itself is kept, so what follows is read as commands
+  // rather than swallowed with the body.
+  assert.equal(classifyBash("cat <<'EOF'\nx\nEOF\nls"), "non-mutating");
+  assert.equal(classifyBash("cat <<'EOF'\ndata\nEOF\nchmod +x f"), "mutating");
+});
+
+test("a comment is not a command", () => {
+  // The last declared false positive. A `#` comment is the one remaining place
+  // where a covered word was read as syntax, and multi-line agent blocks are
+  // full of them.
+  assert.equal(classifyBash("git log --oneline\n# do rm later"), "non-mutating");
+  assert.equal(classifyBash("ls\n# then install the deps"), "non-mutating");
+  assert.equal(classifyBash("ls  # rm -rf build"), "non-mutating");
+  // A `#` inside a word is not a comment: URLs and filenames survive, and the
+  // redirection after one is still a redirection.
+  assert.equal(classifyBash("curl http://x/a#b"), "non-mutating");
+  assert.equal(classifyBash("echo a#b > f"), "mutating");
+  assert.equal(classifyBash("mv a#1.txt b"), "mutating");
+  assert.equal(classifyBash("rm -rf build  # cleanup"), "mutating");
+  assert.equal(classifyBash("ls\nrm -rf build  # cleanup"), "mutating");
+});

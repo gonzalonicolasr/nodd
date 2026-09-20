@@ -28,7 +28,36 @@ export type CoveredPattern = {
  * blanked form, because a gate that refuses reads is a gate people turn off.
  */
 function blankQuotedData(command: string): string {
-  return command.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
+  const withoutHeredocs = blankHeredocBodies(command);
+  const withoutQuotes = withoutHeredocs.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
+  // A `#` that begins a word starts a comment, and a comment is prose. Quotes
+  // are blanked first so a `#` inside a string cannot swallow real syntax.
+  return withoutQuotes.replace(/(^|\s)#[^\n]*/g, "$1");
+}
+
+/**
+ * Drop the body of a heredoc, keeping the line that opens it.
+ *
+ * A heredoc is a quoted string with different syntax: `cat <<'EOF'` followed
+ * by an arrow function was read as a redirection, and three reviewers hit that
+ * while reading this repository. The opening line survives, so
+ * `cat <<'EOF' > out.txt` is still a write, and so is anything after the
+ * terminator.
+ */
+function blankHeredocBodies(command: string): string {
+  const lines = command.split("\n");
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    kept.push(lines[i]);
+    const opener = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1/.exec(lines[i]);
+    if (!opener) continue;
+    const terminator = opener[2];
+    // Skip the body and the terminator alike: a terminator is a bare word and
+    // never carries syntax, so keeping it would change nothing.
+    while (i + 1 < lines.length && lines[i + 1].trim() !== terminator) i += 1;
+    i += 1;
+  }
+  return kept.join("\n");
 }
 
 /**
@@ -187,7 +216,6 @@ export const NOT_COVERED: string[] = [
   "a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)",
   "an interpreter reached through a variable or an alias: `I=node; $I x.js`",
   "a wrapper carrying its own flag before the command: `nice -n 10 node x.js`, `sudo -u root node x.js`",
-  "a covered word inside a comment, or inside a heredoc body: `ls` then `# rm later`",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
   "a pre-existing background process",

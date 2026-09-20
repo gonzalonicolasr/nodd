@@ -55,6 +55,7 @@ way a model would and closed what it found, in two passes:
 | veredicto round 3 | `/usr/bin/env node`, `/usr/bin/node`, `timeout 10 node`, `exec`, `setsid`, `node -- x.js`, `bash script\ name.sh` | interpreters and wrappers matched by basename; backslash escapes; `--` ends flags; numeric wrapper arguments |
 | veredicto round 4 | a **newline** — `ls\nnode build.js` — plus control-flow bodies | newline, `{`, `then` and `do` open a command, in `tokenise` *and* in `commandWord` |
 | veredicto round 5 | the round-4 fix made the gate **refuse reads**: `grep -rn 'then install' docs/` became a write | every regex row now matches against the command with quoted data blanked; the interpreter row is exempt because it tokenises quotes itself |
+| closing pass | the two declared false positives — a `#` comment and a heredoc body — plus a surviving mutant on the comment's word boundary | comments and heredoc bodies join quoted strings as data; `echo a#b > f` pins that a `#` mid-word is not a comment |
 
 `/usr/bin/env node` is the most idiomatic interpreter invocation there is and
 `timeout N` is this project's own test idiom; both evaded on the first try,
@@ -90,9 +91,18 @@ and `git log`. The fix was already precedented one function above:
 regex row does, and the interpreter row opts out because it parses quotes itself
 and needs the filename in `bash "my script.sh"` to survive.
 
-Two false positives remain and are declared rather than chased: a covered word
-in a bare comment, and a heredoc body. Closing those means parsing comments and
-heredocs, which is the sweep this run decided not to keep doing.
+The two false positives that round 5 left declared were then closed, because
+they turned out to be the same idea one more time rather than a new sweep: a
+`#` comment and a heredoc body are data, exactly like a quoted string, and
+`blankQuotedData` already existed to say so. Three reviewers had hit the
+heredoc case while reading this repository, which is as close to a field report
+as a gate gets.
+
+One mutant survived that pass and was kept honest: dropping the word-boundary
+from the comment rule left the suite green while `echo a#b > f` stopped being a
+write, so it is pinned. A second — keeping the heredoc terminator line — was
+genuinely equivalent, since a terminator is a bare word that never carries
+syntax, so the code was simplified instead of defended by a test.
 
 That is also the argument for stopping. A denylist over a Turing-complete shell
 does not close by sweeping, so the README now states the posture plainly: this

@@ -176,7 +176,6 @@ These mutation vectors reach the filesystem without this classifier noticing:
 - a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)
 - an interpreter reached through a variable or an alias: `I=node; $I x.js`
 - a wrapper carrying its own flag before the command: `nice -n 10 node x.js`, `sudo -u root node x.js`
-- a covered word inside a comment, or inside a heredoc body: `ls` then `# rm later`
 - compilers, formatters and codegen writing as a side effect
 - redirection hidden behind a variable or `eval`
 - a pre-existing background process
@@ -187,9 +186,9 @@ These mutation vectors reach the filesystem without this classifier noticing:
 Several rows over-approximate on purpose. A command string cannot say what
 `node server.js` will do, so a named script file is treated as a write even when it
 only reads; and because a newline opens a command, the mover, permission, `tee`,
-`patch` and installer rows read past the first line too. Quoted data is excluded
-from all of them — searching for the word `install` is a read — but a covered word
-in a bare comment still counts. The refusal carries its remedy and a one-shot escape hatch, so that cost
+`patch` and installer rows read past the first line too. Data is excluded from all of
+them — quoted strings, `#` comments and heredoc bodies — so searching for the word
+`install`, or passing a script through `cat <<'EOF'`, is a read. The refusal carries its remedy and a one-shot escape hatch, so that cost
 is bounded; an unnoticed write is not.
 
 **What this gate is for.** It catches the write a model reaches for when it
