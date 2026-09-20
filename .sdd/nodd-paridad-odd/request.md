@@ -1,0 +1,1 @@
+fijate que cosas le falta de odd a nodd para estar ok y ser mejor mejora los puntosue encuentres
