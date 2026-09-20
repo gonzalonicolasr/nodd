@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { GATE_IDS } from "../src/gates/registry.ts";
+import { migrateOrchestratorSlot } from "../src/models/profiles.ts";
 import { CANONICAL_STEPS } from "../src/manifest.ts";
 
 const README = readFileSync(new URL("../README.md", import.meta.url), "utf8");
@@ -210,13 +211,20 @@ test("the README does not claim authorize blocks all delegation", () => {
 test("a user-config migration is documented where the config is explained", () => {
   // Rewriting `~/.pi/nodd.json` on load is exactly the kind of surprise NODD
   // exists to refuse, so it may not be silent.
-  const text = README;
+  const migration = section(/orchestrator/i);
+  assert.ok(/backup/i.test(migration), "a migration that edits user config must say that it takes a backup");
+
+  // And it may not describe the opposite of what it does. The first version of
+  // this section promised the migration left profiles "untouched" while
+  // `migrateOrchestratorSlot` rewrote precisely those, and the check could not
+  // tell, because it only looked for the word "backup" somewhere in the file.
+  const before = { models: {}, profiles: { work: { models: { orchestrator: "m-b", explore: "m-c" } } } };
+  const after = migrateOrchestratorSlot(structuredClone(before));
+  const touchesProfiles =
+    JSON.stringify(after.data?.profiles) !== JSON.stringify(before.profiles);
+  assert.ok(touchesProfiles, "this test is pinned to a migration that rewrites profiles");
   assert.ok(
-    /orchestrator/.test(text),
-    "the orchestrator slot was removed and its config migration is undocumented",
-  );
-  assert.ok(
-    /backup/i.test(text),
-    "a migration that edits user config must say that it takes a backup",
+    !/profiles[^.]*untouched|untouched[^.]*profiles/i.test(migration),
+    "the section claims profiles are left untouched, but the migration rewrites them",
   );
 });

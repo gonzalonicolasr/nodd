@@ -111,9 +111,11 @@ looked like a choice and did nothing. It is gone from the picker.
 
 Because the slot was assignable, real configs contain it. On load, NODD moves
 `orchestrator` to `default` when `default` is unset, and drops it when both are
-set. The migration writes only when there is something to migrate, takes a
-backup of `~/.pi/nodd.json` before touching it, and leaves your profiles,
-active profile and everything else untouched.
+set. **It rewrites your profiles to do this**, since that is where the
+assignments live: a profile holding `orchestrator` comes back holding `default`.
+Every other slot, your active profile and the rest of the file are left alone.
+The migration writes only when there is something to migrate, and takes a
+timestamped backup of `~/.pi/nodd.json` before touching it.
 
 The text forms do the same without the UI:
 

@@ -1,84 +1,178 @@
 // The reachability invariant, asserted as a class rather than per gate (T011).
 //
-// This run produced four instances of one defect family — track, classify,
-// delegate and promotion each refused work while offering only remedies the
-// refused actor could not perform — plus a fifth, defect #6, where a refusal
-// inflated the very counter that caused it. Each was fixed where it was found.
-// Fixing instances is not the same as holding the rule: the next gate still
-// ships without anyone checking.
+// This project produced five instances of one defect family — track, classify,
+// delegate, promotion and authorize each refused work while offering only
+// remedies the refused actor could not perform — plus defect #6, where a
+// refusal inflated the very counter that caused it. Each was fixed where it
+// was found. Fixing instances is not the same as holding the rule.
 //
-// So the invariant has two clauses, and both are enumerated over `GATE_IDS`:
+// Round 2 of the adversarial review showed the first version of this file did
+// not hold it either. Clause 1 regex-scanned gate *source*, so a gate passed by
+// having the phrase in a comment while its runtime remedy was a dead end.
+// Clause 2 claimed to enumerate `GATE_IDS` and actually exercised one trigger
+// of one gate. Both mutations survived. The rewrite drives real refusals.
 //
 //   1. Every refusal names at least one remedy its recipient can perform.
 //   2. No refusal worsens the state that caused it.
-//
-// Clause 2 is the one that would have caught defect #6.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import register from "../extensions/nodd-kernel.ts";
 import { GATE_IDS } from "../src/gates/registry.ts";
-
-const GATES_DIR = join(import.meta.dirname, "..", "src", "gates");
+import { emptyPolicy } from "../src/gates/policy.ts";
+import { emptyCommitted, type Committed } from "../src/state.ts";
+import { authorizeGate } from "../src/gates/authorize.ts";
+import { classifyGate } from "../src/gates/classify.ts";
+import { trackGate } from "../src/gates/track.ts";
+import { delegateGate } from "../src/gates/delegate.ts";
+import { promotionGate } from "../src/gates/promotion.ts";
+import { evidenceGate } from "../src/gates/evidence.ts";
 
 /**
  * A remedy reachable by any actor, needing no tool and no slash command.
  *
  * NODD's own generated writer, `nodd-implement`, holds
- * `read, grep, ls, write, edit, bash` and nothing else: it cannot call
- * `subagent`, cannot call `nodd_declare`, and has no slash commands. A gate
- * whose every remedy needs one of those can refuse it into a dead end, which
- * is how three of this run's deadlocks happened.
+ * `read, grep, ls, write, edit, bash` and nothing else: no `subagent`, no
+ * `nodd_declare`, no slash commands. A gate whose every remedy needs one of
+ * those can refuse it into a dead end.
  */
-const UNIVERSAL_REMEDY = /report .*(block|delegator)|ask the user|write .*directly|run the verification command/i;
+const UNIVERSAL_REMEDY =
+  /report .*(block|delegator)|ask the user|write .*directly|run the verification command/i;
+
+const declared = (route: "inline" | "tracked" | "forge", intent: "read-only" | "change" = "change"): Committed => ({
+  ...emptyCommitted(),
+  declaration: { intent, route, slug: "demo", title: "T", summary: "s" } as never,
+});
+
+const write = { toolName: "write", input: { path: "src/a.ts" } };
+
+/**
+ * One real refusal from every registered gate, produced by driving the gate —
+ * not by reading its source. If a gate stops refusing here the lookup throws,
+ * so the enumeration cannot silently cover nothing.
+ */
+/**
+ * The inputs that make one gate refuse. Built once per scenario so a gate that
+ * mutates what it was handed is visible across repeated refusals.
+ */
+function scenarioFor(gate: string): Record<string, unknown> {
+  switch (gate) {
+    case "authorize":
+      return { committed: declared("inline", "read-only") };
+    case "classify":
+      return { committed: emptyCommitted() };
+    case "track":
+      return { committed: declared("tracked") };
+    case "delegate":
+      return { committed: { ...declared("inline"), filesWritten: new Set(["a.ts", "b.ts"]) } };
+    case "promotion":
+      return { signals: { declaredFiles: 1, observedFiles: 9, slug: "demo", route: "tracked" } };
+    case "evidence":
+      return { committed: declared("tracked") };
+    default:
+      throw new Error(`unknown gate ${gate}`);
+  }
+}
+
+/**
+ * One real refusal, produced by driving the gate — never by reading its source.
+ * The first version of this file regex-scanned gate source, so a gate passed by
+ * having the right phrase in a comment while its runtime remedy was a dead end.
+ */
+function refuse(gate: string, scenario: Record<string, unknown>): { reason: string; action: string } {
+  const c = scenario.committed as Committed;
+  const decision = (() => {
+    switch (gate) {
+      case "authorize":
+        return authorizeGate(c, write, emptyPolicy());
+      case "classify":
+        return classifyGate(c, write, emptyPolicy(), new Map());
+      case "track":
+        return trackGate(c, write, emptyPolicy(), () => false);
+      case "delegate":
+        return delegateGate(c, write, emptyPolicy(), new Map());
+      case "promotion":
+        return promotionGate(scenario.signals as never, write, emptyPolicy());
+      case "evidence":
+        return evidenceGate(c, [], { kind: "check", slug: "demo", id: "T1" } as never, emptyPolicy());
+      default:
+        throw new Error(`unknown gate ${gate}`);
+    }
+  })();
+  assert.equal(decision.allow, false, `gate ${gate} was expected to refuse in this scenario`);
+  const refused = decision as { reason: string; remedy?: { action: string } };
+  return { reason: refused.reason, action: refused.remedy?.action ?? "" };
+}
+
+/** One refusal from a fresh scenario, for the clauses that do not repeat. */
+function refusalOf(gate: string): { reason: string; action: string } {
+  return refuse(gate, scenarioFor(gate));
+}
 
 test("every gate offers a remedy its recipient can actually perform", () => {
   const offenders: string[] = [];
-
   for (const gate of GATE_IDS) {
-    const source = readFileSync(join(GATES_DIR, `${gate}.ts`), "utf8");
-    // `allow()`-only gates never refuse, so they cannot strand anyone.
-    if (!source.includes("refuse(")) continue;
-    if (!UNIVERSAL_REMEDY.test(source)) offenders.push(gate);
+    const { action } = refusalOf(gate);
+    if (!UNIVERSAL_REMEDY.test(action)) offenders.push(`${gate} ("${action}")`);
   }
-
   assert.deepEqual(
     offenders,
     [],
-    `these gates refuse work while every remedy needs a tool or slash command the actor may lack: ${offenders.join(", ")}`,
+    `these gates refuse work while every remedy needs a tool or slash command the actor may lack: ${offenders.join("; ")}`,
   );
 });
 
+test("every refusal names its own escape hatch", () => {
+  // The hatch is the last resort when every other remedy is out of reach, so a
+  // refusal that omits it is a dead end even when its advice is sound.
+  for (const gate of GATE_IDS) {
+    assert.match(refusalOf(gate).reason, new RegExp(`/nodd-allow ${gate}\\b`), `gate ${gate} hides its hatch`);
+  }
+});
+
 test("a refusal never worsens the state that caused it", () => {
-  // Clause 2, driven through the real `tool_call` hook. A gate that counts its
-  // own refusals escalates without bound and can never be satisfied: the actor
-  // is locked out of the session for work it never did.
+  // Clause 2, over every gate: refusing the same call repeatedly must not
+  // change the refusal. A gate that counts its own refusals escalates without
+  // bound and can never be satisfied — defect #6's signature.
+  const drifting: string[] = [];
+  for (const gate of GATE_IDS) {
+    // One scenario object, refused four times. Rebuilding the inputs per call
+    // would hide exactly the defect this looks for: a gate that mutates the
+    // state it was handed cannot be caught by a fresh copy each time.
+    const scenario = scenarioFor(gate);
+    const reasons = [0, 1, 2, 3].map(() => refuse(gate, scenario).reason);
+    if (new Set(reasons).size > 1) drifting.push(`${gate} (${reasons.join(" | ")})`);
+  }
+  assert.deepEqual(drifting, [], `these refusals change as they repeat, feeding the trigger that caused them: ${drifting.join(", ")}`);
+});
+
+test("a refused call leaves no trace in the counters that refuse the next one", () => {
+  // The same clause end to end, through the kernel: the path where defect #6
+  // actually lived. Blocked calls and abandoned calls must both be forgotten,
+  // or the session locks itself out over work that never happened.
   const handlers = new Map<string, (event: unknown) => unknown>();
   const kernel = register(
     { on: (n: string, f: (e: unknown) => unknown) => handlers.set(n, f), registerTool: () => {}, appendEntry: () => {} } as never,
-    "/tmp/nodd-reachability-probe",
+    mkdtempSync(join(tmpdir(), "nodd-reach-")),
+    mkdtempSync(join(tmpdir(), "nodd-reach-h-")),
   );
+  const decl = { intent: "change", route: "inline", slug: "probe", summary: "s", title: "P" };
+  kernel.declare(decl as never);
+  const d = { toolName: "nodd_declare", toolCallId: "d1", input: decl };
+  handlers.get("tool_call")!(d);
+  handlers.get("tool_result")!({ ...d, isError: false, content: "" });
 
-  const declared = { intent: "change", route: "inline", slug: "probe", summary: "s", title: "P" };
-  kernel.declare(declared as never);
-  const declare = { toolName: "nodd_declare", toolCallId: "d1", input: declared };
-  handlers.get("tool_call")!(declare);
-  handlers.get("tool_result")!({ ...declare, isError: false, content: "" });
-
-  const reasons: string[] = [];
+  const counts: number[] = [];
   for (let i = 1; i <= 8; i += 1) {
     const event = { toolName: "write", toolCallId: `w${i}`, input: { file_path: `/repo/f${i}.ts` } };
     const decision = handlers.get("tool_call")!(event) as { reason?: string } | undefined;
-    // pi reports a result only for calls it executed (`agent-loop.js:419-428`).
     if (!decision) handlers.get("tool_result")!({ ...event, isError: false, content: "" });
-    else reasons.push(String(decision.reason));
+    else counts.push(Number(/written (\d+) distinct files/.exec(String(decision.reason))?.[1] ?? 0));
+    handlers.get("turn_end")!({});
   }
-
-  const counts = reasons
-    .map((reason) => Number(/written (\d+) distinct files/.exec(reason)?.[1] ?? 0))
-    .filter((n) => n > 0);
 
   assert.ok(counts.length > 0, "expected the writer trigger to fire at all");
   assert.equal(
