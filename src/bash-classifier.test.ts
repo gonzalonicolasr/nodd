@@ -186,3 +186,38 @@ test("a command that merely contains an interpreter's name is not an interpreter
   assert.equal(classifyBash("nodemon server.js"), "non-mutating");
   assert.equal(classifyBash("python3-config --includes"), "non-mutating");
 });
+
+// ---------------------------------------------------------------------------
+// Three defects the round-1 veredicto found in the interpreter row.
+// ---------------------------------------------------------------------------
+
+test("the flag guard is pinned: a flag's own argument is not the script", () => {
+  // `(?!-)` is the guard the fix is built on — without it the gate would refuse
+  // this project's own test command. The mutation survived all 72 table rows,
+  // because every case used a flag with no path after it. These have one.
+  assert.equal(classifyBash("node --import=./reg.mjs app.js"), "non-mutating");
+  assert.equal(classifyBash("node --loader=ts-node/esm x.ts"), "non-mutating");
+});
+
+test("an interpreter reached through its run subcommand is still an interpreter", () => {
+  // `deno run main.ts` and `bun run build.ts` are the only real way to execute
+  // a file with those two runtimes — `deno main.ts` is not valid CLI. The row
+  // named deno and bun while catching neither, so the published table listed
+  // coverage that did not exist.
+  assert.equal(classifyBash("deno run main.ts"), "mutating");
+  assert.equal(classifyBash("bun run build.ts"), "mutating");
+  assert.equal(classifyBash("deno run --allow-write main.ts"), "mutating");
+  // The subcommand alone is not a file.
+  assert.equal(classifyBash("deno task build"), "non-mutating");
+  assert.equal(classifyBash("bun test"), "non-mutating");
+});
+
+test("an interpreter named inside quoted data is data, not a command", () => {
+  // `redirectsToFile` already strips quotes for exactly this reason (see the note at
+  // the top of this file: "a `>` inside quotes is data"). The interpreter row
+  // did not, so grepping for a command string was refused as a write — which
+  // happened three times to the reviewer who found it.
+  assert.equal(classifyBash("grep -rn ';python3 gen.py' src"), "non-mutating");
+  assert.equal(classifyBash('rg "&& node cli.js" docs'), "non-mutating");
+  assert.equal(classifyBash("git log --grep=';python3 a.py'"), "non-mutating");
+});

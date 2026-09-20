@@ -165,14 +165,14 @@ pattern set (`src/bash-classifier.ts`) and asserted against by
 | mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`) | `git commit -m 'x'` |
 | package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add) | `npm install lodash` |
 | inline interpreters (`node -e`, `python -c`) | `node -e "require('fs').writeFileSync('f','x')"` |
-| an interpreter running a script file as its first argument (`node script.js`, `bash script.sh`) | `node script.js` |
+| an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`) | `node script.js` |
 
 ### Not covered
 
 These mutation vectors reach the filesystem without this classifier noticing:
 
 - a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`
-- an interpreter whose script is not its first argument, or a script passed as a string: `node --flag s.js`, `bash -lc '…'`
+- an interpreter whose script follows a flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'`
 - a script piped into an interpreter: `cat gen.py | python3`
 - compilers, formatters and codegen writing as a side effect
 - redirection hidden behind a variable or `eval`

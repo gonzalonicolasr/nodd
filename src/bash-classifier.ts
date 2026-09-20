@@ -49,7 +49,7 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
   { label: "mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`)", example: "git commit -m 'x'", test: (c) => /\bgit\s+(apply|checkout|restore|reset|commit|stash|clean|mv|rm)\b/.test(c) },
   { label: "package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add)", example: "npm install lodash", test: (c) => /\b(npm|pnpm|yarn|pip|pip3|cargo)\s+(install|add|i)\b/.test(c) },
   { label: "inline interpreters (`node -e`, `python -c`)", example: "node -e \"require('fs').writeFileSync('f','x')\"", test: (c) => /\b(node|deno|bun)\s+(-e|--eval)\b/.test(c) || /\bpython3?\s+-c\b/.test(c) },
-  { label: "an interpreter running a script file as its first argument (`node script.js`, `bash script.sh`)", example: "node script.js", test: (c) => /(^|[;&|])\s*(sudo\s+)?(node|deno|bun|python3?|ruby|perl|bash|sh|zsh)\b\s+(?!-)\S*(\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)|\/)/.test(c) },
+  { label: "an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`)", example: "node script.js", test: (c) => runsScriptFile(c) },
 ];
 
 /**
@@ -57,9 +57,28 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
  * beside the covered table, because a partial mechanism that presents itself as
  * total is how ODD ended up promising compliance while shipping delivery.
  */
+/**
+ * An interpreter invoked with a script file, which is the form a model reaches
+ * for the moment `node -e` is refused.
+ *
+ * Quotes are stripped first, for the same reason `redirectsToFile` strips them:
+ * an interpreter named inside quoted data is data. Grepping for `node app.js`
+ * is a read, and a gate that refuses reads is a gate people turn off.
+ *
+ * The script must be the interpreter's *first* argument, or the first argument
+ * after `run` — `deno run main.ts` and `bun run build.ts` are the only way to
+ * execute a file with those runtimes. Flags are never skipped to find it:
+ * scanning past them would classify `node --test test/x.test.ts`, this
+ * project's own way of running one test file, as a write.
+ */
+function runsScriptFile(command: string): boolean {
+  const unquoted = command.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
+  return /(^|[;&|])\s*(sudo\s+)?(node|deno|bun|python3?|ruby|perl|bash|sh|zsh)\b\s+(run\s+(--[\w-]+(=\S*)?\s+)*)?(?!-)\S*(\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)|\/)/.test(unquoted);
+}
+
 export const NOT_COVERED: string[] = [
   "a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`",
-  "an interpreter whose script is not its first argument, or a script passed as a string: `node --flag s.js`, `bash -lc '…'`",
+  "an interpreter whose script follows a flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'`",
   "a script piped into an interpreter: `cat gen.py | python3`",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
