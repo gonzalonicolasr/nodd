@@ -59,7 +59,8 @@ export function authorizeGate(
     return refuse(
       "authorize",
       `this request was declared \`intent: read-only\`, and ${what}`,
-      "delegate to a read-only agent, or call `nodd_declare` again with `intent: change` if the user did authorize one",
+      "delegate to a read-only agent, or call `nodd_declare` again with `intent: change` if the user did authorize one, " +
+        "or report the block to whoever delegated this work",
     );
   }
 
@@ -68,6 +69,12 @@ export function authorizeGate(
   return refuse(
     "authorize",
     `this request was declared \`intent: read-only\`, and ${request.toolName} would change the workspace`,
-    "if the user did authorize a change, call `nodd_declare` again with `intent: change`",
+    // `nodd_declare` is the correct first remedy, but a subagent has neither
+    // that tool nor slash commands. Today this branch needs a declaration to
+    // fire, and a child kernel starts with none — but that is an argument
+    // about reachability today, not a property of the gate. Naming a remedy
+    // that needs no tool costs nothing and does not depend on it holding.
+    "if the user did authorize a change, call `nodd_declare` again with `intent: change`, " +
+      "or report the block to whoever delegated this work",
   );
 }
