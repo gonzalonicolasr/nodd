@@ -65,7 +65,7 @@ the declared runner, after the task's last write, with a RED before it under
 strict TDD. A model writing "all tests pass" changes nothing — the evidence line
 in the document is rendered from the observed tool result, never from prose.
 
-**When a gate is wrong, turn it off.** `/nodd-gates off track` disables it
+**When a gate is wrong, turn it off.** `/nodd-gates disable track` disables it
 entirely and stays disabled; `/nodd-allow track` grants exactly one override.
 Neither is argued with.
 

@@ -434,3 +434,46 @@ test("write intent within one batch survives the pending cleanup", () => {
     "a batch wide enough to trip the writer threshold must still be caught on intent alone",
   );
 });
+
+// ---------------------------------------------------------------------------
+// `--nodd-off` has to actually turn gates off.
+//
+// `nodd-gates.ts` registered the flag, so pi accepted it on the command line,
+// and nothing ever read it back: `flagsFromCli` — the parser written for
+// exactly this — had no production caller, and `resolveFlag`'s `all` branch
+// was unreachable. The documented total kill switch silently did nothing.
+// ---------------------------------------------------------------------------
+test("--nodd-off=<gate> disables that gate for the session", () => {
+  const handlers = new Map<string, (event: unknown) => unknown>();
+  const pi = {
+    on: (n: string, f: (e: unknown) => unknown) => handlers.set(n, f),
+    registerTool: () => {},
+    appendEntry: () => {},
+    getFlag: (name: string) => (name === "nodd-off" ? "classify" : undefined),
+  };
+  register(pi as never, mkdtempSync(join(tmpdir(), "nodd-flag-")), mkdtempSync(join(tmpdir(), "nodd-flag-h-")));
+
+  assert.equal(
+    handlers.get("tool_call")!({ toolName: "write", toolCallId: "w1", input: { file_path: "src/a.ts" } }),
+    undefined,
+    "--nodd-off=classify was accepted by pi and ignored by NODD",
+  );
+});
+
+test("--nodd-off=all disables every gate", () => {
+  const handlers = new Map<string, (event: unknown) => unknown>();
+  const pi = {
+    on: (n: string, f: (e: unknown) => unknown) => handlers.set(n, f),
+    registerTool: () => {},
+    appendEntry: () => {},
+    getFlag: (name: string) => (name === "nodd-off" ? "all" : undefined),
+  };
+  register(pi as never, mkdtempSync(join(tmpdir(), "nodd-all-")), mkdtempSync(join(tmpdir(), "nodd-all-h-")));
+
+  for (const event of [
+    { toolName: "write", toolCallId: "w1", input: { file_path: "src/a.ts" } },
+    { toolName: "bash", toolCallId: "b1", input: { command: "rm -rf build" } },
+  ]) {
+    assert.equal(handlers.get("tool_call")!(event), undefined, `${event.toolName} still blocked with --nodd-off=all`);
+  }
+});

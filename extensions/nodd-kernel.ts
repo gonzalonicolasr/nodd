@@ -27,6 +27,7 @@ import { writeVerified } from "../src/io.ts";
 import { renderPrompt } from "../src/prompt.ts";
 import { consumeHatch, emptyPolicy, type GateDecision, type Policy } from "../src/gates/policy.ts";
 import { hatchPath, parseConfig, noddConfigPath } from "../src/config.ts";
+import { flagsFromCli } from "./nodd-gates.ts";
 import { GATE_IDS } from "../src/gates/registry.ts";
 import { authorizeGate, type CapabilityLookup } from "../src/gates/authorize.ts";
 import { classifyGate } from "../src/gates/classify.ts";
@@ -64,6 +65,7 @@ type PiApi = {
   // pasarle (name, options) como a registerCommand deja el nombre en undefined
   // y el provider rechaza el request entero con "tools[N].name is required".
   registerTool?(tool: { name: string } & Record<string, unknown>): void;
+  getFlag?(name: string): boolean | string | undefined;
 };
 
 const INTENTS: readonly Intent[] = ["read-only", "change"];
@@ -377,10 +379,12 @@ export function createKernel(
       // An explicit `setPolicy` wins: it is the caller stating the whole policy,
       // and re-reading over it would silently undo what they just set.
       if (policyIsPinned) return policy;
-      // Hatches come from `loadPolicy` too: `/nodd-allow` runs in another
-      // module and writes them to disk, so keeping the in-memory ones here
-      // would discard the override the moment it was granted.
-      policy = { ...loadPolicy(), flags: policy.flags };
+      // Everything comes from `loadPolicy`: hatches because `/nodd-allow` runs
+      // in another module and persists them, CLI flags because they are fixed
+      // for the session. Preserving the in-memory copies here would discard an
+      // override the moment it was granted, and drop `--nodd-off` on the first
+      // reload after startup.
+      policy = loadPolicy();
       return policy;
     },
 
@@ -667,10 +671,18 @@ function clearHatch(gate: string, home?: string): void {
 }
 
 export default function register(pi?: PiApi, cwd: string = process.cwd(), home?: string): Kernel {
+  // `--nodd-off` is declared by `nodd-gates.ts` so pi accepts it; reading it
+  // back is the kernel's job, because the kernel owns the policy. Without this
+  // the flag parsed cleanly into a value nobody consulted, and the documented
+  // total kill switch did nothing at all.
+  const cliFlags = flagsFromCli(
+    typeof pi?.getFlag?.("nodd-off") === "string" ? (pi.getFlag("nodd-off") as string) : undefined,
+  );
+
   const kernel = createKernel(
     undefined,
     cwd,
-    () => readPolicy(home),
+    () => ({ ...readPolicy(home), flags: cliFlags }),
     readOnlyAgentLookup(home ?? homedir()),
     (gate) => clearHatch(gate, home),
   );

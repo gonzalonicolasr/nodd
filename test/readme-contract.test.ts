@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { GATE_IDS } from "../src/gates/registry.ts";
 import { migrateOrchestratorSlot } from "../src/models/profiles.ts";
+import { runGatesCommand } from "../extensions/nodd-gates.ts";
 import { CANONICAL_STEPS } from "../src/manifest.ts";
 
 const README = readFileSync(new URL("../README.md", import.meta.url), "utf8");
@@ -227,4 +228,24 @@ test("a user-config migration is documented where the config is explained", () =
     !/profiles[^.]*untouched|untouched[^.]*profiles/i.test(migration),
     "the section claims profiles are left untouched, but the migration rewrites them",
   );
+});
+
+test("every /nodd-gates invocation the README shows is actually accepted", () => {
+  // The contract checked that the *command* exists, never its arguments, so
+  // the README taught `/nodd-gates off track` — rejected by the real parser —
+  // in the paragraph explaining how to stop a gate. Verbs are part of the
+  // promise, so they get run.
+  const io = { readConfig: () => ({}), writeConfig: () => {} };
+  const shown = [...README.matchAll(/`\/nodd-gates ([^`]*)`/g)].map((m) => m[1].trim());
+  assert.ok(shown.length > 0, "expected the README to show at least one /nodd-gates invocation");
+
+  for (const args of shown) {
+    // Bracketed forms like `[status|enable <gate>]` are syntax summaries.
+    if (/[[\]<>|]/.test(args)) continue;
+    assert.doesNotMatch(
+      runGatesCommand(args, io),
+      /usage —|unknown gate/,
+      `the README shows "/nodd-gates ${args}", which the command rejects`,
+    );
+  }
 });
