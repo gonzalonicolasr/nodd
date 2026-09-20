@@ -131,3 +131,21 @@ test("the signals type exposes no size field at all", () => {
     "slug",
   ]);
 });
+
+// ---------------------------------------------------------------------------
+// D4's reachability invariant (T011).
+//
+// `/nodd-promote` is a slash command, which a subagent cannot run. The second
+// clause — "keep going here" — is not an action the refused actor can take
+// either: the call was already blocked, so "keep going" describes a state it
+// cannot reach, not a step it can perform.
+// ---------------------------------------------------------------------------
+test("the remedy names a step reachable without a slash command", () => {
+  const decision = decide({ slug: "demo", declaredFiles: 2, observedFiles: 5 });
+
+  assert.equal(decision.allow, false);
+  assert.ok(
+    decision.allow === false && /report|delegator|ask/i.test(decision.remedy.action),
+    `every remedy needs a slash command or describes a state, not a step; got: ${decision.allow === false ? decision.remedy.action : ""}`,
+  );
+});
