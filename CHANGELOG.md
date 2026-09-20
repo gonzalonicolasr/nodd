@@ -15,8 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cat <<'EOF'` carrying an arrow function are reads again. Three reviewers hit
   the heredoc case while reading this repository.
 - A heredoc handed to an interpreter keeps its body visible, because a body
-  stops being data once something runs it: `cat <<EOF | bash` and `bash <<EOF`
-  are writes. An unterminated heredoc swallows nothing.
+  stops being data once something runs it: `cat <<EOF | bash`, `bash <<EOF` and
+  `cat <<EOF | sudo bash` are writes. An unterminated heredoc swallows nothing.
 - `(rm -rf build)` and `ls && { chmod +x f; }` are writes; a subshell and a
   brace group were load-bearing in the separator set and pinned by no test.
 

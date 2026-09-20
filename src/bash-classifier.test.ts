@@ -404,6 +404,17 @@ test("a heredoc fed to an interpreter is a script, not data", () => {
   assert.equal(classifyBash("cat <<'EOF' | bash\nrm -rf build\nEOF"), "mutating");
   assert.equal(classifyBash("bash <<'EOF'\nrm -rf /\nEOF"), "mutating");
   assert.equal(classifyBash("cat <<'EOF' | sh\nchmod +x f\nEOF"), "mutating");
+  // One extra word must not hide the body. `feedsAnInterpreter` walks the same
+  // WRAPPERS set the rest of the file already uses; recognising the
+  // interpreter only as a bare token made `sudo` a one-word evasion.
+  assert.equal(classifyBash("sudo bash <<'EOF'\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("cat <<'EOF' | sudo bash\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("cat <<'EOF' | env bash\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("cat <<'EOF' | timeout 5 bash\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("cat <<'EOF' | /usr/bin/env bash\nrm -rf build\nEOF"), "mutating");
+  // A pipe into something that only reads is still a read.
+  assert.equal(classifyBash("cat <<'EOF' | grep x\na > b\nEOF"), "non-mutating");
+  assert.equal(classifyBash("cat <<'EOF' | sudo tee\nplain data\nEOF"), "mutating");
   assert.equal(classifyBash("python3 <<'PY'\nrm -rf build\nPY"), "mutating");
   // An unterminated heredoc must not swallow the commands after it.
   assert.equal(classifyBash("cat <<'EOF'\nx\nNOPE\nrm -rf build"), "mutating");

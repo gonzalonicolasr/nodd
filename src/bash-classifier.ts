@@ -40,11 +40,21 @@ function feedsAnInterpreter(line: string): boolean {
   // The heredoc operator binds to whatever precedes it: `python3 <<PY` runs
   // the body just as `python3 - <<PY` does. Splitting on `<` keeps the command
   // word visible to the tokeniser.
-  return tokenise(line.replace(/<</g, " << ")).some(
-    (token, at, all) =>
-      (token.startsCommand || all[at - 1]?.text === "|") &&
-      INTERPRETERS.has(token.text.slice(token.text.lastIndexOf("/") + 1)),
-  );
+  const tokens = tokenise(line.replace(/<</g, " << "));
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (!tokens[i].startsCommand) continue;
+    // Walk the same wrapper set the rest of this file uses. Recognising the
+    // interpreter only as a bare token made `sudo bash <<EOF` a one-word
+    // evasion, while `commandWord` and `runsScriptFile` both saw through it.
+    let at = i;
+    while (WRAPPERS.has(baseOf(tokens[at].text)) && tokens[at + 1]) {
+      at += 1;
+      // A wrapper's own argument goes with it: `timeout 5 bash`, `nice -n 10`.
+      while (tokens[at + 1] && (/^\d+[smhd]?$/.test(tokens[at].text) || tokens[at].text.startsWith("-") || tokens[at].text.includes("="))) at += 1;
+    }
+    if (INTERPRETERS.has(baseOf(tokens[at].text))) return true;
+  }
+  return false;
 }
 
 /**
@@ -128,6 +138,9 @@ const WRAPPERS = new Set([
   "sudo", "env", "time", "nohup", "nice", "xargs", "command", "exec", "setsid", "timeout", "stdbuf",
 ]);
 const INTERPRETERS = new Set(["node", "deno", "bun", "python", "python3", "ruby", "perl", "bash", "sh", "zsh"]);
+/** The last path segment, so `/usr/bin/env` is recognised as `env`. */
+const baseOf = (token: string) => token.slice(token.lastIndexOf("/") + 1);
+
 const SCRIPT_FILE = /\.(js|cjs|mjs|ts|mts|cts|py|sh|bash|rb|pl)$|\//;
 
 /**
@@ -196,8 +209,6 @@ function runsScriptFile(command: string): boolean {
     if (!head.startsCommand && !["then", "do"].includes(tokens[i - 1]?.text ?? "")) continue;
     // A prefix that runs its argument is transparent: `env node x.js` is
     // `node x.js`. `env`'s VAR=value assignments are skipped with it.
-    // A wrapper is recognised by basename too: `/usr/bin/env node x.js`.
-    const baseOf = (t: string) => t.slice(t.lastIndexOf("/") + 1);
     while (WRAPPERS.has(baseOf(head.text)) && tokens[i + 1]) {
       head = tokens[++i];
       // `timeout 10 node …` and `nice -n 10 node …` take an argument of their
