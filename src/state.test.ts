@@ -160,6 +160,45 @@ test("a later declaration replaces the earlier one", () => {
   });
 });
 
+test("a refused write does not count as a write", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "write", input: { path: "jamas-existio.txt" }, isError: true }),
+  ]);
+  assert.deepEqual([...committed.filesWritten.keys()], [], "a refused write touched no disk");
+  assert.equal(committed.toolCalls, 1, "the attempt still counts as activity");
+});
+
+test("a successful write still counts as a write", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "write", input: { path: "real.ts" }, isError: false }),
+  ]);
+  assert.deepEqual([...committed.filesWritten.keys()], ["real.ts"]);
+});
+
+test("a refused edit does not count as a write, a successful one does", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "edit", input: { path: "refused.ts" }, isError: true }),
+    obs({ toolName: "edit", input: { path: "ok.ts" }, isError: false }),
+  ]);
+  assert.deepEqual([...committed.filesWritten.keys()], ["ok.ts"]);
+});
+
+test("a refused read does not count as read context", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "read", input: { path: "denied.ts" }, isError: true }),
+  ]);
+  assert.equal(committed.filesRead.size, 0);
+  assert.equal(committed.toolCalls, 1);
+});
+
+test("a refused delegation does not count as a delegation", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "subagent", input: { agent: "nodd-explore" }, isError: true }),
+  ]);
+  assert.equal(committed.delegations, 0);
+  assert.equal(committed.toolCalls, 1);
+});
+
 test("the reducer imports neither node:fs nor pi", () => {
   const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "state.ts"), "utf8");
   assert.ok(!src.includes("node:fs"), "state.ts must not touch the filesystem");
