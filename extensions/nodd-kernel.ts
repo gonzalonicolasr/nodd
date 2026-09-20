@@ -118,6 +118,8 @@ export type Kernel = {
   /** Add or check off a task. The extension renders the doc. */
   task(args: TaskArgs): ToolReply;
   onToolCall(event: ToolCallEvent): void;
+  /** Drop a call that produced no effect, because pi reports no result for it. */
+  forgetPending(toolCallId: string): void;
   onToolResult(event: ToolResultEvent): Observation;
   /**
    * Rebuild what a new process can legitimately know from a previous one.
@@ -386,6 +388,9 @@ export function createKernel(
         toolName: event.toolName,
         input: event.input ?? {},
       }));
+    },
+    forgetPending(toolCallId) {
+      state.pending.delete(toolCallId);
     },
     onToolResult(event) {
       state.pending.delete(event.toolCallId);
@@ -659,6 +664,14 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
     // Record the call either way. A refused call still happened, and the
     // counters that decide the next refusal must see it.
     kernel.onToolCall(event);
+    // But a blocked call produces no effect, and pi will never report a result
+    // for it: `agent-loop.js:419-428` returns `{ kind: "immediate" }`, which
+    // skips `finalizeExecutedToolCall` and therefore the `afterToolCall` that
+    // raises `tool_result` (:487). Left pending forever, the refusal would
+    // inflate the very count that caused it -- D1's monotonic trap, relocated
+    // from `filesWritten` to `pending`. `onToolCall` still ran, so activity is
+    // counted; only the phantom effect is dropped.
+    if (decision) kernel.forgetPending(event.toolCallId);
     showStatus(ctx);
     return decision ?? undefined;
   }) as never);

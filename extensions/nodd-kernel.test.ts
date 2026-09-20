@@ -282,3 +282,55 @@ test("gate-evidence: a refused write does not advance lastWriteSeq past evidence
 });
 
 
+
+// ---------------------------------------------------------------------------
+// Defect #6 — the self-amplifying lockout, surviving on the path D1's tests
+// could not see.
+//
+// D1 fixed `committed.filesWritten`, which `fold` guards with `obs.isError`.
+// But `gate-delegate` also counts `state.pending`, and pi never emits
+// `tool_result` for a blocked call: `agent-loop.js:419-428` returns
+// `{ kind: "immediate" }`, and `afterToolCall` — the source of the
+// `tool_result` event — only runs inside `finalizeExecutedToolCall` (:487).
+// So a blocked call's pending entry is never removed, and each refusal
+// inflates the count that causes the next one. Same monotonic trap, same gate,
+// different map.
+//
+// This is driven through `createKernel` on purpose. The D1 tests pass
+// `noPending` into `delegateGate`, so they structurally cannot observe the
+// kernel's own bookkeeping — which is why 545 green tests missed this.
+// ---------------------------------------------------------------------------
+test("a blocked call does not inflate the counter that blocked it", () => {
+  // Driven through `register`, not the kernel directly: the fix lives in the
+  // `tool_call` hook, which is the only place that knows a call was refused.
+  const handlers = new Map<string, (event: unknown) => unknown>();
+  const pi = {
+    on: (name: string, handler: (event: unknown) => unknown) => handlers.set(name, handler),
+    registerTool: () => {},
+    appendEntry: () => {},
+  };
+  const kernel = register(pi as never, "/tmp/nodd-pending-probe", process.env.HOME);
+  const declared = { intent: "change", route: "inline", slug: "probe", summary: "s", title: "P" };
+  kernel.declare(declared as never);
+  const d = { toolName: "nodd_declare", toolCallId: "d1", input: declared };
+  handlers.get("tool_call")!(d);
+  handlers.get("tool_result")!({ ...d, isError: false, content: "" });
+
+  const reasons: string[] = [];
+  for (let i = 1; i <= 6; i += 1) {
+    const event = { toolName: "write", toolCallId: `w${i}`, input: { file_path: `/repo/f${i}.ts` } };
+    const decision = handlers.get("tool_call")!(event) as { reason?: string } | undefined;
+    // pi only reports a result for calls it actually executed.
+    if (!decision) handlers.get("tool_result")!({ ...event, isError: false, content: "" });
+    else reasons.push(String(decision.reason));
+  }
+
+  // One write landed; the other five were refused and touched nothing.
+  assert.equal(kernel.evidenceView().filesWritten.size, 1);
+  const escalating = reasons.filter((r) => /written [3-9] distinct files/.test(r));
+  assert.deepEqual(
+    escalating,
+    [],
+    `refusals must not count themselves: the gate escalated to ${escalating.length} higher counts over writes that never happened`,
+  );
+});
