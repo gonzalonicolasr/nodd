@@ -11,7 +11,7 @@
 // sibling would take its innocent siblings with it.
 
 import { join } from "node:path";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { observation, pendingCall, type Observation } from "../src/observations.ts";
 import { emptyState, fold, type Committed, type NoddState } from "../src/state.ts";
@@ -26,7 +26,7 @@ import {
 import { writeVerified } from "../src/io.ts";
 import { renderPrompt } from "../src/prompt.ts";
 import { consumeHatch, emptyPolicy, type GateDecision, type Policy } from "../src/gates/policy.ts";
-import { parseConfig, noddConfigPath } from "../src/config.ts";
+import { hatchPath, parseConfig, noddConfigPath } from "../src/config.ts";
 import { GATE_IDS } from "../src/gates/registry.ts";
 import { authorizeGate, type CapabilityLookup } from "../src/gates/authorize.ts";
 import { classifyGate } from "../src/gates/classify.ts";
@@ -161,6 +161,9 @@ export function createKernel(
   cwd: string = process.cwd(),
   loadPolicy: () => Policy = emptyPolicy,
   isReadOnlyAgent: CapabilityLookup = readOnlyAgentLookup(homedir()),
+  // Injected like `docExists` and `isReadOnlyAgent`: the kernel decides a hatch
+  // was spent, the caller owns where that fact is persisted.
+  spendHatch: (gate: string) => void = () => {},
 ): Kernel {
   const state = emptyState();
   // Mutable because `/nodd-allow` grants a hatch mid-session and a refusal
@@ -356,6 +359,7 @@ export function createKernel(
         const hatch = consumeHatch(policy, gate);
         if (hatch) {
           policy = hatch.policy;
+          spendHatch(gate);
           return null;
         }
         // `terminate` is deliberately never set: a blocked call stops that
@@ -373,7 +377,10 @@ export function createKernel(
       // An explicit `setPolicy` wins: it is the caller stating the whole policy,
       // and re-reading over it would silently undo what they just set.
       if (policyIsPinned) return policy;
-      policy = { ...loadPolicy(), flags: policy.flags, hatches: policy.hatches };
+      // Hatches come from `loadPolicy` too: `/nodd-allow` runs in another
+      // module and writes them to disk, so keeping the in-memory ones here
+      // would discard the override the moment it was granted.
+      policy = { ...loadPolicy(), flags: policy.flags };
       return policy;
     },
 
@@ -627,14 +634,46 @@ function promotionSignals(committed: Committed, request: GateRequest) {
 function readPolicy(home?: string): Policy {
   try {
     const { config } = parseConfig(readFileSync(noddConfigPath(home), "utf8"));
-    return { ...emptyPolicy(), config: config.gates };
+    return { ...emptyPolicy(), config: config.gates, hatches: readHatches(home) };
   } catch {
-    return emptyPolicy();
+    return { ...emptyPolicy(), hatches: readHatches(home) };
+  }
+}
+
+/**
+ * One-shot overrides granted by `/nodd-allow`, which runs in another module.
+ * Disk is the only channel between the two, and it is the same channel the
+ * gate config already uses.
+ */
+function readHatches(home?: string): Policy["hatches"] {
+  try {
+    const raw = JSON.parse(readFileSync(hatchPath(home), "utf8")) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return raw as Policy["hatches"];
+  } catch {
+    return {};
+  }
+}
+
+/** Spend a hatch on disk, so one grant can never excuse two refusals. */
+function clearHatch(gate: string, home?: string): void {
+  try {
+    const remaining = readHatches(home);
+    delete remaining[gate];
+    writeFileSync(hatchPath(home), `${JSON.stringify(remaining)}\n`, "utf8");
+  } catch {
+    // Best effort; the in-memory policy has already dropped it either way.
   }
 }
 
 export default function register(pi?: PiApi, cwd: string = process.cwd(), home?: string): Kernel {
-  const kernel = createKernel(undefined, cwd, () => readPolicy(home), readOnlyAgentLookup(home ?? homedir()));
+  const kernel = createKernel(
+    undefined,
+    cwd,
+    () => readPolicy(home),
+    readOnlyAgentLookup(home ?? homedir()),
+    (gate) => clearHatch(gate, home),
+  );
   if (!pi || typeof pi.on !== "function") {
     kernel.reloadPolicy();
     return kernel;

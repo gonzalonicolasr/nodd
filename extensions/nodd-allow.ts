@@ -8,6 +8,9 @@
 // Turning a gate off for good is `/nodd-gates disable`, which is a different
 // decision and says so.
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { hatchPath } from "../src/config.ts";
 import { GATE_IDS, isGateId } from "../src/gates/registry.ts";
 import { grantHatch, type Policy } from "../src/gates/policy.ts";
 
@@ -61,7 +64,11 @@ type PiApi = {
   appendEntry?(type: string, data?: unknown): void;
 };
 
-export default function register(pi?: PiApi, policyRef: { current: Policy } = { current: { config: {}, flags: {}, hatches: {} } }): void {
+export default function register(
+  pi?: PiApi,
+  policyRef: { current: Policy } = { current: { config: {}, flags: {}, hatches: {} } },
+  home?: string,
+): void {
   pi?.registerCommand?.("nodd-allow", {
     description: "Grant a one-shot override of a single NODD gate: /nodd-allow <gate> [reason]",
     handler: (args: string, ctx: unknown) => {
@@ -70,6 +77,20 @@ export default function register(pi?: PiApi, policyRef: { current: Policy } = { 
         appendEntry: (type, data) => pi?.appendEntry?.(type, data),
       });
       policyRef.current = result.policy;
+      // The kernel lives in another module with no reference to this one, so
+      // the hatch reaches it the way every other NODD decision travels: on
+      // disk, which the kernel re-reads on each `tool_call`. Without this the
+      // command reported success and changed nothing at all.
+      if (result.ok) {
+        try {
+          const path = hatchPath(home);
+          mkdirSync(dirname(path), { recursive: true });
+          writeFileSync(path, `${JSON.stringify(result.policy.hatches)}\n`, "utf8");
+        } catch {
+          // A hatch that cannot be persisted must not break the session; the
+          // refusal simply stands, which is the safe direction.
+        }
+      }
       notify?.(result.text, result.ok ? "info" : "warning");
     },
   });

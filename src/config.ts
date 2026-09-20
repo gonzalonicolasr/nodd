@@ -32,6 +32,19 @@ export function noddConfigPath(home: string = homedir()): string {
   return join(home, ".pi", "nodd.json");
 }
 
+/**
+ * Where a one-shot override waits between the command that grants it and the
+ * refusal it prevents.
+ *
+ * Deliberately not `nodd.json`: that file is the user's durable configuration,
+ * and a hatch is spent within seconds. Keeping the two apart means a crash
+ * mid-override cannot corrupt the profiles, and the user never finds ephemeral
+ * state in the file they hand-edit.
+ */
+export function hatchPath(home: string = homedir()): string {
+  return join(home, ".pi", "nodd-hatch.json");
+}
+
 function asObject(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
