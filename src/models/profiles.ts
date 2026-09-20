@@ -154,6 +154,69 @@ export function mirrorToActiveProfile(data: Record<string, unknown>): Record<str
   return { ...data, profiles: { ...profiles, [active]: snapshot(data) } };
 }
 
+export type MigrationResult = { data: Record<string, unknown>; changed: boolean; defect?: string };
+
+/**
+ * `orchestrator -> default` in one slot map, following D5's rule: `orchestrator`
+ * set and `default` unset moves the value; both set drops `orchestrator`;
+ * neither is a no-op.
+ */
+function migrateSlotMap<T>(map: Record<string, T> | undefined): { map: Record<string, T> | undefined; changed: boolean } {
+  if (!map || !("orchestrator" in map)) return { map, changed: false };
+  const { orchestrator, ...rest } = map;
+  if (!("default" in rest)) (rest as Record<string, T>).default = orchestrator;
+  return { map: rest as Record<string, T>, changed: true };
+}
+
+/**
+ * Migrate `orchestrator` to `default` across the loose config, every profile
+ * and their parallel `thinking` maps (`design.md` § "D5 + migration — slots").
+ *
+ * Writes nothing itself — pure transform, returned data plus whether anything
+ * changed, so the caller can skip the write (and the backup) on a no-op.
+ * Malformed `profiles` is left untouched and reported rather than partially
+ * rewritten.
+ */
+export function migrateOrchestratorSlot(data: Record<string, unknown>): MigrationResult {
+  if (data.profiles !== undefined && !isObject(data.profiles)) {
+    return { data, changed: false, defect: "`profiles` is not an object; migration skipped" };
+  }
+
+  let changed = false;
+  const next: Record<string, unknown> = { ...data };
+
+  const models = migrateSlotMap(isObject(data.models) ? (data.models as Record<string, string>) : undefined);
+  if (models.changed) {
+    next.models = models.map;
+    changed = true;
+  }
+
+  const thinking = migrateSlotMap(isObject(data.thinking) ? (data.thinking as SlotThinking) : undefined);
+  if (thinking.changed) {
+    next.thinking = thinking.map;
+    changed = true;
+  }
+
+  const profiles = isObject(data.profiles) ? data.profiles : undefined;
+  if (profiles) {
+    const nextProfiles: Record<string, unknown> = { ...profiles };
+    for (const [name, value] of Object.entries(profiles)) {
+      if (!isObject(value)) continue;
+      const profileModels = migrateSlotMap(isObject(value.models) ? (value.models as Record<string, string>) : undefined);
+      const profileThinking = migrateSlotMap(isObject(value.thinking) ? (value.thinking as SlotThinking) : undefined);
+      if (!profileModels.changed && !profileThinking.changed) continue;
+      changed = true;
+      const nextProfile: Record<string, unknown> = { ...value };
+      if (profileModels.changed) nextProfile.models = profileModels.map;
+      if (profileThinking.changed) nextProfile.thinking = profileThinking.map;
+      nextProfiles[name] = nextProfile;
+    }
+    if (changed) next.profiles = nextProfiles;
+  }
+
+  return changed ? { data: next, changed: true } : { data, changed: false };
+}
+
 export function applyProfileCommand(data: Record<string, unknown>, command: ProfileCommand): ProfileResult {
   const { profiles } = readProfiles(data);
   const names = Object.keys(profiles).sort();

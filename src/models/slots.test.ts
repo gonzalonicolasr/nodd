@@ -54,11 +54,14 @@ function tsFiles(dir: string): string[] {
   return out;
 }
 
-test("orchestrator is gone as a real slot from every non-test source under src/ and extensions/, save for its explicit refusal in assign.ts and two unrelated comments about forge's orchestrator.md", () => {
+test("orchestrator is gone as a real slot from every non-test source under src/ and extensions/, save for its explicit refusal, its migration, and two unrelated comments about forge's orchestrator.md", () => {
   const files = [...tsFiles(join(REPO_ROOT, "src")), ...tsFiles(join(REPO_ROOT, "extensions"))];
   const hits = files.filter((f) => readFileSync(f, "utf8").includes("orchestrator"));
   for (const file of hits) {
-    assert.ok(/promote\.ts$|[\\/]assign\.ts$/.test(file), `unexpected consumer of "orchestrator": ${file}`);
+    assert.ok(
+      /promote\.ts$|[\\/]assign\.ts$|[\\/]profiles\.ts$|nodd-agents\.ts$/.test(file),
+      `unexpected consumer of "orchestrator": ${file}`,
+    );
   }
 });
 

@@ -31,6 +31,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { noddConfigPath } from "../src/config.ts";
+import { migrateOrchestratorSlot } from "../src/models/profiles.ts";
 
 /** Forwarded verbatim into every generated body (`routing.go:95`). */
 export const ANTI_GAMING =
@@ -191,7 +192,47 @@ export function provisionAgents(home: string, config: Record<string, unknown>): 
   return result;
 }
 
+/**
+ * The orchestrator -> default migration's I/O half (design.md's D5 section).
+ * Runs on extension load, before agent provisioning reads models, so a
+ * freshly migrated default is what the agents pick up.
+ *
+ * Reads and parses nodd.json itself, rather than taking a parsed config: a
+ * missing or unparseable file must be left alone, never partially rewritten,
+ * and a caller passed a pre-parsed object could not tell "absent" from
+ * "malformed" the way this function needs to.
+ */
+export function migrateOrchestratorConfig(home: string = homedir()): void {
+  const path = noddConfigPath(home);
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return; // No file: nothing to migrate.
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return; // Malformed JSON: left untouched, never partially rewritten.
+  }
+
+  const result = migrateOrchestratorSlot(data);
+  if (!result.changed) return;
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  writeFileSync(`${path}.bak-${stamp}`, text, "utf8");
+  writeFileSync(path, `${JSON.stringify(result.data, null, 2)}\n`, "utf8");
+}
+
 export default function register(_pi?: unknown): void {
+  try {
+    migrateOrchestratorConfig(homedir());
+  } catch {
+    // Migration must never break a pi session.
+  }
+
   try {
     let config: Record<string, unknown> = {};
     try {

@@ -4,10 +4,12 @@ import {
   RESERVED_PROFILE_NAMES,
   applyProfileCommand,
   isValidProfileName,
+  migrateOrchestratorSlot,
   mirrorToActiveProfile,
   readActiveProfile,
   readProfiles,
   readThinking,
+  type Profile,
 } from "./profiles.ts";
 
 const withProfiles = () => ({
@@ -269,4 +271,107 @@ test("readThinking keeps only real levels, so a hand-edited file cannot inject o
   });
   assert.deepEqual(readThinking({}), {});
   assert.deepEqual(readThinking({ thinking: "broken" }), {});
+});
+
+// ---------------------------------------------------------------------------
+// T009 -- migrating orchestrator -> default, in the loose config and every
+// profile, applied to both `models` and the parallel `thinking` map.
+// ---------------------------------------------------------------------------
+test("orchestrator set, default unset: the value moves, in the loose config and thinking", () => {
+  const result = migrateOrchestratorSlot({
+    models: { orchestrator: "anthropic/claude-opus-4-1" },
+    thinking: { orchestrator: "high" },
+  });
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.data.models, { default: "anthropic/claude-opus-4-1" });
+  assert.deepEqual(result.data.thinking, { default: "high" });
+});
+
+test("both set: orchestrator is dropped, default is kept as-is", () => {
+  const result = migrateOrchestratorSlot({
+    models: { orchestrator: "anthropic/opus", default: "anthropic/sonnet" },
+  });
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.data.models, { default: "anthropic/sonnet" });
+});
+
+test("neither set: no-op, no write, byte-identical data returned", () => {
+  const input = { models: { implement: "anthropic/x" }, activeProfile: "fast" };
+  const result = migrateOrchestratorSlot(input);
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.data, input);
+});
+
+test("only default set: no-op", () => {
+  const input = { models: { default: "anthropic/sonnet" } };
+  const result = migrateOrchestratorSlot(input);
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.data, input);
+});
+
+test("the migration applies to every profile too, independently of the loose config", () => {
+  const result = migrateOrchestratorSlot({
+    profiles: {
+      a: { models: { orchestrator: "anthropic/opus" } },
+      b: { models: { orchestrator: "anthropic/opus", default: "anthropic/sonnet" } },
+      c: { models: { implement: "anthropic/x" } },
+    },
+  });
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.data.profiles, {
+    a: { models: { default: "anthropic/opus" } },
+    b: { models: { default: "anthropic/sonnet" } },
+    c: { models: { implement: "anthropic/x" } },
+  });
+});
+
+test("activeProfile, unrelated keys and untouched profiles survive byte-for-byte", () => {
+  const input = {
+    activeProfile: "personal-claude",
+    someUnrelatedKey: 42,
+    models: { orchestrator: "anthropic/opus" },
+    profiles: { untouched: { models: { implement: "anthropic/x" } } },
+  };
+  const result = migrateOrchestratorSlot(input);
+  assert.equal(result.changed, true);
+  assert.equal(result.data.activeProfile, "personal-claude");
+  assert.equal(result.data.someUnrelatedKey, 42);
+  assert.deepEqual(result.data.profiles.untouched, { models: { implement: "anthropic/x" } });
+});
+
+test("running the migration twice is idempotent: the second run changes nothing", () => {
+  const first = migrateOrchestratorSlot({ models: { orchestrator: "anthropic/opus" } });
+  const second = migrateOrchestratorSlot(first.data);
+  assert.equal(second.changed, false);
+  assert.deepEqual(second.data, first.data);
+});
+
+test("malformed config (profiles not an object) is left untouched and reported, never partially rewritten", () => {
+  const input = { models: { orchestrator: "anthropic/opus" }, profiles: "broken" };
+  const result = migrateOrchestratorSlot(input);
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.data, input);
+  assert.ok(result.defect, "a malformed profiles section must be reported");
+});
+
+test("migration against a fixture shaped like the real 10-profile file", () => {
+  const fixture: Record<string, unknown> = {
+    activeProfile: "personal-claude",
+    models: { orchestrator: "cliproxy/personal/claude-opus-5" },
+    profiles: Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [
+        `profile-${i}`,
+        { models: { orchestrator: "cliproxy/personal/claude-opus-5", implement: `cliproxy/x/model-${i}` } },
+      ]),
+    ),
+  };
+  const result = migrateOrchestratorSlot(fixture);
+  assert.equal(result.changed, true);
+  assert.equal(Object.keys(result.data.profiles).length, 10);
+  for (const [name, profile] of Object.entries(result.data.profiles) as Array<[string, Profile]>) {
+    assert.ok(!("orchestrator" in profile.models), `${name} must have orchestrator removed`);
+    assert.equal(profile.models.default, "cliproxy/personal/claude-opus-5");
+  }
+  assert.equal(result.data.models.default, "cliproxy/personal/claude-opus-5");
+  assert.equal(result.data.activeProfile, "personal-claude");
 });

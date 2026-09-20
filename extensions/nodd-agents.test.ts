@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, chmodSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ANTI_GAMING, NODD_AGENTS, agentsDir, buildAgentFile, provisionAgents } from "./nodd-agents.ts";
+import { noddConfigPath } from "../src/config.ts";
+import { ANTI_GAMING, NODD_AGENTS, agentsDir, buildAgentFile, migrateOrchestratorConfig, provisionAgents } from "./nodd-agents.ts";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "nodd-agents-"));
@@ -136,4 +137,68 @@ test("provisioning never throws, whatever the config holds", () => {
   for (const config of [{}, { models: null }, { models: { implement: 42 } }] as never[]) {
     assert.doesNotThrow(() => provisionAgents(home, config));
   }
+});
+
+// ---------------------------------------------------------------------------
+// T009 -- migrateOrchestratorConfig: the I/O half of migrateOrchestratorSlot.
+// ---------------------------------------------------------------------------
+function writeConfig(home: string, data: Record<string, unknown>): void {
+  mkdirSync(join(home, ".pi"), { recursive: true });
+  writeFileSync(noddConfigPath(home), JSON.stringify(data, null, 2), "utf8");
+}
+
+test("a changed migration writes the new config and a timestamped backup", () => {
+  const home = tmp();
+  writeConfig(home, { models: { orchestrator: "anthropic/opus" } });
+
+  migrateOrchestratorConfig(home);
+
+  const written = JSON.parse(readFileSync(noddConfigPath(home), "utf8"));
+  assert.deepEqual(written.models, { default: "anthropic/opus" });
+
+  const backups = readdirSync(join(home, ".pi")).filter((f) => f.startsWith("nodd.json.bak-"));
+  assert.equal(backups.length, 1, "exactly one backup must be created");
+  const backedUp = JSON.parse(readFileSync(join(home, ".pi", backups[0]), "utf8"));
+  assert.deepEqual(backedUp.models, { orchestrator: "anthropic/opus" }, "the backup holds the pre-migration content");
+});
+
+test("a no-op migration writes nothing and creates no backup", () => {
+  const home = tmp();
+  writeConfig(home, { models: { implement: "anthropic/x" } });
+  const before = readFileSync(noddConfigPath(home), "utf8");
+
+  migrateOrchestratorConfig(home);
+
+  assert.equal(readFileSync(noddConfigPath(home), "utf8"), before, "an untouched config must not be rewritten");
+  const backups = existsSync(join(home, ".pi")) ? readdirSync(join(home, ".pi")).filter((f) => f.startsWith("nodd.json.bak-")) : [];
+  assert.equal(backups.length, 0, "a no-op must create no backup");
+});
+
+test("a missing config file is a no-op: no write, no backup, no throw", () => {
+  const home = tmp();
+  assert.doesNotThrow(() => migrateOrchestratorConfig(home));
+  assert.ok(!existsSync(noddConfigPath(home)));
+});
+
+test("malformed JSON is left untouched and never partially rewritten", () => {
+  const home = tmp();
+  mkdirSync(join(home, ".pi"), { recursive: true });
+  writeFileSync(noddConfigPath(home), "{ not valid json", "utf8");
+
+  assert.doesNotThrow(() => migrateOrchestratorConfig(home));
+  assert.equal(readFileSync(noddConfigPath(home), "utf8"), "{ not valid json");
+});
+
+test("running the migration twice writes only once", () => {
+  const home = tmp();
+  writeConfig(home, { models: { orchestrator: "anthropic/opus" } });
+
+  migrateOrchestratorConfig(home);
+  const afterFirst = readFileSync(noddConfigPath(home), "utf8");
+  migrateOrchestratorConfig(home);
+  const afterSecond = readFileSync(noddConfigPath(home), "utf8");
+
+  assert.equal(afterSecond, afterFirst, "the second run must be a no-op");
+  const backups = readdirSync(join(home, ".pi")).filter((f) => f.startsWith("nodd.json.bak-"));
+  assert.equal(backups.length, 1, "only the first run backs up");
 });
