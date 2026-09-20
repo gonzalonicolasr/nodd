@@ -181,3 +181,32 @@ test("a refused call leaves no trace in the counters that refuse the next one", 
     `the refusal count climbed across refused writes (${counts.join(", ")}): each refusal is feeding the trigger that caused it`,
   );
 });
+
+// ---------------------------------------------------------------------------
+// A delegated worker cannot declare its own route.
+//
+// Observed five times in one SDD run: clarify, plan, analyze and build were
+// each refused by `gate-classify` on their first write, because a subagent has
+// neither `nodd_declare` nor slash commands, and kernel state is per session —
+// a declaration made by the parent is invisible to the child.
+//
+// The gate is correct and this test says so: what it pins is that the refusal
+// stays escapable by an actor with no tools at all. If someone ever narrows
+// that remedy, delegation becomes a dead end and this turns red.
+// ---------------------------------------------------------------------------
+test("a child kernel's first write is refused with a remedy it can reach", () => {
+  const decision = classifyGate(
+    emptyCommitted(), // exactly the state a freshly started child kernel has
+    { toolName: "write", input: { path: "src/a.ts" } },
+    emptyPolicy(),
+    new Map(),
+  );
+
+  assert.equal(decision.allow, false, "an undeclared child must not write unannounced");
+  const remedy = (decision as { remedy?: { action: string } }).remedy?.action ?? "";
+  assert.match(
+    remedy,
+    UNIVERSAL_REMEDY,
+    `a delegated worker has no tools to act on: "${remedy}"`,
+  );
+});

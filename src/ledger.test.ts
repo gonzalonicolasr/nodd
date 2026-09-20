@@ -120,3 +120,52 @@ test("degradation never throws away the record, it reports it", () => {
   const { degraded } = classifyRecords([rec("x")], new Set());
   assert.equal(degraded[0].record.toolCallId, "x", "the record survives for the report");
 });
+
+// ---------------------------------------------------------------------------
+// Two pi sessions in one repository lose observations.
+//
+// `appendRecord` is a read-modify-write with no lock: it reads the whole
+// ledger, appends one record, and writes the whole file back. Two sessions
+// interleaving that sequence leave only the second one's record. There is no
+// mechanism for this and none is promised — the README says so, and this test
+// is what keeps that sentence true. If locking is ever added, this turns red
+// and forces the disclosure to be corrected.
+// ---------------------------------------------------------------------------
+test("interleaved appends from two sessions lose an observation", () => {
+  // Two pi sessions in one repo append through an unlocked read-modify-write.
+  // The interleaving that matters: both compute their next ledger from the
+  // same snapshot, and the second one to write is working from a view that no
+  // longer matches disk.
+  const fs = memoryFs();
+  appendRecord(PATH, rec("shared", "npm test"), fs);
+  const snapshot = fs.files.get(PATH)!;
+
+  appendRecord(PATH, rec("from-a", "node a.js"), fs);
+
+  // Session B never saw A's write: it still holds the one-record snapshot and
+  // appends to that. `writeVerified`'s read-back compares the file against what
+  // *B* just wrote, so it matches and the write is accepted — the guard cannot
+  // see that a third party changed the file between B's read and B's write.
+  // A's observation is gone, with no error anywhere. Evidence that vanishes is
+  // the one failure a product built on observed evidence cannot tolerate
+  // quietly, which is why the README says: one NODD session per repository.
+  // Only B's *first* read of the ledger is stale; the read-back that
+  // `writeVerified` performs afterwards must see real disk, exactly as a
+  // separate process would.
+  let firstRead = true;
+  const stale: Fs = {
+    ...fs,
+    readFileSync: (p: string) => {
+      if (p === PATH && firstRead) { firstRead = false; return snapshot; }
+      return fs.readFileSync(p, "utf8");
+    },
+  };
+  appendRecord(PATH, rec("from-b", "node b.js"), stale);
+
+  const ids = readLedger(PATH, fs).records.map((r) => r.toolCallId);
+  assert.deepEqual(
+    ids,
+    ["shared", "from-b"],
+    `session A's observation must be lost to the unlocked read-modify-write, got ${ids.join(", ")}`,
+  );
+});

@@ -435,6 +435,25 @@ written and the exact command to run by hand is reported.
 These are open, not fixed. They are here because a declared problem is a result
 and a hidden one makes everything above worthless.
 
+- **Two sessions in one repo can lose observations.** NODD has no cross-process
+  coordination of any kind. `appendRecord` (`src/ledger.ts`) reads
+  `.nodd/<slug>/state.json`, appends, and writes the whole file back; two pi
+  sessions interleaving that sequence leave only the second session's record,
+  and no error is raised — the read-back guard compares the file against what
+  *that* session wrote, so it cannot see a third party's change. There is no
+  lock, no queue and no retry, and none is planned: coordinating across
+  processes is a design problem, not a patch. Run one NODD session per
+  repository. Pinned by a test that interleaves two appends and asserts the loss.
+- **A delegated worker cannot declare its own route.** `nodd_declare` is a
+  kernel tool and kernel state is per session, so a subagent starts with no
+  declaration and no way to make one — its first write is refused by
+  `gate-classify`. The refusal's second remedy, reporting back to the delegator,
+  needs no tool and is always reachable, so this is not a dead end; but it costs
+  one delegator round-trip per delegated writer. Measured: five consecutive
+  subagents in one SDD run hit this. Exempting a directory or persisting a
+  declaration for children to inherit were both considered and rejected —
+  `.sdd/**` is the path ODD restricts most, and an inherited declaration would
+  be authority the child's own session never observed.
 - **There is no single switch that turns everything off.** `/nodd-gates disable
   <gate>` is per gate, so stopping NODD entirely means disabling all six. A
   global `all` flag exists in `resolveFlag` but nothing populates it, and
