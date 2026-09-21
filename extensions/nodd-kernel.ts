@@ -84,6 +84,10 @@ export type DeclareArgs = {
   slug: string;
   summary: string;
   title?: string;
+  /** Read by `/nodd-promote` into the forge handoff. Optional: a small fix owes no problem statement. */
+  problem?: string;
+  scope?: string;
+  constraints?: string;
   /** The verification command. `gate-evidence` accepts runs of this and nothing else. */
   runner?: string;
   tdd?: "strict" | "off";
@@ -249,6 +253,14 @@ export function createKernel(
       }
 
       doc.objective = args.summary;
+      // `/nodd-promote` reads these three into the forge handoff
+      // (`src/promote.ts:58-60`), where they read "Not recorded in the NODD
+      // run" for every feature ever declared, because nothing could fill
+      // them. Optional: a small inline fix owes no problem statement, and a
+      // document that demands one it cannot get teaches people to ignore it.
+      if (args.problem) doc.problem = args.problem;
+      if (args.scope) doc.scope = args.scope;
+      if (args.constraints) doc.constraints = args.constraints;
       doc.route = { intent: args.intent, route: args.route };
       // Declared once and written by the extension, so the runner a checkoff is
       // measured against is not a string the model can pick per checkoff.
@@ -462,6 +474,9 @@ const DECLARE_SCHEMA = {
       slug: { type: "string", description: "filename-safe feature identity" },
       summary: { type: "string", description: "the objective, in one or two sentences" },
       title: { type: "string", description: "human-readable feature title" },
+      problem: { type: "string", description: "what is wrong today; read by /nodd-promote into the forge handoff" },
+      scope: { type: "string", description: "what this work covers and what it deliberately leaves out" },
+      constraints: { type: "string", description: "limits the work must respect: no new dependency, no API change" },
       runner: {
         type: "string",
         description:

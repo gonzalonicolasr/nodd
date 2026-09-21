@@ -516,3 +516,46 @@ test("a corrupt config is reported, not silently ignored", () => {
     "a config NODD could not read must say so: the user's disabled gates are back on and nothing told them",
   );
 });
+
+// ---------------------------------------------------------------------------
+// The feature document has three sections nothing could fill.
+//
+// Found by watching a real session produce a doc: `Problem`, `Scope` and
+// `Constraints` were empty, not because the agent skipped them but because
+// `nodd_declare` had no field for them and no second tool existed. They are
+// not decorative — `/nodd-promote` reads all three into the forge handoff
+// (`src/promote.ts:58-60`), where they came out as "Not recorded in the NODD
+// run" every single time. A document that demands structure no tool can
+// supply teaches people to ignore the document.
+// ---------------------------------------------------------------------------
+test("a declaration can fill every section the handoff reads", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "nodd-sections-"));
+  const kernel = register(
+    { on: () => {}, registerTool: () => {}, appendEntry: () => {} } as never,
+    cwd,
+    mkdtempSync(join(tmpdir(), "nodd-sections-h-")),
+  );
+
+  kernel.declare({
+    intent: "change",
+    route: "tracked",
+    slug: "filled",
+    title: "F",
+    summary: "harden the calculator",
+    problem: "callers get NaN instead of an error",
+    scope: "src/calc.js and its guards; no API change",
+    constraints: "no new dependency",
+  } as never);
+
+  const doc = readFileSync(join(cwd, ".nodd", "filled", "feature.md"), "utf8");
+  for (const [section, text] of [
+    ["Problem", "callers get NaN instead of an error"],
+    ["Scope", "src/calc.js and its guards; no API change"],
+    ["Constraints", "no new dependency"],
+  ]) {
+    assert.ok(
+      doc.includes(text),
+      `## ${section} is still empty: nodd_declare accepted no value for it, and /nodd-promote reads it`,
+    );
+  }
+});
