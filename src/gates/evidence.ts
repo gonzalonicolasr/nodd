@@ -156,9 +156,20 @@ export function evidenceGate(
     : runs.filter((run) => isDeclaredRunner(run.command, request.runner!));
   if (relevant.length === 0) {
     const observed = runs.map((run) => `\`${run.command}\``).join(", ");
+    // Naming what was observed is not the same as saying why it did not
+    // count. A real session lost two cycles to `timeout 120 npm test | tail`:
+    // the agent believed it had run the runner, and the message — which held
+    // the evidence — never closed the inference to "the wrapper disqualified
+    // it". Say the rule when the near-miss is visible, and only then.
+    const nearMiss = runs.some((run) => run.command.includes(request.runner!));
     return deny(
-      `this feature declared \`${request.runner}\` as its verification runner, and no observed command was a run of it (observed: ${observed})`,
-      `run \`${request.runner}\`, then check ${request.task} off once it is observed to succeed`,
+      `this feature declared \`${request.runner}\` as its verification runner, and no observed command was a run of it (observed: ${observed})` +
+        (nearMiss
+          ? `. A run wrapped in a pipe, a redirect or another command is not the runner: NODD reads the command it was given, not what the shell eventually executed`
+          : ""),
+      nearMiss
+        ? `run \`${request.runner}\` on its own — no pipe, no redirect, no wrapper — then check ${request.task} off once it is observed to succeed`
+        : `run \`${request.runner}\`, then check ${request.task} off once it is observed to succeed`,
     );
   }
 

@@ -279,3 +279,33 @@ test("a mismatching record reads differently from a merely unverified one", () =
   assert.ok(decision.allow === false && !/previous session/i.test(decision.reason),
     "a contradicted record is not a stale-session problem and must not be described as one");
 });
+
+test("a refusal says why the observed run did not count", () => {
+  // Field report from a real session: the agent ran
+  // `timeout 120 npm test 2>&1 | tail -15`, believed it had run the runner,
+  // and lost two cycles. The refusal listed the commands it had seen — the
+  // diagnosis was in the message — but never closed the inference to "the
+  // pipe disqualified it". A message holding the data and not the conclusion
+  // costs the reader the cycles it was written to save.
+  const wrapped = afterCommand("timeout 120 npm test 2>&1 | tail -15", false);
+  const decision = evidenceGate(wrapped, ledgerFor(wrapped), check, emptyPolicy());
+
+  assert.equal(decision.allow, false);
+  const reason = (decision as { reason: string }).reason;
+  assert.match(
+    reason,
+    /wrapper|pipe|on its own|exactly/i,
+    `the refusal lists what it saw but never says why it did not count: "${reason}"`,
+  );
+
+  // And the explanation is for the near miss only. A command with nothing to
+  // do with the runner needs no lecture about pipes, and adding one to every
+  // refusal is how a useful sentence turns into noise nobody reads.
+  const unrelated = afterCommand("cargo build", false);
+  const other = evidenceGate(unrelated, ledgerFor(unrelated), check, emptyPolicy()) as { reason: string };
+  assert.doesNotMatch(
+    other.reason,
+    /pipe|wrapper|on its own/i,
+    `an unrelated command got the wrapper explanation: "${other.reason}"`,
+  );
+});
