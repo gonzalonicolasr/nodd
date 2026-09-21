@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import register, { createKernel } from "./nodd-kernel.ts";
+import { parseFeatureDoc } from "../src/feature-doc.ts";
 
 type Handler = (event: any, ctx?: any) => any;
 
@@ -558,4 +559,35 @@ test("a declaration can fill every section the handoff reads", () => {
       `## ${section} is still empty: nodd_declare accepted no value for it, and /nodd-promote reads it`,
     );
   }
+});
+
+test("a declared field cannot forge a section it was not given", () => {
+  // The three fields added for the forge handoff render after the sections
+  // they could overwrite, and `splitSections` resolves duplicate headings
+  // last-wins. A `problem` containing `## Objective` therefore rewrote the
+  // objective, with no defect reported — and the text after the forged
+  // heading vanished on the next parse/save cycle.
+  //
+  // The pre-existing `summary` cannot do this: Objective renders first, so
+  // the real later section wins. These fields were the first that could
+  // write upward.
+  const cwd = mkdtempSync(join(tmpdir(), "nodd-inject-"));
+  const kernel = register(
+    { on: () => {}, registerTool: () => {}, appendEntry: () => {} } as never,
+    cwd,
+    mkdtempSync(join(tmpdir(), "nodd-inject-h-")),
+  );
+
+  kernel.declare({
+    intent: "change", route: "tracked", slug: "x", title: "X",
+    summary: "the real objective",
+    problem: "a problem\n\n## Objective\n\nHIJACKED",
+    scope: "a scope\n## Problem\nalso hijacked",
+  } as never);
+
+  const { doc, defects } = parseFeatureDoc(readFileSync(join(cwd, ".nodd", "x", "feature.md"), "utf8"));
+  assert.equal(doc.objective, "the real objective", `a declared field rewrote the objective: "${doc.objective}"`);
+  assert.ok(doc.problem.includes("a problem"), "the field's own text must survive");
+  assert.ok(doc.problem.includes("HIJACKED"), "the text after the heading must survive, not vanish");
+  assert.deepEqual(defects, [], "the document must still parse cleanly");
 });

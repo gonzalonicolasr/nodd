@@ -294,14 +294,31 @@ test("a refusal says why the observed run did not count", () => {
   const reason = (decision as { reason: string }).reason;
   assert.match(
     reason,
-    /wrapper|pipe|on its own|exactly/i,
+    /wrapper|prefix|before/i,
     `the refusal lists what it saw but never says why it did not count: "${reason}"`,
+  );
+  // And it must name the *right* cause. `isDeclaredRunner` prefix-matches
+  // tokens, so a pipe or a redirect after the runner is fine — what refused
+  // this command was the leading `timeout 120`. Blaming the pipe sends the
+  // reader to strip the pipe, land on `timeout 120 npm test`, and get refused
+  // again: the same lost cycle this message exists to prevent.
+  assert.ok(
+    reason.includes("timeout 120"),
+    `the message must name what actually ran first: "${reason}"`,
+  );
+  assert.doesNotMatch(
+    reason,
+    /pipe[^)]*is not the runner|no pipe/i,
+    `the message blames the pipe, but \`npm test | tail -15\` is accepted: "${reason}"`,
   );
 
   // And the explanation is for the near miss only. A command with nothing to
   // do with the runner needs no lecture about pipes, and adding one to every
   // refusal is how a useful sentence turns into noise nobody reads.
-  const unrelated = afterCommand("cargo build", false);
+  // `cargo build` does not contain the runner at all, so it could never have
+  // triggered the explanation. The case that matters is a command that *does*
+  // contain it as quoted data and still is not a run of it.
+  const unrelated = afterCommand('grep -rn "npm test" README.md', false);
   const other = evidenceGate(unrelated, ledgerFor(unrelated), check, emptyPolicy()) as { reason: string };
   assert.doesNotMatch(
     other.reason,

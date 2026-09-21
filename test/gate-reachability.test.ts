@@ -42,6 +42,16 @@ import { evidenceGate } from "../src/gates/evidence.ts";
 const UNIVERSAL_REMEDY =
   /report .*(block|delegator)|ask the user|write .*directly|run the verification command/i;
 
+/**
+ * The subset an actor with no tools and no slash commands can always perform.
+ *
+ * `ask the user` belongs in `UNIVERSAL_REMEDY` — a human reader can do it —
+ * but a subagent cannot, and measuring the prefix against it made the clause
+ * below blind: the old `promotion` order put "ask the user" second, scored a
+ * prefix of one, and passed while still burying the reachable option third.
+ */
+const REACHABLE_BY_ANYONE = /report .*(block|delegator)|write .*directly|run the verification command/i;
+
 const declared = (route: "inline" | "tracked" | "forge", intent: "read-only" | "change" = "change"): Committed => ({
   ...emptyCommitted(),
   declaration: { intent, route, slug: "demo", title: "T", summary: "s" } as never,
@@ -219,15 +229,24 @@ test("the remedy that needs no tool is not buried last", () => {
   // the reader got through two dead ends.
   //
   // Order is not design, it is wording, and a remedy list is read top to
-  // bottom by someone who is already blocked.
+  // bottom by someone who is already blocked — so the reachable option leads,
+  // with nothing before it. `ask the user` is deliberately excluded from the
+  // measure: a person can do it, a subagent cannot, and counting it as
+  // reachable is what let the old promotion order pass this clause.
   for (const gate of GATE_IDS) {
     const { action } = refusalOf(gate);
-    const universal = action.search(UNIVERSAL_REMEDY);
+    const universal = action.search(REACHABLE_BY_ANYONE);
     if (universal === -1) continue; // clause 1 already fails that case
-    const alternatives = action.slice(0, universal).split(/,| or /).filter((part) => part.trim()).length;
-    assert.ok(
-      alternatives <= 1,
-      `gate ${gate} puts ${alternatives} unreachable options before the one that needs no tool: "${action}"`,
+    // Count options by their separators, not by splitting: a prefix ending in
+    // "…, or " holds one option but splits into one part, so `split` scored a
+    // two-option list as one. Counting `or` separators before the reachable
+    // remedy is what the clause actually means, and it does not care about
+    // commas inside an option.
+    const before = (action.slice(0, universal).match(/\bor\b/g) ?? []).length;
+    assert.equal(
+      before,
+      0,
+      `gate ${gate} puts ${before + 1} options before the one that needs no tool: "${action}"`,
     );
   }
 });

@@ -97,6 +97,32 @@ function deny(reason: string, remedy: string = REMEDY): EvidenceDecision {
   return { allow: false, gate: "evidence", reason: refusal.reason, remedy: refusal.remedy };
 }
 
+/**
+ * What runs before the declared runner, when the runner is there but not first.
+ *
+ * `grep -rn "npm test" README.md` contains the runner as *data*, not as a
+ * command, so it gets no explanation — the near miss worth naming is the one
+ * where the runner really would have run had nothing preceded it.
+ */
+function prefixBeforeRunner(command: string, runner: string): string | null {
+  const at = command.indexOf(runner);
+  if (at <= 0) return null;
+  const before = command.slice(0, at);
+  // The runner is an argument, not a command, when a quote or a flag precedes
+  // it (`git commit -m "…npm test…"`) or when a quote is still open anywhere
+  // before it. Only a prefix that ends where a command can start counts.
+  if (/["'=]\s*$/.test(before)) return null;
+  const quotes = (before.match(/"/g) ?? []).length + (before.match(/'/g) ?? []).length;
+  if (quotes % 2 === 1) return null;
+  const trimmed = before.trim();
+  if (trimmed === "") return null;
+  // `echo npm test` prints it; nothing ran. A prefix that only writes its
+  // arguments out is not a wrapper, and telling the reader to remove it would
+  // be advice about a command they never meant as a run.
+  if (/^(echo|printf|cat|grep|rg|git commit)\b/.test(trimmed)) return null;
+  return trimmed;
+}
+
 export function evidenceGate(
   committed: Committed,
   ledger: LedgerRecord[],
@@ -158,17 +184,23 @@ export function evidenceGate(
     const observed = runs.map((run) => `\`${run.command}\``).join(", ");
     // Naming what was observed is not the same as saying why it did not
     // count. A real session lost two cycles to `timeout 120 npm test | tail`:
-    // the agent believed it had run the runner, and the message — which held
-    // the evidence — never closed the inference to "the wrapper disqualified
-    // it". Say the rule when the near-miss is visible, and only then.
-    const nearMiss = runs.some((run) => run.command.includes(request.runner!));
+    // the message held the evidence and made the reader derive the rule.
+    //
+    // The rule has to be the true one. `isDeclaredRunner` matches a prefix, so
+    // what follows the runner — a pipe, a redirect, `|| true` — is fine; what
+    // refuses is anything *before* it. An earlier version of this message
+    // blamed the pipe, which would send the reader to strip the pipe, land on
+    // `timeout 120 npm test`, and be refused again.
+    const prefixed = runs
+      .map((run) => prefixBeforeRunner(run.command, request.runner!))
+      .find((prefix): prefix is string => prefix !== null);
     return deny(
       `this feature declared \`${request.runner}\` as its verification runner, and no observed command was a run of it (observed: ${observed})` +
-        (nearMiss
-          ? `. A run wrapped in a pipe, a redirect or another command is not the runner: NODD reads the command it was given, not what the shell eventually executed`
+        (prefixed
+          ? `. \`${prefixed}\` runs before it, and a runner reached through another command is not the runner: NODD reads the command it was given, not what the shell eventually resolved`
           : ""),
-      nearMiss
-        ? `run \`${request.runner}\` on its own — no pipe, no redirect, no wrapper — then check ${request.task} off once it is observed to succeed`
+      prefixed
+        ? `run \`${request.runner}\` with nothing before it — a pipe or redirect after it is fine — then check ${request.task} off once it is observed to succeed`
         : `run \`${request.runner}\`, then check ${request.task} off once it is observed to succeed`,
     );
   }

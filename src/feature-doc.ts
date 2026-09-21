@@ -149,6 +149,22 @@ function renderTask(task: Task): string {
   ].join("\n");
 }
 
+/**
+ * Prose that cannot open a section.
+ *
+ * `splitSections` resolves duplicate `## X` headings last-wins, and the free
+ * prose fields render before Route and Verification — so a `problem`
+ * containing `## Objective` silently rewrote the objective, and everything
+ * after the forged heading vanished on the next parse/save cycle.
+ *
+ * Indenting keeps the author's text visible and readable while making it a
+ * paragraph rather than a heading. Refusing the declaration instead would
+ * punish a legitimate `## ` in a code sample the user meant to record.
+ */
+function asProse(text: string): string {
+  return text.replace(/^(#+ )/gm, " $1");
+}
+
 export function renderFeatureDoc(doc: FeatureDoc): string {
   const body = [
     `# Feature: ${doc.title}`,
@@ -157,19 +173,19 @@ export function renderFeatureDoc(doc: FeatureDoc): string {
     "",
     "## Objective",
     "",
-    doc.objective,
+    asProse(doc.objective),
     "",
     "## Problem",
     "",
-    doc.problem,
+    asProse(doc.problem),
     "",
     "## Scope",
     "",
-    doc.scope,
+    asProse(doc.scope),
     "",
     "## Constraints",
     "",
-    doc.constraints,
+    asProse(doc.constraints),
     "",
     "## Route",
     "",

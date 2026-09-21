@@ -78,6 +78,6 @@ export function trackGate(
     // Two remedies, because the first one can itself be unavailable: a
     // subagent has no slash commands, and a broken `nodd_declare` used to
     // leave no action at all. Writing the document is always reachable.
-    `call \`nodd_declare\` with slug \`${declaration.slug}\` to create ${path}, or write ${path} directly`,
+    `write ${path} directly, or call \`nodd_declare\` with slug \`${declaration.slug}\` to create it`,
   );
 }
