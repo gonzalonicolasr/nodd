@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A wrapper no longer hides a heredoc body: `sudo bash <<EOF`,
   `sudo -u root bash <<EOF`, `nice -n 10 bash <<EOF`,
   `timeout --signal=KILL 5 bash <<EOF` and `cat <<EOF | env bash` all run the
-  body, so the body is read as a script. What still hides one is a wrapper that
-  *names* a command instead of running it — `command -v bash`, `xargs -I bash`,
-  `env -u bash` — and that is now the declared boundary.
+  body, so the body is read as a script — including boolean short flags like
+  `sudo -n` and `command -p`. What still hides one is a wrapper that *names* a
+  command instead of running it: `command -v bash` and `xargs -I bash`.
+  (`env -u VAR cmd` runs `cmd`; an earlier entry here claimed otherwise and was
+  wrong.)
 - The heredoc check and the script-file check now resolve a command word
   through one shared helper. They were two loops that kept drifting apart:
   one learned about `then`/`do` and the other did not, so

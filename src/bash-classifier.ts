@@ -55,25 +55,26 @@ function commandHeadAt(tokens: Token[], start: number): { head: Token; at: numbe
   // `-u root`, `--user=root`, a bare `5` for `timeout`.
   //
   // What decides is *which* wrapper, not what the flag looks like. `sudo`,
-  // `env`, `timeout` and friends run the command that follows; `command -v`,
-  // `xargs -I` and `env -u` take a command *name* as an argument and never run
-  // it, so walking past their flag lands on a word that is not a command.
+  // `env`, `timeout` and friends run the command that follows, whatever flags
+  // they carry; only `command -v` and `xargs -I` take a command *name* as an
+  // argument and never run it. (`env -u VAR cmd` runs `cmd` — `-u` names a
+  // variable. Three rounds carried the opposite claim in a comment.)
   while (WRAPPERS.has(baseOf(head.text)) && tokens[at + 1]) {
     const naming = NAMING_FLAGS[baseOf(head.text)];
     if (naming?.test(tokens[at + 1].text)) return null;
     head = tokens[++at];
-    // Skip the wrapper's own flags and env assignments. A short flag without
-    // `=` takes the next word as its value (`sudo -u root`, `timeout -k 5`),
-    // so that word goes with it — otherwise the walk stops on `root` and calls
-    // it the command.
+    // Skip the wrapper's own flags and their values — but stop at an
+    // interpreter. Flag arity is per wrapper, not per letter (`-n` takes a
+    // value for `nice`, is boolean for `sudo`), and three rounds of guessing
+    // it traded one breakage for another. A wrapper's flag value is never
+    // `bash`; if it ever were, refusing a read is the cheaper mistake than
+    // missing `sudo -n bash <<EOF rm -rf /important EOF`.
     while (tokens[at + 1] && (head.text.startsWith("-") || /^\d+[smhd]?$/.test(head.text))) {
-      // A short flag that takes a value swallows the next word with it
-      // (`sudo -u root`, `timeout -k 5`, `nice -n 10`). A boolean short flag
-      // does not (`sudo -i`, `env -i`, `stdbuf -o0`), and eating the word
-      // after it would eat the interpreter.
-      const takesValue = VALUE_FLAGS.test(head.text);
       head = tokens[++at];
-      if (takesValue && tokens[at + 1] && !head.text.startsWith("-")) head = tokens[++at];
+      // A flag's value is one word, and only when it is not an interpreter.
+      if (tokens[at + 1] && !head.text.startsWith("-") && !INTERPRETERS.has(baseOf(head.text))) {
+        if (!WRAPPERS.has(baseOf(head.text))) head = tokens[++at];
+      }
     }
   }
   while (head.text.includes("=") && !head.text.startsWith("-") && tokens[at + 1]) head = tokens[++at];
@@ -170,9 +171,6 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
  * beside the covered table, because a partial mechanism that presents itself as
  * total is how ODD ended up promising compliance while shipping delivery.
  */
-/** Short wrapper flags whose value is the next word, not part of the flag. */
-const VALUE_FLAGS = /^-[unkgsIpTd]$/;
-
 /**
  * Flags that make a wrapper *name* a command instead of running it.
  *
@@ -183,8 +181,6 @@ const VALUE_FLAGS = /^-[unkgsIpTd]$/;
 const NAMING_FLAGS: Record<string, RegExp> = {
   command: /^-[vV]$/,
   xargs: /^-(I|-replace)/,
-  // `sudo -u root bash` runs bash; `env -u VAR cmd` names a variable to drop.
-  env: /^-(u|-unset)/,
 };
 
 const WRAPPERS = new Set([
@@ -287,7 +283,7 @@ export const NOT_COVERED: string[] = [
   "an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)",
   "a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)",
   "an interpreter reached through a variable or an alias: `I=node; $I x.js`",
-  "a wrapper that names a command instead of running it: `command -v node`, `xargs -I node echo`",
+  "a wrapper that names a command instead of running it: `command -v node`, `xargs -I node echo` (a wrapper that *runs* one is covered, whatever flags it carries)",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
   "a pre-existing background process",

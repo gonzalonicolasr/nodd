@@ -455,7 +455,9 @@ test("a wrapper's own flags belong to it, whatever their shape", () => {
     );
   }
   // These name a command instead of running one: the heredoc stays data.
-  for (const naming of ["command -v bash &&", "command -V bash &&", "xargs -I bash echo", "env -u bash cat"]) {
+  // `env -u bash cat` is NOT here: `-u` names a variable to unset, so env runs
+  // `cat` — the old assertion passed on a rule that was factually wrong.
+  for (const naming of ["command -v bash &&", "command -V bash &&", "xargs -I bash echo"]) {
     assert.equal(
       classifyBash(`${naming} cat <<'EOF'\nrm -rf build\nEOF`),
       "non-mutating",
@@ -466,4 +468,30 @@ test("a wrapper's own flags belong to it, whatever their shape", () => {
   assert.equal(classifyBash("sudo --user=root node x.js"), "mutating");
   assert.equal(classifyBash("env FOO=bar node x.js"), "mutating");
   assert.equal(classifyBash("command -v node"), "non-mutating");
+});
+
+test("a boolean wrapper flag does not swallow the interpreter", () => {
+  // Three rounds of guessing flag arity, each trading one breakage for
+  // another. Arity is per wrapper, not per letter: `-n` takes a value for
+  // `nice` and is boolean for `sudo`. Rather than keep guessing, the walk
+  // stops at the first word that is a known interpreter — a wrapper's flag
+  // value is never `bash`, and if it ever is, refusing a read is the cheaper
+  // mistake than missing `sudo -n bash <<EOF rm -rf /important EOF`.
+  for (const w of ["sudo -n", "sudo -k", "sudo -s", "sudo -u root", "sudo --user=root", "sudo -i",
+                   "command -p", "xargs -p", "nice -n 10", "nice --adjustment=10",
+                   "timeout -k 5 5", "timeout --signal=KILL 5", "stdbuf -o0",
+                   "env -i", "env -u NODE_ENV", "env --unset=NODE_ENV", "env -C /tmp"]) {
+    assert.equal(
+      classifyBash(`${w} bash <<'EOF'\nrm -rf build\nEOF`),
+      "mutating",
+      `${w} runs bash, so the heredoc body is a script`,
+    );
+  }
+  // `env -u VAR cmd` runs cmd: -u names a variable, not a command.
+  assert.equal(classifyBash("env -u VAR node x.js"), "mutating");
+  assert.equal(classifyBash("env --unset=VAR node x.js"), "mutating");
+  // Still naming rather than running: the argument *is* the command name.
+  assert.equal(classifyBash("command -v bash && cat <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
+  assert.equal(classifyBash("command -V bash && cat <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
+  assert.equal(classifyBash("xargs -I bash echo <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
 });

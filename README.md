@@ -175,7 +175,7 @@ These mutation vectors reach the filesystem without this classifier noticing:
 - an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)
 - a script piped into an interpreter: `cat gen.py | python3`, or an argument NODD cannot see is a file: `node x` (no extension, no path)
 - an interpreter reached through a variable or an alias: `I=node; $I x.js`
-- a wrapper that names a command instead of running it: `command -v node`, `xargs -I node echo`
+- a wrapper that names a command instead of running it: `command -v node`, `xargs -I node echo` (a wrapper that *runs* one is covered, whatever flags it carries)
 - compilers, formatters and codegen writing as a side effect
 - redirection hidden behind a variable or `eval`
 - a pre-existing background process
