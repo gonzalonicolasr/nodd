@@ -5,6 +5,27 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-09-21
+
+### Fixed
+
+- A wrapper no longer hides an interpreter, whatever flags it carries.
+  `sudo -n bash <<EOF`, `sudo -u root bash <<EOF`, `command -p bash <<EOF`,
+  `env -u VAR bash <<EOF` and `timeout --signal=KILL 5 bash <<EOF` all run the
+  body, so the body is read as a script. Measured 48/48 against 41/48 in 0.7.2.
+- Flag arity is no longer guessed. `-n` takes a value for `nice` and is boolean
+  for `sudo`; three attempts to encode that as a rule each traded one breakage
+  for another. The walk now skips a wrapper's flags and stops at the first
+  interpreter, which needs no table.
+- `env -u VAR cmd` runs `cmd`. An earlier release claimed `-u` named a command;
+  it names a variable, and that claim cost four missed writes.
+
+### Changed
+
+- `Known limitations` states the boundary as behaviour rather than syntax: a
+  wrapper that *runs* a command is covered whatever flags it carries; one that
+  *names* a command — `command -v`, `xargs -I` — is not.
+
 ## [0.7.2] - 2026-09-20
 
 ### Fixed
