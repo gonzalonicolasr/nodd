@@ -5,6 +5,24 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] - 2026-09-21
+
+### Added
+
+- `nodd_declare` accepts `problem`, `scope` and `constraints`. The feature
+  document had those three sections and nothing could fill them, so every
+  document was born one third empty — and `/nodd-promote` reads all three into
+  the forge handoff, where they printed "Not recorded in the NODD run" every
+  time. All optional: a small inline fix owes no problem statement.
+
+### Fixed
+
+- A refusal from `gate-evidence` now says *why* the observed run did not count.
+  A real session ran `timeout 120 npm test 2>&1 | tail -15`, believed it had
+  run the declared runner, and lost two cycles: the message listed what it had
+  seen but never named the rule. It does now, and only when the near miss is
+  visible — an unrelated command gets no lecture about pipes.
+
 ## [0.7.3] - 2026-09-21
 
 ### Fixed
