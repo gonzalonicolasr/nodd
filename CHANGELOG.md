@@ -5,6 +5,27 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026-09-21
+
+### Fixed
+
+- The refusal from `gate-evidence` names the right cause. 0.7.4 blamed the
+  pipe, which is false: a runner is matched by prefix, so `npm test | tail -15`
+  is accepted and recorded. What refuses is anything *before* the runner, and
+  the message now quotes it — `timeout 120` — and says a pipe after the runner
+  is fine. It also stopped lecturing `grep -rn "npm test"`, `git commit -m
+  "…npm test…"` and `echo npm test`, none of which ran anything.
+- A declared `problem`, `scope` or `constraints` can no longer forge a section.
+  Duplicate headings resolve last-wins and free prose renders before the
+  structured sections, so a field containing `## Objective` silently rewrote
+  the objective and lost its own tail on the next save. Headings inside prose
+  are indented instead of refused: a `## ` in a recorded code sample should
+  survive, just not as a heading.
+- The reachability invariant measures against the remedies a subagent can
+  actually perform. `ask the user` counts for a person and not for a delegated
+  worker, and counting it made the clause blind to the ordering it was written
+  to catch. `gate-track` now leads with `write … directly`.
+
 ## [0.7.4] - 2026-09-21
 
 ### Added
@@ -20,8 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A refusal from `gate-evidence` now says *why* the observed run did not count.
   A real session ran `timeout 120 npm test 2>&1 | tail -15`, believed it had
   run the declared runner, and lost two cycles: the message listed what it had
-  seen but never named the rule. It does now, and only when the near miss is
-  visible — an unrelated command gets no lecture about pipes.
+  seen but never named the rule. (0.7.4 named the wrong rule — see 0.7.5.)
 
 ## [0.7.3] - 2026-09-21
 
