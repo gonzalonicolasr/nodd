@@ -440,3 +440,30 @@ test("a heredoc fed to an interpreter is a script, not data", () => {
   assert.equal(classifyBash("cat <<'EOF'\nconst f = (a) => a + 1;\nEOF"), "non-mutating");
   assert.equal(classifyBash("cat <<'PY'\nprint(1 > 0)\nPY"), "non-mutating");
 });
+
+test("a wrapper's own flags belong to it, whatever their shape", () => {
+  // Splitting on flag *shape* — long skipped, short not — was a guess, and it
+  // broke on `--flag=value` because the env-assignment branch fired first.
+  // What separates the two cases is the wrapper: `sudo -u root bash` runs
+  // bash, while `command -v bash` and `xargs -I bash` take a command *name*
+  // as their argument and never run it.
+  for (const wrapper of ["sudo --user=root", "sudo -u root", "sudo -i", "nice --adjustment=10", "nice -n 10", "timeout --signal=KILL 5", "timeout -k 5 5", "stdbuf -o0", "env -i", "env --ignore-environment"]) {
+    assert.equal(
+      classifyBash(`${wrapper} bash <<'EOF'\nrm -rf build\nEOF`),
+      "mutating",
+      `${wrapper} runs bash, so the body is a script`,
+    );
+  }
+  // These name a command instead of running one: the heredoc stays data.
+  for (const naming of ["command -v bash &&", "command -V bash &&", "xargs -I bash echo", "env -u bash cat"]) {
+    assert.equal(
+      classifyBash(`${naming} cat <<'EOF'\nrm -rf build\nEOF`),
+      "non-mutating",
+      `${naming} does not run bash`,
+    );
+  }
+  // The same rule on the script-file path, which shares the helper.
+  assert.equal(classifyBash("sudo --user=root node x.js"), "mutating");
+  assert.equal(classifyBash("env FOO=bar node x.js"), "mutating");
+  assert.equal(classifyBash("command -v node"), "non-mutating");
+});
