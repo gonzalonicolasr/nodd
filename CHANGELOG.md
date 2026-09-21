@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6] - 2026-09-21
+
+### Fixed
+
+- `gate-delegate` counts the files the current task wrote, not everything the
+  session ever touched. Finishing one feature and declaring the next carried
+  the first one's file count forward, so the first write of a new task could be
+  refused over work already done — and a threshold that fires on history nobody
+  can undo is one an actor learns to route around. The threshold is unchanged:
+  the second file of a single task still trips it.
+
 ## [0.7.5] - 2026-09-21
 
 ### Fixed
