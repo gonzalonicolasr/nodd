@@ -77,7 +77,18 @@ function scenarioFor(gate: string): Record<string, unknown> {
     case "track":
       return { committed: declared("tracked") };
     case "delegate":
-      return { committed: { ...declared("inline"), filesWritten: new Set(["a.ts", "b.ts"]) } };
+      // A `Map` of write records, as `fold` builds it: `gate-delegate` counts
+      // only what was written after the declaration, so a bare set of paths
+      // carries no `seq` and would no longer trip the threshold.
+      return {
+        committed: {
+          ...declared("inline"),
+          filesWritten: new Map([
+            ["a.ts", { at: "2026-09-19T10:00:00.000Z", seq: 1 }],
+            ["b.ts", { at: "2026-09-19T10:00:00.000Z", seq: 2 }],
+          ]),
+        },
+      };
     case "promotion":
       return { signals: { declaredFiles: 1, observedFiles: 9, slug: "demo", route: "tracked" } };
     case "evidence":

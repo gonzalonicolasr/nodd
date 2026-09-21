@@ -27,12 +27,21 @@ import { allow, refuse, resolveFlag, type GateDecision, type Policy } from "./po
 import { isFileWrite, targetPath, type GateRequest } from "./request.ts";
 
 /**
- * Files this session wrote, plus the ones it is about to. Write *intent* is
- * known at preflight, so counting a sibling's intent is sound; a sibling's
- * result is not observable yet and is never counted.
+ * Files written under the current declaration, plus the ones about to be.
+ * Write *intent* is known at preflight, so counting a sibling's intent is
+ * sound; a sibling's result is not observable yet and is never counted.
+ *
+ * Writes from before the declaration belong to an earlier task. Counting them
+ * made the first write of a new feature inherit the previous feature's total,
+ * so a long session refused work it had every right to do — and a threshold
+ * that fires on history nobody can undo is one an actor learns to route
+ * around, which is worse than no threshold at all.
  */
 function writtenFiles(committed: Committed, request: GateRequest, pending: Map<string, PendingCall>): Set<string> {
-  const files = new Set(committed.filesWritten.keys());
+  const since = committed.declaration?.seq ?? 0;
+  const files = new Set(
+    [...committed.filesWritten.entries()].filter(([, write]) => write.seq > since).map(([path]) => path),
+  );
   for (const call of pending.values()) {
     if (isFileWrite(call)) {
       const path = targetPath(call);

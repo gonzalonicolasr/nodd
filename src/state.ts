@@ -37,6 +37,12 @@ export type Declaration = {
   route: Route;
   slug: string;
   /**
+   * Where in observation order this declaration was made. Writes before it
+   * belong to whatever task came earlier: a session that finishes one feature
+   * and declares the next must not carry the first one's file count into it.
+   */
+  seq: number;
+  /**
    * The verification command this feature is checked with, as declared. Evidence
    * must come from it: without this, any exit-0 string the model chose certifies
    * any task, and `echo 'tests pass'` is a valid receipt.
@@ -164,6 +170,7 @@ export function fold(committed: Committed, obs: Observation): Committed {
         intent: intent as Intent,
         route: route as Route,
         slug,
+        seq: next.toolCalls,
         runner: str(obs.input.runner),
         // Anything but the literal `strict` is off. A mode NODD cannot read is
         // not a mode it gets to assume.

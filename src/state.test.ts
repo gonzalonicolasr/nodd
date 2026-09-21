@@ -41,7 +41,7 @@ test("a fixed sequence folds into an exact snapshot", () => {
   assert.equal(committed.delegations, 1);
   assert.equal(committed.toolCalls, 12);
   assert.deepEqual(committed.declaration, {
-    intent: "change", route: "tracked", slug: "demo", runner: null, tdd: "off", files: [],
+    intent: "change", route: "tracked", slug: "demo", runner: null, tdd: "off", files: [], seq: 12,
   });
   // Bash records are stored raw. Whether a command mutates is the classifier's
   // judgement (T014) and is derived at gate time, so the ledger never
@@ -156,8 +156,33 @@ test("a later declaration replaces the earlier one", () => {
     obs({ toolName: "nodd_declare", input: { intent: "change", route: "tracked", slug: "b" } }),
   ]);
   assert.deepEqual(committed.declaration, {
-    intent: "change", route: "tracked", slug: "b", runner: null, tdd: "off", files: [],
+    intent: "change", route: "tracked", slug: "b", runner: null, tdd: "off", files: [], seq: 2,
   });
+});
+
+test("a declaration records where in the session it started to apply", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "write", input: { path: "antes.ts" } }),
+    obs({ toolName: "nodd_declare", input: { intent: "change", route: "inline", slug: "a" } }),
+  ]);
+  assert.equal(
+    committed.declaration?.seq,
+    committed.toolCalls,
+    "the declaration knows the observation count at which it was made",
+  );
+});
+
+test("re-declaring moves the boundary, so the previous task's writes fall outside it", () => {
+  const committed = foldAll(emptyCommitted(), [
+    obs({ toolName: "nodd_declare", input: { intent: "change", route: "tracked", slug: "calc", files: ["calc.js"] } }),
+    obs({ toolName: "write", input: { path: "calc.js" } }),
+    obs({ toolName: "write", input: { path: "guards.js" } }),
+    obs({ toolName: "nodd_declare", input: { intent: "change", route: "inline", slug: "monitores", files: ["monitors.lua"] } }),
+  ]);
+  const boundary = committed.declaration?.seq ?? 0;
+  const under = [...committed.filesWritten.entries()].filter(([, w]) => w.seq > boundary);
+  assert.deepEqual(under, [], "nothing has been written yet under the new declaration");
+  assert.equal(committed.filesWritten.size, 2, "the earlier writes are still on the record, just not this task's");
 });
 
 test("a refused write does not count as a write", () => {
