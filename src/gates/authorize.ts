@@ -59,8 +59,9 @@ export function authorizeGate(
     return refuse(
       "authorize",
       `this request was declared \`intent: read-only\`, and ${what}`,
-      "delegate to a read-only agent, or call `nodd_declare` again with `intent: change` if the user did authorize one, " +
-        "or report the block to whoever delegated this work",
+      "report the block to whoever delegated this work, " +
+        "or delegate to a read-only agent, " +
+        "or call `nodd_declare` again with `intent: change` if the user did authorize one",
     );
   }
 
@@ -74,7 +75,7 @@ export function authorizeGate(
     // fire, and a child kernel starts with none — but that is an argument
     // about reachability today, not a property of the gate. Naming a remedy
     // that needs no tool costs nothing and does not depend on it holding.
-    "if the user did authorize a change, call `nodd_declare` again with `intent: change`, " +
-      "or report the block to whoever delegated this work",
+    "report the block to whoever delegated this work, " +
+      "or, if the user did authorize a change, call `nodd_declare` again with `intent: change`",
   );
 }

@@ -210,3 +210,24 @@ test("a child kernel's first write is refused with a remedy it can reach", () =>
     `a delegated worker has no tools to act on: "${remedy}"`,
   );
 });
+
+test("the remedy that needs no tool is not buried last", () => {
+  // Two reviewers and one live session reported the same thing: when the
+  // refused actor is a subagent, the first remedy needs `nodd_declare` and the
+  // hatch needs a slash command — neither reachable — and the one that always
+  // works is third, in prose. It saved the session every time, but only after
+  // the reader got through two dead ends.
+  //
+  // Order is not design, it is wording, and a remedy list is read top to
+  // bottom by someone who is already blocked.
+  for (const gate of GATE_IDS) {
+    const { action } = refusalOf(gate);
+    const universal = action.search(UNIVERSAL_REMEDY);
+    if (universal === -1) continue; // clause 1 already fails that case
+    const alternatives = action.slice(0, universal).split(/,| or /).filter((part) => part.trim()).length;
+    assert.ok(
+      alternatives <= 1,
+      `gate ${gate} puts ${alternatives} unreachable options before the one that needs no tool: "${action}"`,
+    );
+  }
+});

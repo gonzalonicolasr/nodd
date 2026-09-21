@@ -59,9 +59,9 @@ export function promotionGate(signals: PromotionSignals, request: GateRequest, p
   // just blocked, so there is nothing for the refused actor to *do*.
   // Reporting upward needs no tool and is reachable by anyone.
   const action =
-    `promote the run with \`/nodd-promote ${signals.slug}\` so forge plans the rest, ` +
-    "or ask the user to confirm the divergence is not real, " +
-    "or report the block to whoever delegated this work";
+    "report the block to whoever delegated this work, " +
+    `or promote the run with \`/nodd-promote ${signals.slug}\` so forge plans the rest, ` +
+    "or ask the user to confirm the divergence is not real";
 
   if (signals.consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
     return refuse(

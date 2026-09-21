@@ -62,8 +62,9 @@ export function delegateGate(
   // often — a writer, mid-write. Reporting the block back to the delegator
   // needs no tool at all, so it is reachable by anyone.
   const remedy =
-    "delegate the work with the `subagent` tool, or declare this as small inline work, " +
-    "or report the block to whoever delegated this work";
+    "report the block to whoever delegated this work, " +
+    "or delegate the work with the `subagent` tool, " +
+    "or declare this as small inline work";
 
   const written = writtenFiles(committed, request, pending);
   if (written.size >= THRESHOLDS.writerMinNonTrivialFiles) {
