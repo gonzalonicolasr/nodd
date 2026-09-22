@@ -47,9 +47,10 @@ export function classifyGate(
   return refuse(
     "classify",
     `no route has been declared for this session, and ${request.toolName} would be the first change`,
-    // The reachable remedy leads. A subagent has neither `nodd_declare` nor
-    // slash commands, so a list that opens with two dead ends makes the
-    // blocked reader work through both before finding the one that applies.
+    // The remedy that needs no tool leads, because the refusal cannot know
+    // what its reader holds. NODD's own generated agents now carry
+    // `nodd_declare` and will take the second option; an agent from anywhere
+    // else may not have it, and for that reader the first one always works.
     "report this back to the delegator so it can declare a route, " +
       "or call `nodd_declare` yourself with an explicit intent and route (`inline`, `tracked` or `forge`)",
   );

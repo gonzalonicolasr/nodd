@@ -202,3 +202,23 @@ test("running the migration twice writes only once", () => {
   const backups = readdirSync(join(home, ".pi")).filter((f) => f.startsWith("nodd.json.bak-"));
   assert.equal(backups.length, 1, "only the first run backs up");
 });
+
+test("a generated agent can declare its own route, so the gates it inherits are reachable", () => {
+  // The spike (`spike/subagent-enforcement/RESULT.md`) measured that NODD's
+  // gates *do* load in delegated children, because NODD ships as an installed
+  // package. So a child hits `gate-classify` on its first write — and had no
+  // way to clear it: no `nodd_declare` in its toolset and no slash commands.
+  // Every delegated writer was blocked on arrival, which is what made a forge
+  // run and NODD mutually exclusive.
+  //
+  // Giving the child `nodd_declare` does not hand it authority it should not
+  // have. The two read-only agents can only declare `read-only`, which takes
+  // authority away; and a declaration is still just a declaration — every
+  // other gate keeps measuring the child's own observations.
+  for (const agent of NODD_AGENTS) {
+    assert.ok(
+      agent.tools.includes("nodd_declare"),
+      `${agent.slot} cannot declare a route, so gate-classify blocks it with a remedy it cannot perform`,
+    );
+  }
+});

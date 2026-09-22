@@ -246,18 +246,29 @@ test("the remedy that needs no tool is not buried last", () => {
   // reachable is what let the old promotion order pass this clause.
   for (const gate of GATE_IDS) {
     const { action } = refusalOf(gate);
-    const universal = action.search(REACHABLE_BY_ANYONE);
+    const plain = action.replace(/\([^)]*\)/g, "");
+    const universal = plain.search(REACHABLE_BY_ANYONE);
     if (universal === -1) continue; // clause 1 already fails that case
     // Count options by their separators, not by splitting: a prefix ending in
     // "…, or " holds one option but splits into one part, so `split` scored a
     // two-option list as one. Counting `or` separators before the reachable
     // remedy is what the clause actually means, and it does not care about
     // commas inside an option.
-    const before = (action.slice(0, universal).match(/\bor\b/g) ?? []).length;
+    // Parenthesised asides enumerate values, not remedies: "(`inline`,
+    // `tracked` or `forge`)" is one option's argument list, and counting its
+    // `or` as a separate dead end fails a message that leads correctly. They
+    // are blanked before the prefix is measured, so a slice never lands
+    // inside one.
+    // Position, not arithmetic: the reachable remedy must be the first or the
+    // second option. Counting `or` separators confused the one that
+    // introduces the universal remedy with one that buries it, which let the
+    // old `authorize` and `track` orders through.
+    const options = plain.split(/,? or /);
+    const rank = options.findIndex(option => REACHABLE_BY_ANYONE.test(option));
     assert.equal(
-      before,
+      rank,
       0,
-      `gate ${gate} puts ${before + 1} options before the one that needs no tool: "${action}"`,
+      `gate ${gate} puts the remedy that needs no tool at position ${rank + 1} of ${options.length}: "${action}"`,
     );
   }
 });

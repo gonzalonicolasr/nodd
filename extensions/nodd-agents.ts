@@ -51,28 +51,35 @@ export const NODD_AGENTS: readonly NoddAgent[] = Object.freeze([
   {
     slot: "explore",
     description: "NODD explore step: map existing code and requirements, read-only",
-    tools: ["read", "grep", "ls", "bash"],
+    tools: ["read", "grep", "ls", "bash", "nodd_declare"],
     purpose:
       "Map the existing code and requirements for the task you are given. You are read-only: " +
-      "report what is there, where it is, and what it implies. Do not write, edit or delegate a writer.",
+      "report what is there, where it is, and what it implies. Do not write, edit or delegate a writer. " +
+      "Start by calling `nodd_declare` with `intent: read-only`, `route: inline` and a slug for this task: " +
+      "NODD's gates run in here too, and a mutating command is refused until a route is declared.",
   },
   {
     slot: "resolve-uncertainty",
     description: "NODD resolve-uncertainty step: research one named uncertainty, read-only",
-    tools: ["read", "grep", "ls", "bash"],
+    tools: ["read", "grep", "ls", "bash", "nodd_declare"],
     purpose:
       "Research the one named uncertainty you were given. Prefer primary sources, attribute every claim " +
       "to a URL or a code location, and distinguish verified facts from assumptions. Research is read-only " +
-      "and does not authorize implementation.",
+      "and does not authorize implementation. " +
+      "Start by calling `nodd_declare` with `intent: read-only`, `route: inline` and a slug for this task: " +
+      "NODD's gates run in here too, and a mutating command is refused until a route is declared.",
   },
   {
     slot: "implement",
     description: "NODD implement step: change the code for one task and verify it",
-    tools: ["read", "grep", "ls", "write", "edit", "bash"],
+    tools: ["read", "grep", "ls", "write", "edit", "bash", "nodd_declare"],
     purpose:
       "Implement the one task you were given and verify it by running the project's own checks. " +
       "Report the observed result of those checks verbatim, including failures — never a summary that " +
-      "claims a pass you did not see.",
+      "claims a pass you did not see. " +
+      "Start by calling `nodd_declare` with `intent: change`, the route your delegator gave you, a slug " +
+      "for this task and the verification command as `runner`: NODD's gates run in here too, and the " +
+      "first write is refused until a route is declared.",
   },
 ]);
 
