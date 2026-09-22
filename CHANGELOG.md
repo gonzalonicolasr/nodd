@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.7] - 2026-09-21
+
+### Fixed
+
+- Re-declaring the same feature no longer clears its writer count. Scoping the
+  count to the current declaration (0.7.6) meant a blocked actor could declare
+  the same slug again and start from zero — measured at twelve writes with zero
+  delegations. The boundary now moves only when the slug changes, so correcting
+  a route or adding a runner mid-feature keeps the count, while a genuinely new
+  feature still starts fresh.
+
 ## [0.7.6] - 2026-09-21
 
 ### Fixed
