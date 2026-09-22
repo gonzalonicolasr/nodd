@@ -170,7 +170,11 @@ export function fold(committed: Committed, obs: Observation): Committed {
         intent: intent as Intent,
         route: route as Route,
         slug,
-        seq: next.toolCalls,
+        // The boundary moves only when the feature changes. Re-declaring the
+        // same slug — which a blocked actor can do for free — would otherwise
+        // push the boundary past the files it just wrote and clear the
+        // writer count, turning `gate-delegate` into one call to skip.
+        seq: next.declaration?.slug === slug ? next.declaration.seq : next.toolCalls,
         runner: str(obs.input.runner),
         // Anything but the literal `strict` is off. A mode NODD cannot read is
         // not a mode it gets to assume.

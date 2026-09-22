@@ -135,8 +135,11 @@ test("only nodd_declare changes the declaration", () => {
     input: { intent: "change", route: "tracked", slug: "demo" },
     isError: false, resultText: "", at: "2026-09-19T10:06:00.000Z",
   }));
+  // The intent and route are replaced, but `seq` stays at the first
+  // declaration of this slug: re-declaring the same feature continues it
+  // rather than starting a new one, so the writer count is not cleared.
   assert.deepEqual(declarationAfter(committed), {
-    intent: "change", route: "tracked", slug: "demo", runner: null, tdd: "off", files: [], seq: 2,
+    intent: "change", route: "tracked", slug: "demo", runner: null, tdd: "off", files: [], seq: 1,
   });
 });
 

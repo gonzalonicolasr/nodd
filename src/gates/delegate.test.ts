@@ -182,3 +182,39 @@ test("the remedy is reachable by a writer that cannot delegate or declare", () =
     `a refusal whose every remedy needs a tool the actor lacks is a deadlock; got: ${decision.allow === false ? decision.remedy.action : ""}`,
   );
 });
+
+test("re-declaring the same feature does not reset the writer count", () => {
+  // Scoping the count to the current declaration (so a new feature does not
+  // inherit the previous one's total) handed the blocked actor a one-call
+  // escape: declare the same slug again and the files it just wrote fall
+  // before the new boundary. The threshold then never fires, no matter how
+  // many files the task writes.
+  //
+  // A declaration that names a *different* feature is a real boundary. One
+  // that repeats the current slug is the same task continuing.
+  n = 0;
+  const declare = () => obs("nodd_declare", { intent: "change", route: "inline", slug: "f" });
+  const committed = foldAll(emptyCommitted(), [
+    declare(),
+    obs("write", { path: "a.ts" }),
+    obs("write", { path: "b.ts" }),
+  ]);
+  assert.equal(delegateGate(committed, write, emptyPolicy(), noPending).allow, false,
+    "two written files must trip the writer threshold");
+
+  const afterRedeclaring = foldAll(committed, [declare()]);
+  assert.equal(delegateGate(afterRedeclaring, write, emptyPolicy(), noPending).allow, false,
+    "re-declaring the same slug must not clear what this task already wrote");
+});
+
+test("declaring a different feature does start a fresh count", () => {
+  n = 0;
+  const committed = foldAll(emptyCommitted(), [
+    obs("nodd_declare", { intent: "change", route: "inline", slug: "first" }),
+    obs("write", { path: "a.ts" }),
+    obs("write", { path: "b.ts" }),
+    obs("nodd_declare", { intent: "change", route: "inline", slug: "second" }),
+  ]);
+  assert.equal(delegateGate(committed, write, emptyPolicy(), noPending).allow, true,
+    "a new feature must not inherit the previous one's file count");
+});
