@@ -5,6 +5,25 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-09-21
+
+### Added
+
+- The three generated agents carry `nodd_declare`, so a delegated child can
+  clear `gate-classify` itself. The spike had measured that NODD's gates load
+  inside children; the children just had no way past them, so every delegated
+  writer was blocked on arrival and a forge run could not coexist with NODD.
+  The read-only agents can only declare `read-only`, which removes authority
+  rather than granting it, and every other gate still measures the child's own
+  observations.
+
+### Fixed
+
+- The reachability invariant measures the reachable remedy's position among the
+  options instead of counting `or` separators, which had confused the separator
+  introducing the universal remedy with one burying it. It now catches all four
+  pre-`5d296ca` orders, where it previously caught two.
+
 ## [0.7.7] - 2026-09-21
 
 ### Fixed
