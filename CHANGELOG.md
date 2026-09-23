@@ -5,6 +5,14 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2026-09-23
+
+### Changed
+
+- The README and the LICENSE credit ODD and its author,
+  [Gentleman-Programming](https://github.com/Gentleman-Programming). The MIT
+  grant is scoped to this implementation and makes no claim over ODD itself.
+
 ## [0.8.3] - 2026-09-23
 
 ### Changed
