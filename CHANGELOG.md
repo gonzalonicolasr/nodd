@@ -5,6 +5,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-09-23
+
+### Changed
+
+- The README leads with what NODD is: the thesis in both languages, an ODD/NODD
+  table, a quick start showing a refusal and an allow, and the 1893 plates from
+  the landing. The note on how the file is kept honest moved into a collapsible.
+- `test/readme-contract.test.ts` checks gate *counts*, not just gate names. The
+  rewrite shipped a badge claiming seven gates against a registry of six,
+  because `registry.ts` lives in `src/gates/` and got counted as one of the
+  gates it indexes; nothing in the suite could see it.
+
 ## [0.8.0] - 2026-09-21
 
 ### Added
