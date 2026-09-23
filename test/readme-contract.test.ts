@@ -249,3 +249,22 @@ test("every /nodd-gates invocation the README shows is actually accepted", () =>
     );
   }
 });
+
+test("a gate count quoted in the README matches the registry", () => {
+  // The prose contract checks that every gate *named* exists, but a count is
+  // a different claim and nothing measured it. The badge and the opening
+  // sentence both said seven while the registry held six, because `registry.ts`
+  // sits in `src/gates/` and got counted as one of the gates it indexes.
+  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const expected = GATE_IDS.length;
+
+  for (const match of README.matchAll(/\b(\w+)\s+gates\b/gi)) {
+    const spelled = words.indexOf(match[1].toLowerCase());
+    const counted = spelled >= 0 ? spelled : Number(match[1]);
+    if (!Number.isFinite(counted)) continue; // "the gates", "all gates"
+    assert.equal(counted, expected, `README says "${match[0]}", but the registry holds ${expected}`);
+  }
+
+  const badge = /badge\/gates-(\d+)/.exec(README);
+  if (badge) assert.equal(Number(badge[1]), expected, `the badge claims ${badge[1]} gates, the registry holds ${expected}`);
+});

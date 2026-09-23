@@ -1,13 +1,80 @@
-# NODD
+<h1 align="center">NODD</h1>
 
-**N**on-negotiable **O**rganic **D**riven **D**evelopment — the ODD protocol as
-runtime mechanism for pi instead of injected prose: blocking gates fed by real
-tool events, evidence read from observed tool results, and promotion of NODD
-artifacts into `/forge` artifacts.
+<p align="center">
+  <strong>N</strong>on-negotiable <strong>O</strong>rganic <strong>D</strong>riven <strong>D</strong>evelopment<br>
+  <em>The ODD protocol as runtime mechanism for pi — not injected prose.</em>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@gonrocca/nodd"><img alt="npm" src="https://img.shields.io/npm/v/@gonrocca/nodd?color=0b7285&label=npm"></a>
+  <img alt="tests" src="https://img.shields.io/badge/tests-594%20passing-0b7285">
+  <img alt="gates" src="https://img.shields.io/badge/gates-6-0b7285">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-666">
+</p>
+
+---
+
+> **ODD tells the model to delegate. NODD does not let it not delegate.**
+>
+> **ODD le pide al modelo que delegue. NODD no lo deja no delegar.**
+
+**EN** — ODD writes its rules into the prompt and trusts the model to follow
+them; its own notes admit the gap: *"non-delegation is invisible"*. NODD makes
+it visible. Six gates run on `tool_call` and refuse the write **before** it
+happens.
+
+**ES** — ODD escribe sus reglas en el prompt y confía en que el modelo las
+cumpla; el propio ODD admite el agujero: *"non-delegation is invisible"*. NODD
+lo hace visible. Seis gates corren en `tool_call` y rechazan la escritura
+**antes** de que ocurra.
+
+|  | ODD | NODD |
+| --- | --- | --- |
+| Rules live in / Las reglas viven en | the prompt | `tool_call` |
+| Non-compliance is / Incumplir es | invisible | refused + remedy |
+| Done when / Hecho cuando | the model says so | NODD **saw** the runner pass |
+| 56 ODD clauses / 56 cláusulas | 56 prose | **44 mechanized** + 10 prose |
+
+The 10 stay prose on purpose: *"did I explore enough?"* is not observable, and
+forcing it into a number would be the very sin NODD accuses prose of.
+
+Esas 10 quedan como prosa a propósito: *"¿exploré lo suficiente?"* no es
+observable, y mecanizarlo sería el mismo pecado que NODD le critica a la prosa.
+
+### Quick start
+
+```bash
+pi install npm:@gonrocca/nodd
+```
+
+Nothing to configure — every gate is on. / Nada que configurar: todos los gates
+arrancan prendidos.
+
+```
+nodd_declare  slug: dark-mode  intent: change  route: tracked
+              runner: "npm test"
+→ .nodd/dark-mode/feature.md created
+
+ write src/theme.ts  → blocked: no route declared     (before the declaration)
+ write src/theme.ts  → allowed                         (after it)
+ check T1            → blocked: no observed run of `npm test`
+```
+
+**Jump to / Ir a:** [Install](#install) · [Using it](#using-it) ·
+[The gates](#the-gates) · [Enforcement scope](#enforcement-scope) ·
+[Parity matrix](#the-mpf-parity-matrix) · [Commands](#commands) ·
+[Known limitations](#known-limitations)
+
+---
 
 ODD's failure was promising compliance while shipping delivery. This file is
 where NODD refuses to repeat it: everything below states what is mechanized,
 what is only advice, and what is not carried at all.
+
+<details>
+<summary><strong>How this README is kept honest</strong></summary>
+
+<br>
 
 `test/readme-contract.test.ts` holds part of that line mechanically: it fails if
 the README names a gate, a module or a command that does not exist, drops a
@@ -17,6 +84,8 @@ limits. It does **not** parse English: a newly written sentence promising more
 than the code does will not turn it red. Prose added next to a fix is therefore
 the known way this document can drift ahead of the product, and the defence is
 review, not the suite. Round 3 found three such sentences and closed them.
+
+</details>
 
 ## Install
 
