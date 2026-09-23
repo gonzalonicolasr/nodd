@@ -1,8 +1,19 @@
+<p align="center">
+  <a href="https://nodd.ceroclawd.com">
+    <img src="https://nodd.ceroclawd.com/img/fig1.jpg" alt="Grabado de 1893: el peristilo y la cuadriga de la Exposición Colombina de Chicago — una entrada monumental por la que no se pasa sin permiso" width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <sub><em>fig. 1 — la entrada · 1893 · sin delegar, <strong>no pasás</strong></em></sub>
+</p>
+
 <h1 align="center">NODD</h1>
 
 <p align="center">
   <strong>N</strong>on-negotiable <strong>O</strong>rganic <strong>D</strong>riven <strong>D</strong>evelopment<br>
-  <em>The ODD protocol as runtime mechanism for pi — not injected prose.</em>
+  <em>The ODD protocol as runtime mechanism for pi — not injected prose.</em><br>
+  <em>El protocolo ODD como mecanismo, no como prosa inyectada.</em>
 </p>
 
 <p align="center">
@@ -10,6 +21,10 @@
   <img alt="tests" src="https://img.shields.io/badge/tests-594%20passing-0b7285">
   <img alt="gates" src="https://img.shields.io/badge/gates-6-0b7285">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-666">
+</p>
+
+<p align="center">
+  <a href="https://nodd.ceroclawd.com"><strong>nodd.ceroclawd.com</strong></a>
 </p>
 
 ---
@@ -193,6 +208,14 @@ The text forms do the same without the UI:
 /nodd-models profile new rapido
 /nodd-models profile use rapido
 ```
+
+<p align="center">
+  <img src="https://nodd.ceroclawd.com/img/fig2.jpg" alt="Grabado de 1893: la Corte de Honor de la Exposición Colombina, vista desde el edificio de administración" width="100%">
+</p>
+
+<p align="center">
+  <sub><em>fig. 2 — del otro lado del gate · 1893</em></sub>
+</p>
 
 ## The gates
 
