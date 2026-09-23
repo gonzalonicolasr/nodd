@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NODD — tu agente ya no puede saltearse las reglas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 8 8%22%3E%3Crect width=%228%22 height=%228%22 fill=%22%23d0337a%22/%3E%3C/svg%3E">
+<meta name="description" content="NODD: tu agente promete seguir las reglas de ODD. NODD hace que las cumpla. Extensión para pi.">
+<meta property="og:title" content="NODD · tu agente ya no puede saltearse las reglas">
+<meta property="og:description" content="ODD te dice que delegues. NODD no te deja no delegar.">
+<meta property="og:image" content="https://nodd.ceroclawd.com/img/fig1.jpg">
+<style>
+html{background:#f4f2ec;scroll-behavior:smooth}body{-webkit-font-smoothing:antialiased}
+p,h1,h2,h3{text-wrap:pretty}
+a{color:#1b1a17;text-decoration:underline;text-decoration-color:oklch(0.58 0.2 355);text-underline-offset:3px}a:hover{color:oklch(0.5 0.2 355)}
+::selection{background:oklch(0.93 0.04 355);color:#1b1a17}:focus-visible{outline:2px solid oklch(0.58 0.2 355);outline-offset:2px}
+.tab[aria-selected="true"]{color:#1b1a17;border-color:#1b1a17}
+.plate{background:oklch(0.9 0.05 355)}.plate img{filter:grayscale(1) contrast(1.2);mix-blend-mode:multiply}
+</style>
+</head>
+<body class="bg-ink text-fg font-sans">
+<header class="border-b border-line sticky top-0 bg-ink/95 backdrop-blur z-20">
+<div class="max-w-3xl mx-auto px-5 h-12 flex items-center justify-between font-mono text-[13px]">
+<span class="font-semibold tracking-wide flex items-center gap-2"><span class="w-2 h-2 bg-gentle"></span>nodd</span>
+<nav class="flex items-center gap-5 text-mute"><a href="#como" class="hidden sm:inline" style="text-decoration:none">cómo funciona</a><a href="#instalar" style="text-decoration:none">instalar</a><span class="text-dim">v0.8.0</span></nav>
+</div>
+</header>
+<main>
+
+<section class="max-w-6xl mx-auto px-5 pt-6" data-screen-label="Ilustración">
+<div class="plate relative aspect-[16/9] sm:aspect-[21/9]">
+<img src="./img/fig1.jpg" alt="Grabado: el peristilo y la cuadriga, Exposición Colombina de Chicago, 1893" class="absolute inset-0 w-full h-full object-cover">
+</div>
+<div class="mt-3 flex flex-wrap justify-between gap-x-6 gap-y-1 font-mono text-[12px]"><span class="text-dim">fig. 1 — la entrada · 1893</span><span class="text-mute">sin delegar, <span class="text-block font-semibold">no pasás</span>.</span></div>
+</section>
+<section class="max-w-3xl mx-auto px-5 pt-16 pb-6 sm:pt-20" data-screen-label="Hero">
+<p class="font-mono text-[13px] text-mute mb-8">para pi · hecho sobre <span class="text-gentle font-medium">ODD de Gentleman-Programming</span></p>
+<h1 class="text-[40px] leading-[1.06] sm:text-[62px] font-semibold tracking-[-0.025em]">ODD te dice que delegues.<br>NODD no te deja no&nbsp;delegar.</h1>
+<p class="mt-7 text-xl sm:text-2xl leading-snug max-w-[32rem] text-mute">Tu agente promete seguir las reglas. <span class="text-fg">NODD hace que las cumpla.</span></p>
+<button data-copy="npm i @gonrocca/nodd" class="group mt-9 font-mono text-[14px] border border-fg bg-fg text-ink hover:opacity-90 px-4 h-11 flex items-center gap-3 text-left"><span class="opacity-50">$</span><span>npm i @gonrocca/nodd</span><span class="copy-label opacity-50 ml-4 text-[12px]">copiar</span></button>
+</section>
+
+
+
+<div class="max-w-3xl mx-auto px-5">
+
+<section class="py-20" data-screen-label="Qué hace">
+<ul class="grid sm:grid-cols-3 gap-px bg-line border border-line">
+<li class="bg-ink p-5"><p class="text-[17px] leading-snug">Nada está hecho hasta que <b class="font-medium">los tests corren</b>.</p></li>
+<li class="bg-ink p-5"><p class="text-[17px] leading-snug">Si tiene que delegar, <b class="font-medium">delega</b>.</p></li>
+<li class="bg-ink p-5"><p class="text-[17px] leading-snug">Cada freno te dice <b class="font-medium">por qué</b>.</p></li>
+</ul>
+</section>
+
+<section id="como" class="py-20 border-t border-line" data-screen-label="Cómo funciona">
+<h2 class="text-3xl sm:text-4xl font-semibold tracking-[-0.015em] leading-tight">Cómo funciona.</h2>
+<div class="mt-10 grid sm:grid-cols-2 gap-px bg-line border border-line font-mono text-[13px]">
+<div class="bg-ink p-5"><p class="text-gentle mb-4">solo ODD</p><ol class="space-y-2 text-mute"><li>1. la regla va en el prompt</li><li>2. el modelo la lee</li><li>3. <span class="text-fg">cruzás los dedos</span></li></ol></div>
+<div class="bg-ink p-5"><p class="text-fg mb-4">con NODD</p><ol class="space-y-2 text-mute"><li>1. el agente intenta algo</li><li>2. NODD lo revisa</li><li>3. pasa, o <span class="text-block font-semibold">se frena</span></li></ol></div>
+</div>
+<p class="mt-8 text-[17px] text-mute">Ejemplo: tenía que delegar y no lo hizo.</p>
+<div class="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[13px]">
+<div class="border border-line p-4"><p class="text-dim">lee</p><p class="mt-2 text-mute">✓ pasa</p></div>
+<div class="border border-line p-4"><p class="text-dim">lee</p><p class="mt-2 text-mute">✓ pasa</p></div>
+<div class="border border-line p-4"><p class="text-dim">escribe</p><p class="mt-2 text-mute">✓ pasa</p></div>
+<div class="border border-block p-4"><p class="text-block">escribe otra sin delegar</p><p class="mt-2 text-block font-semibold">✗ frenado</p></div>
+</div>
+
+</section>
+
+<section class="py-20 border-t border-line" data-screen-label="Terminal">
+<h2 class="text-3xl sm:text-4xl font-semibold tracking-[-0.015em] leading-tight">Cuando el agente se quiere avivar.</h2>
+<div class="mt-10 border border-line bg-panel">
+<div role="tablist" class="flex border-b border-line font-mono text-[12px] overflow-x-auto">
+<button role="tab" class="tab px-4 h-10 border-b-2 border-transparent text-dim hover:text-mute -mb-px whitespace-nowrap" data-tab="evidence" aria-selected="true">"ya pasaron los tests"</button>
+<button role="tab" class="tab px-4 h-10 border-b-2 border-transparent text-dim hover:text-mute -mb-px whitespace-nowrap" data-tab="delegate" aria-selected="false">"lo hago yo solo"</button>
+<button role="tab" class="tab px-4 h-10 border-b-2 border-transparent text-dim hover:text-mute -mb-px whitespace-nowrap" data-tab="authorize" aria-selected="false">"arranco sin plan"</button>
+</div>
+<pre data-pane="evidence" class="p-5 font-mono text-[13px] leading-[1.7] overflow-x-auto text-mute"><span class="text-block font-semibold">✗ nodd · evidence · BLOCKED</span>
+  <span class="text-fg">cannot mark T3 as done: verification not observed.</span>
+  declared:  npm test
+  observed:  timeout 120 npm test</pre>
+<pre data-pane="delegate" hidden class="p-5 font-mono text-[13px] leading-[1.7] overflow-x-auto text-mute"><span class="text-block font-semibold">✗ nodd · delegate · BLOCKED</span>
+  <span class="text-fg">write #2 without prior delegation.</span>
+  reads: 2   writes: 1   delegations: 0</pre>
+<pre data-pane="authorize" hidden class="p-5 font-mono text-[13px] leading-[1.7] overflow-x-auto text-mute"><span class="text-block font-semibold">✗ nodd · authorize · BLOCKED</span>
+  <span class="text-fg">no route declared for this session.</span>
+  the first write requires a declared route.</pre>
+</div>
+<p class="mt-5 text-[17px] text-mute" data-caption></p>
+</section>
+
+<section class="py-20 border-t border-line" data-screen-label="Qué cubre">
+<h2 class="text-3xl sm:text-4xl font-semibold tracking-[-0.015em] leading-tight">44 de las reglas de ODD, con candado.</h2>
+<div class="mt-10 flex h-9 font-mono text-[12px]">
+<div class="bg-fg text-ink flex items-center px-3" style="width:81.5%">44 las controla NODD</div>
+<div class="bg-gentlesoft text-fg flex items-center px-3" style="width:18.5%">10</div>
+</div>
+<p class="mt-6 text-[17px] leading-relaxed text-mute max-w-[34rem]">Las otras 10 son de criterio, como "¿exploré lo suficiente?". No se pueden medir, así que <span class="text-fg">no fingimos que sí</span>.</p>
+</section>
+</div>
+
+<section id="instalar" class="border-t border-line" data-screen-label="Cierre">
+<div class="max-w-3xl mx-auto px-5 pt-24 pb-12">
+<p class="text-4xl sm:text-6xl font-semibold tracking-[-0.025em] leading-[1.02]">Dejá de confiar.<br>Empezá a verificar.</p>
+<div class="mt-10 flex flex-col sm:flex-row sm:items-center gap-4">
+<button data-copy="npm i @gonrocca/nodd" class="group font-mono text-[14px] border border-fg bg-fg text-ink hover:opacity-90 px-4 h-11 flex items-center gap-3 text-left"><span class="opacity-50">$</span><span>npm i @gonrocca/nodd</span><span class="copy-label opacity-50 ml-4 text-[12px]">copiar</span></button>
+<a href="https://www.npmjs.com/package/@gonrocca/nodd" class="font-mono text-[13px]">ver en npm</a>
+</div>
+</div>
+<div class="max-w-6xl mx-auto px-5">
+<div class="plate relative aspect-[16/9] sm:aspect-[2/1]"><img src="./img/fig2.jpg" alt="Grabado: la Corte de Honor desde el edificio de Administración, Exposición Colombina de Chicago, 1893" loading="lazy" class="absolute inset-0 w-full h-full object-cover"></div>
+<div class="mt-3 font-mono text-[12px] text-dim">fig. 2 — del otro lado del gate · 1893</div>
+</div>
+</section>
+</main>
+<footer>
+<div class="max-w-6xl mx-auto px-5 py-6 flex flex-wrap justify-between gap-x-6 gap-y-2 font-mono text-[12px] text-dim"><span>nodd 0.8.0</span><span>las reglas son de <span class="text-gentle">ODD · Gentleman-Programming</span></span></div>
+</footer>
+<script>
+document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{navigator.clipboard?.writeText(b.dataset.copy);const l=b.querySelector('.copy-label');const t=l.textContent;l.textContent='copiado';setTimeout(()=>l.textContent=t,1400)}));
+const caps={evidence:'Corrió los tests envueltos en otro comando. <span class="text-fg">No cuenta.</span>',delegate:'Tenía que delegar y quiso escribir solo. <span class="text-fg">Frenado.</span>',authorize:'Quiso escribir sin decir por dónde iba. <span class="text-fg">Rechazado.</span>'};
+const tabs=document.querySelectorAll('[data-tab]'),cap=document.querySelector('[data-caption]');
+function show(k){tabs.forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===k));document.querySelectorAll('[data-pane]').forEach(p=>p.hidden=p.dataset.pane!==k);cap.innerHTML=caps[k]}
+tabs.forEach(t=>t.addEventListener('click',()=>show(t.dataset.tab)));show('evidence');
+</script>
+</body>
+</html>

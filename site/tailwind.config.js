@@ -1,0 +1,1 @@
+module.exports={content:['./index.html'],theme:{extend:{colors:{ink:'#f4f2ec',panel:'#ebe8df',line:'#dcd8cd',fg:'#1b1a17',mute:'#5d5a52',dim:'#8a867c',block:'oklch(0.56 0.19 30)',gentle:'oklch(0.58 0.2 355)',gentlesoft:'oklch(0.93 0.04 355)'},fontFamily:{sans:['"IBM Plex Sans"','system-ui','sans-serif'],mono:['"IBM Plex Mono"','ui-monospace','monospace']}}}}
