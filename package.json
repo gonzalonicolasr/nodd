@@ -35,6 +35,7 @@
     "test",
     "CHANGELOG.md",
     "README.md",
+    "docs",
     "LICENSE"
   ],
   "scripts": {

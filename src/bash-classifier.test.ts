@@ -108,11 +108,16 @@ test("the not-covered list is non-empty and names scripts and indirect writers",
   }
 });
 
-const README = readFileSync(join(dirname(dirname(fileURLToPath(import.meta.url))), "README.md"), "utf8");
+// The bash gate's coverage table moved to the reference when the README was
+// cut down to an entry point. What matters is that the table a reader can find
+// still matches the classifier, not which file it sits in.
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const README =
+  readFileSync(join(ROOT, "README.md"), "utf8") + "\n" + readFileSync(join(ROOT, "docs", "reference.md"), "utf8");
 
 function bashSection(): string {
   const start = README.indexOf("## The bash gate");
-  assert.ok(start >= 0, "README must carry a `## The bash gate` section");
+  assert.ok(start >= 0, "the docs must carry a `## The bash gate` section");
   const rest = README.slice(start + 1);
   const end = rest.indexOf("\n## ");
   return end < 0 ? rest : rest.slice(0, end);

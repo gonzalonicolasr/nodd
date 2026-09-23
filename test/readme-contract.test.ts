@@ -7,10 +7,20 @@ import { runGatesCommand } from "../extensions/nodd-gates.ts";
 import { CANONICAL_STEPS } from "../src/manifest.ts";
 
 const README = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+const REFERENCE = readFileSync(new URL("../docs/reference.md", import.meta.url), "utf8");
+
+/**
+ * The documented surface, wherever it lives.
+ *
+ * The README is the entry point and the reference holds the operating detail,
+ * but every limit this suite pins has to keep being stated somewhere a reader
+ * reaches. Splitting the files must not be a way to drop a disclosure.
+ */
+const DOCS = `${README}\n${REFERENCE}`;
 
 /** A section and everything under it, up to the next heading of the same level. */
 function section(heading: RegExp): string {
-  const lines = README.split("\n");
+  const lines = DOCS.split("\n");
   const start = lines.findIndex((line) => /^#{2,3} /.test(line) && heading.test(line));
   assert.ok(start >= 0, `missing section matching ${heading}`);
   const level = (/^#+/.exec(lines[start]) ?? ["##"])[0].length;
@@ -37,14 +47,14 @@ test("every registered gate id appears in the README", () => {
 });
 
 test("every gate the README names is actually registered", () => {
-  const claimed = [...README.matchAll(/`gate-([a-z-]+)`/g)].map((m) => m[1]);
+  const claimed = [...DOCS.matchAll(/`gate-([a-z-]+)`/g)].map((m) => m[1]);
   for (const gate of new Set(claimed)) {
     assert.ok((GATE_IDS as readonly string[]).includes(gate), `README claims gate-${gate}, which does not exist`);
   }
 });
 
 test("every module the README cites exists on disk", () => {
-  const cited = [...README.matchAll(/`(src\/[a-z-]+(?:\/[a-z-]+)?\.ts)`/g)].map((m) => m[1]);
+  const cited = [...DOCS.matchAll(/`(src\/[a-z-]+(?:\/[a-z-]+)?\.ts)`/g)].map((m) => m[1]);
   const existing = new Set<string>();
   for (const dir of ["src", "src/gates", "src/models"]) {
     for (const file of readdirSync(new URL(`../${dir}/`, import.meta.url))) existing.add(`${dir}/${file}`);
@@ -96,8 +106,8 @@ test("the bash coverage section claims no exhaustiveness", () => {
 });
 
 test("the per-process counter limitation is stated, with no claim of a session total", () => {
-  assert.match(README, /per-process|por proceso/i);
-  assert.match(README, /no aggregate|sin total|does not claim/i);
+  assert.match(DOCS, /per-process|por proceso/i);
+  assert.match(DOCS, /no aggregate|sin total|does not claim/i);
 });
 
 test("the resume behaviour is documented as expected, with its reason", () => {
@@ -108,8 +118,8 @@ test("the resume behaviour is documented as expected, with its reason", () => {
 });
 
 test("unverified and mismatch are distinguished", () => {
-  assert.ok(README.includes("unverified") && README.includes("mismatch"));
-  const unverifiedLine = README.split("\n").find((l) => l.includes("unverified") && l.includes("mismatch"))
+  assert.ok(DOCS.includes("unverified") && DOCS.includes("mismatch"));
+  const unverifiedLine = DOCS.split("\n").find((l) => l.includes("unverified") && l.includes("mismatch"))
     ?? section(/[Ll]edger|[Ee]vidence/);
   assert.match(unverifiedLine, /contradic|mismatch/i, "mismatch must be described as contradicting an observation");
 });
@@ -125,8 +135,8 @@ test("the kill-switch semantics are stated without a re-enable suggestion", () =
 });
 
 test("the escalation-divergence divergence from ODD is declared, naming routing.go:68", () => {
-  assert.ok(README.includes("routing.go:68"), "the divergent clause must be cited by line");
-  const around = README.slice(Math.max(0, README.indexOf("routing.go:68") - 600), README.indexOf("routing.go:68") + 600);
+  assert.ok(DOCS.includes("routing.go:68"), "the divergent clause must be cited by line");
+  const around = DOCS.slice(Math.max(0, DOCS.indexOf("routing.go:68") - 600), DOCS.indexOf("routing.go:68") + 600);
   assert.match(around, /diverg/i, "and labelled as a deliberate divergence");
 });
 
@@ -149,12 +159,12 @@ test("the README's matrix summary agrees with the matrix itself", () => {
       rows.some((row) => row.includes(`**${marker}**`)),
       `the matrix assigns no (${marker}): fix the matrix or stop advertising the class`,
     );
-    assert.ok(README.includes(`(${marker})`), `the README must explain what (${marker}) means`);
+    assert.ok(DOCS.includes(`(${marker})`), `the docs must explain what (${marker}) means`);
   }
 
   // A quoted total is how "fully classified" quietly stops being true as ODD's
   // surface grows, so if the README states one it must be the real one.
-  const quoted = README.match(/(\d+)\s+(?:clauses|rows)\b/i);
+  const quoted = DOCS.match(/(\d+)\s+(?:clauses|rows)\b/i);
   if (quoted) {
     assert.equal(Number(quoted[1]), rows.length, `the README says ${quoted[1]}, the matrix has ${rows.length}`);
   }
@@ -178,7 +188,7 @@ test("no code path references the gentle-ai binary", () => {
 });
 
 test("the README does not promise a command the package does not register", () => {
-  const claimed = new Set([...README.matchAll(/`\/(nodd-[a-z-]+)/g)].map((m) => m[1]));
+  const claimed = new Set([...DOCS.matchAll(/`\/(nodd-[a-z-]+)/g)].map((m) => m[1]));
   const registered = new Set<string>();
   const url = new URL("../extensions/", import.meta.url);
   for (const file of readdirSync(url)) {
@@ -201,7 +211,7 @@ test("the README does not claim authorize blocks all delegation", () => {
   // `a24b1cf` made read-only delegation legal, which is what ODD :70/:92
   // requires. A README that still promises a blanket block over-promises
   // enforcement that no longer exists.
-  const row = /\|\s*`gate-authorize`\s*\|([^|]*)\|/.exec(README);
+  const row = /\|\s*`gate-authorize`\s*\|([^|]*)\|/.exec(DOCS);
   assert.ok(row, "expected a gate-authorize row in the gate table");
   assert.ok(
     !/delegation\s*(\||,|$)/.test(row[1]),
@@ -236,7 +246,7 @@ test("every /nodd-gates invocation the README shows is actually accepted", () =>
   // in the paragraph explaining how to stop a gate. Verbs are part of the
   // promise, so they get run.
   const io = { readConfig: () => ({}), writeConfig: () => {} };
-  const shown = [...README.matchAll(/`\/nodd-gates ([^`]*)`/g)].map((m) => m[1].trim());
+  const shown = [...DOCS.matchAll(/`\/nodd-gates ([^`]*)`/g)].map((m) => m[1].trim());
   assert.ok(shown.length > 0, "expected the README to show at least one /nodd-gates invocation");
 
   for (const args of shown) {
@@ -258,7 +268,7 @@ test("a gate count quoted in the README matches the registry", () => {
   const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
   const expected = GATE_IDS.length;
 
-  for (const match of README.matchAll(/\b(\w+)\s+gates\b/gi)) {
+  for (const match of DOCS.matchAll(/\b(\w+)\s+gates\b/gi)) {
     const spelled = words.indexOf(match[1].toLowerCase());
     const counted = spelled >= 0 ? spelled : Number(match[1]);
     if (!Number.isFinite(counted)) continue; // "the gates", "all gates"
