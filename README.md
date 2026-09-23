@@ -17,6 +17,12 @@
 </p>
 
 <p align="center">
+  <strong>ODD is the work of <a href="https://github.com/Gentleman-Programming">Gentleman-Programming</a>
+  (<a href="https://x.com/G_Programming">@G_Programming</a>).</strong><br>
+  Every rule NODD enforces is his. This project only makes them non-negotiable.
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/@gonrocca/nodd"><img alt="npm" src="https://img.shields.io/npm/v/@gonrocca/nodd?color=0b7285&label=npm"></a>
   <img alt="tests" src="https://img.shields.io/badge/tests-594%20passing-0b7285">
   <img alt="gates" src="https://img.shields.io/badge/gates-6-0b7285">
@@ -90,6 +96,18 @@ nodd_declare  slug: dark-mode  intent: change  route: tracked
 deliberate divergence from ODD, and known limitations.
 
 ---
+
+## Credit / Créditos
+
+**EN** — The workflow, the seven canonical steps, the delegation thresholds and
+the 56 clauses this project measures itself against all come from **ODD**, by
+[Gentleman-Programming](https://github.com/Gentleman-Programming). NODD
+contributes one thing: the enforcement. Without ODD there is no rule to enforce.
+
+**ES** — El workflow, los siete pasos canónicos, los umbrales de delegación y las
+56 cláusulas contra las que este proyecto se mide salen todas de **ODD**, de
+[Gentleman-Programming](https://github.com/Gentleman-Programming). NODD aporta
+una sola cosa: que se cumplan. Sin ODD no hay regla que imponer.
 
 ODD's failure was promising compliance while shipping delivery. This file is
 where NODD refuses to repeat it: everything below states what is mechanized,
