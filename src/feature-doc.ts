@@ -13,6 +13,9 @@ import { defaultDelivery, parseDelivery, renderDelivery, type Delivery } from ".
 export type Intent = "read-only" | "change";
 export type Route = "inline" | "tracked" | "forge";
 
+/** The routes a declaration may name, in escalation order. */
+export const ROUTES: readonly Route[] = Object.freeze(["inline", "tracked", "forge"]);
+
 /**
  * How this feature is verified, fixed at declaration time. `gate-evidence` will
  * only accept a run of `runner`, so a checkoff cannot be satisfied by whatever

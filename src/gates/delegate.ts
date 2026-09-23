@@ -39,17 +39,29 @@ import { isFileWrite, targetPath, type GateRequest } from "./request.ts";
  */
 function writtenFiles(committed: Committed, request: GateRequest, pending: Map<string, PendingCall>): Set<string> {
   const since = committed.declaration?.seq ?? 0;
+  // Files the declaration named are not counted. The trigger exists to catch a
+  // session sprawling past what it set out to do, and a declaration that lists
+  // its files up front is the opposite of that: the scope was stated before the
+  // work began, and `gate-promotion` already holds the session to that list.
+  //
+  // Counting them made the generated writer unable to work at all. It carries
+  // no `subagent` tool, so "delegate" — the remedy the refusal names — is the
+  // one thing its own toolset forbids, and with a threshold of two it could
+  // write a single file. Implementation plus its test is two.
+  const promised = new Set(committed.declaration?.files ?? []);
   const files = new Set(
-    [...committed.filesWritten.entries()].filter(([, write]) => write.seq > since).map(([path]) => path),
+    [...committed.filesWritten.entries()]
+      .filter(([path, write]) => write.seq > since && !promised.has(path))
+      .map(([path]) => path),
   );
   for (const call of pending.values()) {
     if (isFileWrite(call)) {
       const path = targetPath(call);
-      if (path) files.add(path);
+      if (path && !promised.has(path)) files.add(path);
     }
   }
   const path = targetPath(request);
-  if (path) files.add(path);
+  if (path && !promised.has(path)) files.add(path);
   return files;
 }
 

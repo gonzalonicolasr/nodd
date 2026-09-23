@@ -19,6 +19,7 @@ import {
   emptyDoc,
   parseFeatureDoc,
   renderFeatureDoc,
+  ROUTES,
   type FeatureDoc,
   type Intent,
   type Route,
@@ -69,7 +70,6 @@ type PiApi = {
 };
 
 const INTENTS: readonly Intent[] = ["read-only", "change"];
-const ROUTES: readonly Route[] = ["inline", "tracked", "forge"];
 
 /** `.nodd/<slug>/feature.md` — the durable, extension-owned NODD artifact. */
 export function featureDocPath(cwd: string, slug: string): string {

@@ -218,3 +218,44 @@ test("declaring a different feature does start a fresh count", () => {
   assert.equal(delegateGate(committed, write, emptyPolicy(), noPending).allow, true,
     "a new feature must not inherit the previous one's file count");
 });
+
+test("files the declaration named do not count toward the writer trigger", () => {
+  // `nodd-implement` — the agent NODD generates to implement — carries no
+  // `subagent` tool. `gate-delegate` told it to delegate, its own toolset
+  // forbade the only remedy that would clear the block, and it could write
+  // exactly one file before being refused. Implementation plus its test is two
+  // files, so the generated writer could not perform the most ordinary task
+  // there is.
+  //
+  // A declaration that names its files up front is the opposite of the
+  // sprawling session the trigger exists to catch: the scope was stated before
+  // the work started, and `gate-promotion` already holds it to that list. What
+  // still fires the trigger is writing files the declaration never mentioned.
+  n = 0;
+  const declared = foldAll(emptyCommitted(), [
+    obs("nodd_declare", { intent: "change", route: "tracked", slug: "f", files: ["a.ts", "b.ts"] }),
+    obs("write", { path: "a.ts" }),
+  ]);
+  assert.equal(
+    delegateGate(declared, { toolName: "write", input: { path: "b.ts" } }, emptyPolicy(), noPending).allow,
+    true,
+    "the second declared file must not trip the writer trigger",
+  );
+});
+
+test("undeclared files still trip the writer trigger, at the same threshold", () => {
+  // The exemption covers what the declaration named, and nothing else. Two
+  // files outside the list still fire the trigger, exactly as they would with
+  // no declaration at all — scope creep is what the trigger is for.
+  n = 0;
+  const declared = foldAll(emptyCommitted(), [
+    obs("nodd_declare", { intent: "change", route: "tracked", slug: "f", files: ["a.ts"] }),
+    obs("write", { path: "a.ts" }),
+    obs("write", { path: "surprise.ts" }),
+  ]);
+  assert.equal(
+    delegateGate(declared, { toolName: "write", input: { path: "another.ts" } }, emptyPolicy(), noPending).allow,
+    false,
+    "two files past the declaration must trip it",
+  );
+});
