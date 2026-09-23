@@ -24,7 +24,10 @@
 </p>
 
 <p align="center">
-  <a href="https://nodd.ceroclawd.com"><strong>nodd.ceroclawd.com</strong></a>
+  <a href="https://nodd.ceroclawd.com"><strong>nodd.ceroclawd.com</strong></a> ·
+  <a href="https://github.com/gonzalonicolasr/nodd">GitHub</a> ·
+  <a href="https://www.npmjs.com/package/@gonrocca/nodd">npm</a> ·
+  <a href="https://github.com/gonzalonicolasr/nodd/issues">Issues</a>
 </p>
 
 ---
@@ -74,6 +77,8 @@ nodd_declare  slug: dark-mode  intent: change  route: tracked
  write src/theme.ts  → allowed                         (after it)
  check T1            → blocked: no observed run of `npm test`
 ```
+
+**Source / Código:** [github.com/gonzalonicolasr/nodd](https://github.com/gonzalonicolasr/nodd) — MIT.
 
 **Jump to / Ir a:** [Install](#install) · [Using it](#using-it) ·
 [The gates](#the-gates) · [Enforcement scope](#enforcement-scope) ·
