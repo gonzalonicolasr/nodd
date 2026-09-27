@@ -74,10 +74,18 @@ export function runGatesCommand(args: string, io: ConfigIo, flags: Record<string
   if (!verb || verb === "status") return renderStatus(io.readConfig(), flags);
 
   if (verb !== "enable" && verb !== "disable") {
-    return `nodd-gates: usage — /nodd-gates [status|enable <gate>|disable <gate>]`;
+    return `nodd-gates: usage — /nodd-gates [status|enable <gate|all>|disable <gate|all>]`;
+  }
+  if (gate === "all") {
+    const value = verb === "enable";
+    const raw = io.readConfig();
+    const gates = { ...(raw.gates as Record<string, unknown> | undefined) };
+    for (const id of GATE_IDS) gates[id] = { enabled: value };
+    io.writeConfig(mergeConfig(raw, { gates }));
+    return `nodd: all gates ${verb}d.`;
   }
   if (!gate || !isGateId(gate)) {
-    return `nodd-gates: unknown gate "${gate ?? ""}". Valid gates: ${GATE_IDS.join(", ")}`;
+    return `nodd-gates: unknown gate "${gate ?? ""}". Valid gates: ${GATE_IDS.join(", ")}, all`;
   }
 
   if (verb === "disable") {
@@ -107,7 +115,7 @@ export default function register(pi?: PiApi): void {
   });
 
   pi?.registerCommand?.("nodd-gates", {
-    description: "Read or set NODD's per-gate switches: /nodd-gates [status|enable <gate>|disable <gate>]",
+    description: "Read or set NODD's per-gate switches: /nodd-gates [status|enable <gate|all>|disable <gate|all>]",
     handler: (args: string, ctx: unknown) => {
       const notify = (ctx as { ui?: { notify?(m: string, t?: string): void } })?.ui?.notify;
       try {

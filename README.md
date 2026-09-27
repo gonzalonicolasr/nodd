@@ -177,7 +177,8 @@ strict TDD. A model writing "all tests pass" changes nothing — the evidence li
 in the document is rendered from the observed tool result, never from prose.
 
 **When a gate is wrong, turn it off.** `/nodd-gates disable track` disables it
-entirely and stays disabled; `/nodd-allow track` grants exactly one override.
+entirely and stays disabled; `/nodd-gates disable all` does it for every gate at
+once; `/nodd-allow track` grants exactly one override.
 Neither is argued with.
 
 **When the work outgrows NODD, promote it.** `/nodd-promote dark-mode` writes

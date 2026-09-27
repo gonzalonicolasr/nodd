@@ -81,6 +81,19 @@ test("enable is the only way back on", () => {
   assert.equal((c.writes[0] as any).gates.track.enabled, true);
 });
 
+test("`all` disables and enables every gate in one write, keeping unrelated keys", () => {
+  const c = ctx({ models: { implement: "a/b" } });
+  assert.equal(runGatesCommand("disable all", c), "nodd: all gates disabled.");
+  assert.equal(c.writes.length, 1);
+  const off = c.writes[0] as any;
+  for (const id of GATE_IDS) assert.equal(off.gates[id].enabled, false, `${id} must be off`);
+  assert.deepEqual(off.models, { implement: "a/b" });
+
+  const c2 = ctx(off);
+  assert.equal(runGatesCommand("enable all", c2), "nodd: all gates enabled.");
+  for (const id of GATE_IDS) assert.equal((c2.writes[0] as any).gates[id].enabled, true, `${id} must be on`);
+});
+
 test("an unknown gate id lists the valid ids", () => {
   const out = runGatesCommand("disable nonsense", ctx());
   assert.match(out, /nonsense/);
