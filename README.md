@@ -256,7 +256,7 @@ The two most load-bearing `(P)` clauses:
 
 | command | does |
 | --- | --- |
-| `/nodd-gates [status\|on\|off] [<gate>]` | inspect and set gate flags |
+| `/nodd-gates [status\|enable\|disable] [<gate>\|all]` | inspect and set gate flags |
 | `/nodd-allow <gate>` | grant a one-shot override |
 | `/nodd-models [<slot>=<provider>/<model>\|profile …]` | assign models per slot; no argument opens the picker |
 | `/nodd-promote <slug>` | hand a feature to `/forge` |

@@ -259,3 +259,19 @@ test("undeclared files still trip the writer trigger, at the same threshold", ()
     "two files past the declaration must trip it",
   );
 });
+
+test("a write to a declared file is not refused by the read or tool-call triggers", () => {
+  // The generated writer declared its files, read four of them to understand
+  // the task, and was refused on its first write: the mapping trigger ignored
+  // the declaration the writer trigger already honours, and none of the three
+  // remedies was reachable from a child without `subagent` or slash commands.
+  n = 0;
+  const declared = foldAll(emptyCommitted(), [
+    obs("nodd_declare", { intent: "change", route: "inline", slug: "f", files: ["a.ts", "b.ts"] }),
+    ...Array.from({ length: THRESHOLDS.longSessionToolCalls }, (_, i) => obs("read", { path: `f${i}.ts` })),
+  ]);
+  assert.equal(delegateGate(declared, { toolName: "write", input: { path: "a.ts" } }, emptyPolicy(), noPending).allow, true,
+    "a declared file stays writable after heavy reading");
+  assert.equal(delegateGate(declared, { toolName: "write", input: { path: "other.ts" } }, emptyPolicy(), noPending).allow, false,
+    "an undeclared file is still refused");
+});

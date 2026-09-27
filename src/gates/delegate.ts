@@ -96,6 +96,14 @@ export function delegateGate(
     );
   }
 
+  // The same reasoning as `writtenFiles`: a write to a file the declaration
+  // named is the scope stated up front, not a session sprawling. Without this,
+  // a generated writer that read four files to understand its task could not
+  // write the first of the files it declared — and it can reach none of the
+  // remedies. Mutating bash has no target and still meets every trigger.
+  const target = targetPath(request);
+  if (target && (committed.declaration?.files ?? []).includes(target)) return allow();
+
   if (committed.filesRead.size >= THRESHOLDS.mappingMinUnderstandingFiles) {
     return refuse(
       "delegate",
