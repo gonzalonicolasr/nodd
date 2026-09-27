@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] - 2026-09-27
+
+### Added
+
+- `/nodd-gates enable all` and `/nodd-gates disable all` turn every gate on or
+  off in a single write to `~/.pi/nodd.json`.
+
+### Fixed
+
+- `gate-delegate` no longer refuses a write to a file the declaration named on
+  the read (>= 4 files) or tool-call (>= 20) triggers. A generated writer such
+  as `nodd-implement` or `zero-build` has no `subagent` tool and no slash
+  commands, so it could not reach any remedy and forge builds fell back to the
+  orchestrator. Undeclared files and mutating bash still meet every trigger.
+- The writer trigger counts only files the declaration never named.
+- The README command table documents the real verbs: `enable` / `disable`.
+
 ## [0.8.4] - 2026-09-23
 
 ### Changed
