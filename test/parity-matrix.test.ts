@@ -100,7 +100,7 @@ const MECHANISMS: Array<{ label: string; pattern: RegExp; exists: (name: string)
     label: "a named exported function",
     pattern: /`([a-z][a-zA-Z]+)\(\)`/g,
     exists: (name) =>
-      ["src/feature-doc.ts", "src/gates/evidence.ts", "src/ledger.ts", "extensions/nodd-kernel.ts"]
+      ["src/feature-doc.ts", "src/gates/evidence.ts", "src/ledger.ts", "src/kernel.ts", "extensions/nodd-kernel.ts"]
         .some((file) => sourceOf(file).includes(`function ${name}`)),
   },
   {
@@ -212,7 +212,7 @@ test("row 13: the Outcome section is derived, so a pending check cannot be dropp
     "a doc-level free-text outcome field would let a caller omit a failed check",
   );
   assert.ok(
-    !/doc\.outcome/.test(sourceOf("extensions/nodd-kernel.ts")),
+    !/doc\.outcome/.test(sourceOf("extensions/nodd-kernel.ts") + sourceOf("src/kernel.ts")),
     "and no caller may supply one",
   );
   assert.match(row(13).how, /renderOutcome|derived|task list/i, "the row must name the real mechanism");
@@ -234,7 +234,7 @@ test("row 45: TDD mode, source and runner are recorded and reach the gate", () =
     "mode, source, runner and files must survive the round trip",
   );
   assert.ok(
-    sourceOf("extensions/nodd-kernel.ts").includes("tdd:"),
+    sourceOf("src/kernel.ts").includes("tdd:"),
     "the kernel must pass the recorded mode to the evidence gate, or the row's RED clause is unreachable",
   );
 });
@@ -245,7 +245,8 @@ test("row 12: no NODD source issues a push, a PR or a merge", () => {
   const files = [
     "src/gates/evidence.ts", "src/gates/track.ts", "src/gates/delegate.ts",
     "src/gates/promotion.ts", "src/gates/authorize.ts", "src/gates/classify.ts",
-    "src/delivery.ts", "src/io.ts", "src/ledger.ts", "src/feature-doc.ts",
+    "src/delivery.ts", "src/io.ts", "src/io-core.ts", "src/ledger.ts", "src/ledger-core.ts", "src/feature-doc.ts",
+    "src/kernel.ts",
     "extensions/nodd-kernel.ts", "extensions/nodd-promote.ts",
   ];
   for (const file of files) {

@@ -40,7 +40,7 @@
 // not make the document assert something that was never verified.
 
 import type { Committed } from "../state.ts";
-import { classifyRecords, describeDegraded, type LedgerRecord } from "../ledger.ts";
+import { classifyRecords, describeDegraded, type LedgerRecord } from "../ledger-core.ts";
 import { describeOutcome, isSuccess, parseOutcome } from "../outcome.ts";
 import { refuse, resolveFlag, type Policy, type Remedy } from "./policy.ts";
 
