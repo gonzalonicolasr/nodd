@@ -1,0 +1,6 @@
+{
+  "name": "nodd",
+  "version": "0.1.0",
+  "description": "NODD dentro de Claude Code: los gates authorize, classify y track del protocolo ODD, apagados por defecto",
+  "author": { "name": "Gonzalo Rocca" }
+}

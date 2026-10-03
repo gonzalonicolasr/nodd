@@ -11,7 +11,8 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 test("package.json is an ESM pi package", () => {
   assert.equal(pkg.type, "module");
   assert.ok(pkg.keywords.includes("pi-package"), "keywords must carry pi-package");
-  assert.equal(pkg.scripts.test, "node --test --experimental-strip-types");
+  assert.match(pkg.scripts.test, /^node --test --experimental-strip-types /);
+  assert.ok(!pkg.scripts.test.includes("claude-code"), "the Claude Code mod's tests run under `claude plugin test`, not node");
 });
 
 test("pi.extensions is non-empty and every listed path exists", () => {

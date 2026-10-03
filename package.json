@@ -39,7 +39,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test --experimental-strip-types"
+    "test": "node --test --experimental-strip-types \"src/**/*.test.ts\" \"extensions/**/*.test.ts\" \"test/**/*.test.ts\""
   },
   "publishConfig": {
     "access": "public"

@@ -1,0 +1,124 @@
+// gate-delegate — the clause ODD states and cannot enforce.
+//
+// ODD's non-delegation is invisible: the manifest triggers
+// (`manifest.go:203-216`) and the long-session backstop (`routing.go:82`) are
+// prose the model may simply not follow. Here they are counted from observed
+// tool results and the write is refused.
+//
+// Three triggers, in ODD's own numbers (`src/manifest.ts`):
+//   - mapping:      >= 4 distinct files read with no delegation yet
+//   - writer:       >= 2 distinct files written
+//   - long session: >= 20 tool calls with no delegation yet
+//
+// Distinct *files*, never call counts: reading one file six times is one file
+// in context, and a gate that could not tell those apart would fire on a
+// careful re-read of the same module.
+//
+// The counters are per process. That is the intended semantics, not a gap: the
+// triggers exist to keep *this* agent's context thin enough to orchestrate, and
+// a delegated child has its own context window. There is no aggregate
+// whole-session total across parent and children, and NODD does not claim one.
+
+import type { Committed } from "../state.ts";
+import type { PendingCall } from "../observations.ts";
+import { THRESHOLDS } from "../manifest.ts";
+import { classifyBash } from "../bash-classifier.ts";
+import { allow, refuse, resolveFlag, type GateDecision, type Policy } from "./policy.ts";
+import { isFileWrite, targetPath, type GateRequest } from "./request.ts";
+
+/**
+ * Files written under the current declaration, plus the ones about to be.
+ * Write *intent* is known at preflight, so counting a sibling's intent is
+ * sound; a sibling's result is not observable yet and is never counted.
+ *
+ * Writes from before the declaration belong to an earlier task. Counting them
+ * made the first write of a new feature inherit the previous feature's total,
+ * so a long session refused work it had every right to do — and a threshold
+ * that fires on history nobody can undo is one an actor learns to route
+ * around, which is worse than no threshold at all.
+ */
+function writtenFiles(committed: Committed, request: GateRequest, pending: Map<string, PendingCall>): Set<string> {
+  const since = committed.declaration?.seq ?? 0;
+  // Files the declaration named are not counted. The trigger exists to catch a
+  // session sprawling past what it set out to do, and a declaration that lists
+  // its files up front is the opposite of that: the scope was stated before the
+  // work began, and `gate-promotion` already holds the session to that list.
+  //
+  // Counting them made the generated writer unable to work at all. It carries
+  // no `subagent` tool, so "delegate" — the remedy the refusal names — is the
+  // one thing its own toolset forbids, and with a threshold of two it could
+  // write a single file. Implementation plus its test is two.
+  const promised = new Set(committed.declaration?.files ?? []);
+  const files = new Set(
+    [...committed.filesWritten.entries()]
+      .filter(([path, write]) => write.seq > since && !promised.has(path))
+      .map(([path]) => path),
+  );
+  for (const call of pending.values()) {
+    if (isFileWrite(call)) {
+      const path = targetPath(call);
+      if (path && !promised.has(path)) files.add(path);
+    }
+  }
+  const path = targetPath(request);
+  if (path && !promised.has(path)) files.add(path);
+  return files;
+}
+
+export function delegateGate(
+  committed: Committed,
+  request: GateRequest,
+  policy: Policy,
+  pending: Map<string, PendingCall>,
+): GateDecision {
+  if (!resolveFlag("delegate", policy).enabled) return allow();
+  if (!isFileWrite(request) && classifyBash(String(request.input?.command ?? "")) !== "mutating") return allow();
+  if (committed.delegations > 0) return allow();
+
+  // Three paths, not two, following `track.ts:41-50` and `classify.ts`'s
+  // precedent (D4). A generated writer like `nodd-implement` holds
+  // `read, grep, ls, write, edit, bash` and nothing else: it cannot call
+  // `subagent`, cannot call `nodd_declare`, and has no slash commands. Both
+  // original remedies were unreachable by the actor this gate refuses most
+  // often — a writer, mid-write. Reporting the block back to the delegator
+  // needs no tool at all, so it is reachable by anyone.
+  const remedy =
+    "report the block to whoever delegated this work, " +
+    "or delegate the work with the `subagent` tool, " +
+    "or declare this as small inline work";
+
+  const written = writtenFiles(committed, request, pending);
+  if (written.size >= THRESHOLDS.writerMinNonTrivialFiles) {
+    return refuse(
+      "delegate",
+      `this session has written ${written.size} distinct files (threshold ${THRESHOLDS.writerMinNonTrivialFiles}) without delegating`,
+      remedy,
+    );
+  }
+
+  // The same reasoning as `writtenFiles`: a write to a file the declaration
+  // named is the scope stated up front, not a session sprawling. Without this,
+  // a generated writer that read four files to understand its task could not
+  // write the first of the files it declared — and it can reach none of the
+  // remedies. Mutating bash has no target and still meets every trigger.
+  const target = targetPath(request);
+  if (target && (committed.declaration?.files ?? []).includes(target)) return allow();
+
+  if (committed.filesRead.size >= THRESHOLDS.mappingMinUnderstandingFiles) {
+    return refuse(
+      "delegate",
+      `this session has read ${committed.filesRead.size} distinct files (threshold ${THRESHOLDS.mappingMinUnderstandingFiles}) without delegating`,
+      remedy,
+    );
+  }
+
+  if (committed.toolCalls >= THRESHOLDS.longSessionToolCalls) {
+    return refuse(
+      "delegate",
+      `this session has run ${committed.toolCalls} tool calls (threshold ${THRESHOLDS.longSessionToolCalls}) without delegating`,
+      remedy,
+    );
+  }
+
+  return allow();
+}
