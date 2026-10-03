@@ -42,15 +42,6 @@ export function isForgeType(type: string | undefined): boolean {
   return typeof type === 'string' && type.startsWith('forge:')
 }
 
-export function forgeIsRunning(text: string | null): boolean {
-  if (!text) return false
-  try {
-    const status = JSON.parse(text)?.run?.status
-    return status === 'running' || status === 'paused'
-  } catch {
-    return false
-  }
-}
 
 export function gateOfReason(reason: string): string {
   return /^nodd\/([a-z]+):/.exec(reason)?.[1] ?? 'unknown'

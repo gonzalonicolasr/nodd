@@ -1,5 +1,5 @@
 import { expect, test, describe, mock } from 'claude-code/testing'
-import { agentReadOnly, forgeIsRunning, gateOfReason, normalizeCall, stagedFs } from './cc.ts'
+import { agentReadOnly, gateOfReason, normalizeCall, stagedFs } from './cc.ts'
 import { writeVerified } from './core/io-core.ts'
 
 const DECLARE = 'mcp__nodd__nodd_declare'
@@ -102,7 +102,7 @@ describe('gates compartidos con pi', () => {
     const w = world(on, { files: { [CONFIG]: JSON.stringify(original, null, 2) } })
     await nodd($, 'on')
     const off: any = await nodd($, 'gate classify off')
-    expect(off.text).toBe('nodd: gate classify apagado.')
+    expect(off.text).toBe('gate classify apagado.')
     const saved = JSON.parse(w.files[CONFIG] ?? 'null')
     expect(saved).toEqual({ ...original, gates: { promotion: { enabled: false }, classify: { enabled: false } } })
     const r = await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
@@ -201,12 +201,12 @@ describe('subagentes y forge', () => {
     expect(w.ran).toEqual(['Write'])
   })
 
-  test('con un run de forge corriendo todo pasa', async ($, on) => {
+  test('un run de forge en otra sesión no apaga NODD en la principal', async ($, on) => {
     const w = world(on, { files: { '/h/.local/state/forge/state.json': JSON.stringify({ run: { status: 'running' } }) } })
     await nodd($, 'on')
     const r = await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
-    expect(r.deny).toBe(undefined)
-    expect(w.ran).toEqual(['Write'])
+    expect(r.deny).toContain('nodd/classify')
+    expect(w.ran).toEqual([])
   })
 
   test('un subagente común sin declaración del padre se frena', async ($, on) => {
@@ -294,13 +294,7 @@ describe('piezas', () => {
     expect(() => fs.readFileSync('/no/esta', 'utf8')).toThrow('ENOENT')
   })
 
-  test('forge corre mientras su run diga running o paused', () => {
-    expect(forgeIsRunning(JSON.stringify({ run: { status: 'running' } }))).toBe(true)
-    expect(forgeIsRunning(JSON.stringify({ run: { status: 'paused' } }))).toBe(true)
-    expect(forgeIsRunning(JSON.stringify({ run: { status: 'pasa' } }))).toBe(false)
-    expect(forgeIsRunning(JSON.stringify({ run: null }))).toBe(false)
-    expect(forgeIsRunning('{ roto')).toBe(false)
-    expect(forgeIsRunning(null)).toBe(false)
+  test('el gate sale del prefijo del rechazo', () => {
     expect(gateOfReason('nodd/track: x')).toBe('track')
   })
 })

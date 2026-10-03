@@ -9,7 +9,6 @@ import {
   ENFORCED,
   MAIN,
   agentReadOnly,
-  forgeIsRunning,
   gateOfReason,
   isForgeType,
   normalizeCall,
@@ -38,7 +37,6 @@ let refusals = 0
 let lastExport = ''
 
 const configPath = () => noddConfigPath(home)
-const forgeStatePath = () => joinPath(home, '.local', 'state', 'forge', 'state.json')
 const statePath = () => joinPath(home, '.local', 'state', 'nodd', 'state.json')
 
 async function readText($: any, path: string): Promise<string | null> {
@@ -134,7 +132,7 @@ async function insideForge($: any, e: any, key: string): Promise<boolean> {
     if (isForgeType(info.type)) return true
     id = info.parent
   }
-  return forgeIsRunning(await readText($, forgeStatePath()))
+  return false
 }
 
 async function agentFiles($: any, dir: string): Promise<string[]> {
@@ -331,7 +329,7 @@ export function register(on: any) {
 
   on('command.run', { command: 'nodd' }, async ($: any, e: any) => {
     await boot($)
-    return { text: await command($, String(e.args ?? '')) }
+    return { text: (await command($, String(e.args ?? ''))).replace(/^nodd: /, '') }
   })
 
   on('agent.spawn', async ($: any, e: any, next: any) => {
