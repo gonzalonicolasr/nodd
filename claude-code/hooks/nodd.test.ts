@@ -7,12 +7,17 @@ const TASK = 'mcp__nodd__nodd_task'
 const STATE = '/h/.local/state/nodd/state.json'
 const CONFIG = '/h/.pi/nodd.json'
 
-type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[] }
+type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[] }
 
 function world(on: any, seed: { files?: Record<string, string>; store?: Record<string, unknown>; agents?: any[] } = {}): World {
   mock.env(on, { HOME: '/h' })
   mock.store(on, seed.store)
-  const w: World = { files: { ...seed.files }, ran: [], agentsList: seed.agents ?? [], seenAgents: [] }
+  const w: World = { files: { ...seed.files }, ran: [], agentsList: seed.agents ?? [], seenAgents: [], submitted: [] }
+  on('prompt.submit', async (_$: any, e: any) => {
+    w.submitted.push(e)
+    return { text: e.text, context: e.context }
+  })
+  on('prompt.context', async (_$: any, e: any) => ({ blocks: e.blocks }))
   on('fs.read', async (_$: any, e: any) => {
     if (e.path in w.files) return { value: w.files[e.path] }
     throw new Error(`ENOENT: ${e.path}`)
@@ -73,7 +78,8 @@ describe('encendido', () => {
     const r = await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
     expect(r.deny).toContain('nodd/classify')
     expect(r.deny).toContain('nodd_declare')
-    expect(r.deny).toContain('/nodd-allow classify')
+    expect(r.deny).toContain('/nodd allow classify')
+    expect(r.deny).not.toContain('/nodd-allow')
     expect(w.ran).toEqual([])
   })
 
@@ -87,6 +93,50 @@ describe('encendido', () => {
     const r = await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
     expect(r.deny).toBe(undefined)
     expect(w.ran).toEqual(['Write'])
+  })
+})
+
+const prompt = (text: string, kind = 'composer', turnId?: string) => ({ text, wait: false, origin: { kind }, ...(turnId ? { turnId } : {}) })
+
+describe('una declaración por pedido', () => {
+  test('un pedido nuevo del usuario borra la declaración anterior y le recuerda al modelo', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare })
+    expect((await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })).deny).toBe(undefined)
+    await $.prompt.submit(prompt('ahora otra cosa') as any)
+    const sent = w.submitted.at(-1)
+    expect(sent.text).toBe('ahora otra cosa')
+    expect(sent.context.join('\n')).toContain('nodd_declare')
+    expect(JSON.parse(w.files[STATE] ?? 'null').declaration).toBe(null)
+    expect((await call($, { tool: 'Write', file_path: '/repo/b.ts', content: 'x' })).deny).toContain('nodd/classify')
+  })
+
+  test('una notificación o un mensaje escrito durante el turno no son un pedido nuevo', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare })
+    await $.prompt.submit(prompt('terminó el agente', 'task-notification') as any)
+    await $.prompt.submit(prompt('y también esto', 'composer', 'turn-1') as any)
+    expect(w.submitted.every((e) => e.context === undefined)).toBe(true)
+    expect((await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })).deny).toBe(undefined)
+  })
+
+  test('apagado no toca el pedido ni el contexto', async ($, on) => {
+    const w = world(on)
+    await $.prompt.submit(prompt('hola') as any)
+    expect(w.submitted.at(-1).context).toBe(undefined)
+    const ctx: any = await $.prompt.context({ blocks: [] } as any)
+    expect(ctx.blocks).toEqual([])
+  })
+
+  test('prendido, la conversación arranca con el protocolo', async ($, on) => {
+    world(on)
+    await nodd($, 'on')
+    const ctx: any = await $.prompt.context({ blocks: [{ name: 'currentDate', text: 'hoy' }] } as any)
+    expect(ctx.blocks.map((b: any) => b.name)).toEqual(['currentDate', 'nodd'])
+    const text = ctx.blocks[1].text
+    for (const word of ['nodd_declare', 'inline', 'tracked', 'forge', 'nodd_task', '/nodd allow']) expect(text).toContain(word)
   })
 })
 

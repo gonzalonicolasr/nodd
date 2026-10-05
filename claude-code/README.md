@@ -45,6 +45,24 @@ delegaciones, así que prenderlos más adelante no arranca de cero.
 Prendido, el modelo tiene dos tools: `nodd_declare` y `nodd_task`
 (`mcp__nodd__nodd_declare` y `mcp__nodd__nodd_task`).
 
+## Una declaración por pedido, como en ODD
+
+ODD le pide al modelo que clasifique **cada pedido** antes de escribir. NODD lo
+hace igual, pero con código:
+
+- **Al arrancar la conversación** el modelo recibe el protocolo (autorizar,
+  explorar, clasificar, registrar, implementar, cerrar) como un bloque de
+  contexto `nodd`. No hace falta que lo frenen para enterarse.
+- **Cada pedido tuyo borra la declaración anterior** y le agrega al modelo un
+  recordatorio que vos no ves. Su primera escritura de ese pedido pide un
+  `nodd_declare` nuevo, aunque siga con el mismo slug.
+- **No es un pedido nuevo**: la notificación de un agente en background, un
+  mensaje de otra sesión, un `/loop`, ni lo que escribís mientras el modelo
+  todavía está trabajando. Esos siguen bajo la declaración que había.
+
+Cuesta una llamada a `nodd_declare` por pedido que escribe. Los pedidos que
+sólo leen no pagan nada.
+
 ## Cosas que conviene saber
 
 - **El override es de Claude Code.** `/nodd allow` no escribe
@@ -56,10 +74,16 @@ Prendido, el modelo tiene dos tools: `nodd_declare` y `nodd_task`
   padre en ese momento: si el principal declaró, el subagente puede escribir
   dentro de esa ruta; si no declaró nadie, el subagente también se frena (y el
   rechazo le dice que avise o que declare).
-- **forge pasa siempre.** Las llamadas de un agente de fase `forge:<fase>` (o de
-  algo que ese agente lanzó), y cualquier llamada mientras
-  `~/.local/state/forge/state.json` diga que hay un run corriendo, no pasan por
-  los gates.
+- **Los agentes de forge pasan siempre.** Las llamadas de un agente de fase
+  `forge:<fase>`, o de algo que ese agente lanzó, no pasan por los gates. Un run
+  de forge en curso no apaga NODD en el resto: la sesión principal sigue
+  frenada.
+- **Los rechazos nombran `/nodd allow <gate>`**, el comando de Claude Code. El
+  kernel compartido escribe `/nodd-allow`, que es el de pi, y el mod lo traduce.
+- **Prender o apagar vale para las sesiones nuevas.** Cada sesión lee el
+  interruptor al arrancar: una que ya estaba abierta sigue como estaba hasta
+  que corras `/nodd on|off` ahí. `state.json` lo escribe la última sesión que
+  hizo algo, así que NERV puede mostrar otra sesión.
 - **Agentes de sólo lectura.** Para `authorize` se lee el `tools:` del agente en
   `.claude/agents/` del proyecto y en `~/.claude/agents/`. Sin `Write`, `Edit`,
   `MultiEdit` ni `NotebookEdit` cuenta como de sólo lectura; sin `tools:` hereda

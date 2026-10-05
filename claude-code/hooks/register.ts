@@ -8,9 +8,13 @@ import {
   CC_FLAGS,
   ENFORCED,
   MAIN,
+  PROTOCOL,
+  REMINDER,
   agentReadOnly,
+  ccReason,
   gateOfReason,
   isForgeType,
+  isNewRequest,
   normalizeCall,
   snapshot,
   stagedFs,
@@ -107,6 +111,17 @@ async function flush($: any): Promise<string[]> {
     }
   }
   return problems
+}
+
+function clearDeclaration() {
+  const main = kernels.get(MAIN)
+  if (main?.state.committed.declaration) main.state.committed = { ...main.state.committed, declaration: null }
+}
+
+function refreshContext($: any) {
+  try {
+    $.ui.invalidate('prompt.context')
+  } catch {}
 }
 
 async function saveHatches($: any) {
@@ -273,11 +288,13 @@ async function command($: any, args: string): Promise<string> {
       enabled = true
       await $.store.set('enabled', true)
       await registerTools($)
+      refreshContext($)
       await exportState($)
       return `nodd: encendido. Gates activos en Claude Code: ${ENFORCED.join(', ')}.`
     case 'off':
       enabled = false
       await $.store.set('enabled', false)
+      refreshContext($)
       await exportState($)
       return 'nodd: apagado. No bloquea nada.'
     case 'status':
@@ -332,6 +349,21 @@ export function register(on: any) {
     return { text: (await command($, String(e.args ?? ''))).replace(/^nodd: /, '') }
   })
 
+  on('prompt.context', async ($: any, e: any, next: any) => {
+    const r = await next(e)
+    await boot($)
+    if (!enabled) return r
+    return { ...r, blocks: [...(r?.blocks ?? []), { name: 'nodd', text: PROTOCOL }] }
+  })
+
+  on('prompt.submit', async ($: any, e: any, next: any) => {
+    await boot($)
+    if (!enabled || !isNewRequest(e)) return next(e)
+    clearDeclaration()
+    await exportState($)
+    return next({ ...e, context: [...(e.context ?? []), REMINDER] })
+  })
+
   on('agent.spawn', async ($: any, e: any, next: any) => {
     const r = await next(e)
     if (r?.agentId) agents.set(r.agentId, { type: String(e.subagentType ?? ''), parent: e.parentAgentId ?? MAIN })
@@ -365,9 +397,10 @@ export function register(on: any) {
     if (decision) {
       kernel.forgetPending(id)
       refusals += 1
-      lastRefusal = { gate: gateOfReason(decision.reason), reason: decision.reason, at: new Date().toISOString() }
+      const reason = ccReason(decision.reason)
+      lastRefusal = { gate: gateOfReason(reason), reason, at: new Date().toISOString() }
       await exportState($)
-      return { deny: decision.reason }
+      return { deny: reason }
     }
 
     let r: any

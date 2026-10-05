@@ -47,6 +47,34 @@ export function gateOfReason(reason: string): string {
   return /^nodd\/([a-z]+):/.exec(reason)?.[1] ?? 'unknown'
 }
 
+export function ccReason(reason: string): string {
+  return reason.replace(/\/nodd-allow /g, '/nodd allow ')
+}
+
+const REQUEST_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
+
+export function isNewRequest(e: { origin?: { kind?: string }; turnId?: string } | undefined): boolean {
+  return REQUEST_ORIGINS.has(String(e?.origin?.kind)) && !e?.turnId
+}
+
+export const PROTOCOL = [
+  'NODD is on in this session: the ODD protocol is enforced on your tool calls, not left to trust.',
+  'For every user request:',
+  '1. Authorize: a question, review or explanation is read-only. Do not write; if you declare, declare intent read-only.',
+  '2. Explore in proportion to the request, and resolve uncertainty with at most one question before writing.',
+  '3. Classify before the first write: call nodd_declare with intent, route, slug and summary.',
+  '   inline = small, one-step work. tracked = two or more steps, or progress worth resuming: it creates .nodd/<slug>/feature.md.',
+  '   forge = needs a spec-driven run. Name the runner (the command that verifies the work) when there is one.',
+  '4. Track: on tracked or forge, list the tasks with nodd_task. NODD writes .nodd/; never edit it yourself.',
+  '5. Implement task by task. Delegate wide exploration and independent pieces to subagents.',
+  '6. Close: the outcome, the checks you ran and what they returned, what failed, and the next step.',
+  'Each new user request clears the previous declaration: declare again before its first write, even to continue the same slug.',
+  'A refused call names its remedy. Only the user can grant a one-shot override, with /nodd allow <gate>.',
+].join('\n')
+
+export const REMINDER =
+  'NODD: new request, no route declared yet. Classify it with nodd_declare (inline, tracked or forge) before the first write, or keep it read-only.'
+
 export const BUILTIN_AGENTS: Record<string, boolean> = {
   explore: true,
   plan: true,
