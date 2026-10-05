@@ -16,7 +16,7 @@
 
 import type { Committed } from "../state.ts";
 import { allow, refuse, resolveFlag, type GateDecision, type Policy } from "./policy.ts";
-import { isFileWrite, isMutation, targetPath, type GateRequest } from "./request.ts";
+import { isFileWrite, isMutatingBash, isMutation, targetPath, type GateRequest } from "./request.ts";
 
 export function featureDocRelPath(slug: string): string {
   return `.nodd/${slug}/feature.md`;
@@ -25,6 +25,11 @@ export function featureDocRelPath(slug: string): string {
 function targetsNoddDir(request: GateRequest): boolean {
   const path = targetPath(request);
   return isFileWrite(request) && path !== null && /(^|\/)\.nodd\//.test(path);
+}
+
+function bashTouchesNoddDir(request: GateRequest): boolean {
+  const command = request.input.command;
+  return isMutatingBash(request) && typeof command === "string" && /(^|[\s'"=/])\.nodd(\/|[\s'";|&)]|$)/.test(command);
 }
 
 export function trackGate(
@@ -36,6 +41,14 @@ export function trackGate(
   if (!resolveFlag("track", policy).enabled) return allow();
 
   const declaration = committed.declaration;
+
+  if (bashTouchesNoddDir(request)) {
+    return refuse(
+      "track",
+      "a mutating bash command names `.nodd/`, and NODD's own artifacts are written by NODD, not by the model",
+      "use `nodd_task` to add or check off tasks, and `nodd_declare` to set the objective and route",
+    );
+  }
 
   if (targetsNoddDir(request)) {
     // The emergency door. While the declared document does not exist, creating

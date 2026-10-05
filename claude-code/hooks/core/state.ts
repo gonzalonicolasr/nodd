@@ -11,7 +11,7 @@
 // asks, never baked into the record.
 
 import type { Observation, PendingCall } from "./observations.ts";
-import type { Intent, Route } from "./feature-doc.ts";
+import { ROUTES, type Intent, type Route } from "./feature-doc.ts";
 
 export type CommandResult = {
   toolCallId: string;
@@ -96,6 +96,7 @@ export function emptyCommitted(): Committed {
   };
 }
 
+const INTENTS: readonly Intent[] = ["read-only", "change"];
 const READ_TOOLS = new Set(["read"]);
 const WRITE_TOOLS = new Set(["write", "edit"]);
 
@@ -161,11 +162,11 @@ export function fold(committed: Committed, obs: Observation): Committed {
 
   if (obs.toolName === "subagent" && !obs.isError) next.delegations += 1;
 
-  if (obs.toolName === "nodd_declare") {
+  if (obs.toolName === "nodd_declare" && !obs.isError) {
     const intent = str(obs.input.intent);
     const route = str(obs.input.route);
     const slug = str(obs.input.slug);
-    if (intent && route && slug) {
+    if (intent && route && slug && INTENTS.includes(intent as Intent) && ROUTES.includes(route as Route)) {
       next.declaration = {
         intent: intent as Intent,
         route: route as Route,

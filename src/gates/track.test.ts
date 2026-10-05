@@ -133,3 +133,26 @@ test("the escape does not extend to other NODD artifacts", () => {
   const decision = trackGate(routed("tracked"), ledger, emptyPolicy(), absent);
   assert.equal(decision.allow, false, "the ledger stays extension-owned");
 });
+
+test("mutating bash aimed at .nodd/ is refused like a write, whatever the route", () => {
+  for (const command of [
+    "sed -i 's/- \\[ \\]/- [x]/' .nodd/demo/feature.md",
+    "echo '{}' > .nodd/demo/ledger.json",
+    "rm -rf .nodd",
+    "cp /tmp/fake.md /repo/.nodd/demo/feature.md",
+  ]) {
+    const decision = trackGate(routed("inline"), { toolName: "bash", input: { command } }, emptyPolicy(), present);
+    assert.equal(decision.allow, false, command);
+    assert.ok(decision.allow === false && decision.remedy.action.includes("nodd_task"), command);
+  }
+});
+
+test("reading .nodd/ through bash is still a read", () => {
+  for (const command of ["cat .nodd/demo/feature.md", "grep -r T1 .nodd/", "ls .nodd"]) {
+    assert.equal(trackGate(routed("tracked"), { toolName: "bash", input: { command } }, emptyPolicy(), present).allow, true, command);
+  }
+});
+
+test("a mutating command that never names .nodd is not this gate's business", () => {
+  assert.equal(trackGate(routed("tracked"), { toolName: "bash", input: { command: "echo x > /repo/projects/nodd/out.txt" } }, emptyPolicy(), present).allow, true);
+});

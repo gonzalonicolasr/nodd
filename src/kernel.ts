@@ -297,7 +297,22 @@ export function createKernel(options: KernelOptions): Kernel {
         },
         policy,
       );
-      if (!verdict.allow) return { ok: false, text: verdict.reason };
+      if (!verdict.allow) {
+        const hatch = consumeHatch(policy, "evidence");
+        if (!hatch) return { ok: false, text: verdict.reason };
+        policy = hatch.policy;
+        spendHatch("evidence");
+        const task = doc.tasks[index];
+        doc.tasks[index] = {
+          id: task.id,
+          title: task.title,
+          checked: true,
+          evidence: { command: "none", outcome: `none (override: ${hatch.reason || "no reason given"})` },
+          candidate: candidateIdentity(candidateFor(state.committed)),
+        };
+        const saved = saveDoc(doc);
+        return saved.ok ? { ok: true, text: `${args.id} checked in .nodd/${doc.slug}/feature.md on a one-shot override, with no observed run` } : saved;
+      }
 
       // Record the evidence this checkoff relied on. Without this call the
       // ledger never exists, `readLedger` always returns `[]`, and every

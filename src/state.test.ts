@@ -229,3 +229,19 @@ test("the reducer imports neither node:fs nor pi", () => {
   assert.ok(!src.includes("node:fs"), "state.ts must not touch the filesystem");
   assert.ok(!src.includes("@earendil-works/"), "state.ts must not import pi");
 });
+
+test("a refused nodd_declare does not declare anything", () => {
+  const committed = fold(emptyCommitted(), obs({
+    toolName: "nodd_declare",
+    input: { intent: "change", route: "tracked", slug: "demo", tdd: "strict" },
+    isError: true,
+  }));
+  assert.equal(committed.declaration, null);
+});
+
+test("a declaration with an unknown intent or route does not count", () => {
+  const badIntent = fold(emptyCommitted(), obs({ toolName: "nodd_declare", input: { intent: "maybe", route: "inline", slug: "a" } }));
+  const badRoute = fold(emptyCommitted(), obs({ toolName: "nodd_declare", input: { intent: "change", route: "yolo", slug: "a" } }));
+  assert.equal(badIntent.declaration, null);
+  assert.equal(badRoute.declaration, null);
+});
