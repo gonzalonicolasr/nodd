@@ -182,8 +182,9 @@ once; `/nodd-allow track` grants exactly one override.
 Neither is argued with.
 
 **When the work outgrows NODD, promote it.** `/nodd-promote dark-mode` writes
-`.sdd/dark-mode/requirements.md` and `/forge --continue dark-mode` starts at its
-plan phase with the finished work as context.
+`.sdd/dark-mode/requirements.md` and `/forge --continue dark-mode` adopts it:
+forge skips clarify, explores the code and plans from there, with the finished
+work as context (in Claude Code, `/forge continue dark-mode`).
 
 To watch it work on something disposable, run `pi` in an empty git repo and ask
 for a two-file change: the declaration is demanded before the first write, and
@@ -262,8 +263,9 @@ The two most load-bearing `(P)` clauses:
 | `/nodd-promote <slug>` | hand a feature to `/forge` |
 
 `/nodd-promote` writes exactly one file, `.sdd/<slug>/requirements.md`, and
-deliberately emits no `design.md` and no `tasks.md` so forge's resume lands on
-`no-plan` and restarts at its plan phase. It refuses to overwrite an existing
+deliberately emits no `design.md`, no `tasks.md` and no `request.md`, so forge
+recognises the directory as a NODD handoff and adopts it, starting at explore
+(the rule lives in zero-pi's `docs/forge-contract.md`). It refuses to overwrite an existing
 `requirements.md`, and it is the only module in the package permitted to write
 under `.sdd/` — a test scans every other source file to keep it that way.
 
