@@ -60,8 +60,16 @@ hace igual, pero con código:
   mensaje de otra sesión, un `/loop`, ni lo que escribís mientras el modelo
   todavía está trabajando. Esos siguen bajo la declaración que había.
 
-Cuesta una llamada a `nodd_declare` por pedido que escribe. Los pedidos que
-sólo leen no pagan nada.
+Cuesta una llamada a `nodd_declare` por pedido que escribe, y seguir con la
+feature del pedido anterior es barato: alcanza con `nodd_declare` y el slug, el
+resto se toma de la declaración anterior. Los pedidos que sólo leen no pagan
+nada.
+
+**El scratchpad de la sesión no pasa por los gates.** Write y Edit dentro de
+`/tmp/claude-<uid>/<proyecto>/<id de esta sesión>/` no piden declaración, ni
+siquiera con `intent: read-only`: ahí no se cambia nada del usuario. Un Bash que
+escribe ahí sí pasa por los gates, porque NODD no puede saber con certeza a
+dónde escribe un comando.
 
 ## Cosas que conviene saber
 

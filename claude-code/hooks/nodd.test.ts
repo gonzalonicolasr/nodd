@@ -211,7 +211,7 @@ describe('costo en tokens', () => {
     expect(size).toBeLessThan(1500)
     expect(JSON.stringify(declare)).not.toContain('/nodd-promote')
     expect(declare.description).toContain('inline')
-    expect(declare.inputSchema.required).toEqual(['intent', 'route', 'slug', 'summary'])
+    expect(declare.inputSchema.required).toEqual(['slug'])
     expect(Object.keys(declare.inputSchema.properties).sort()).toEqual(['constraints', 'files', 'intent', 'problem', 'route', 'runner', 'scope', 'slug', 'summary', 'tdd', 'title'])
     expect(task.inputSchema.required).toEqual(['action', 'id', 'slug'])
   })
@@ -223,6 +223,45 @@ describe('costo en tokens', () => {
     const reminder = w.submitted.at(-1).context.at(-1)
     expect(reminder).toContain('nodd_declare')
     expect(reminder.length).toBeLessThan(90)
+  })
+})
+
+describe('scratchpad y continuar', () => {
+  const SCRATCH = '/tmp/claude-1000/-repo/s1/scratchpad/notas.md'
+
+  test('escribir en el scratchpad de la sesión no pide declaración, ni siquiera en read-only', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    expect((await call($, { tool: 'Write', file_path: SCRATCH, content: 'x' })).deny).toBe(undefined)
+    expect((await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })).deny).toContain('nodd/classify')
+    await call($, { tool: DECLARE, intent: 'read-only', route: 'inline', slug: 'mirar', summary: 's' })
+    expect((await call($, { tool: 'Edit', file_path: SCRATCH, old_string: 'x', new_string: 'y' })).deny).toBe(undefined)
+    expect(w.ran).toEqual(['Write', 'Edit'])
+  })
+
+  test('el scratchpad de otra sesión no cuenta', async ($, on) => {
+    world(on)
+    await nodd($, 'on')
+    expect((await call($, { tool: 'Write', file_path: '/tmp/claude-1000/-repo/otra/scratchpad/a.md', content: 'x' })).deny).toContain('nodd/classify')
+  })
+
+  test('para seguir con la feature del pedido anterior alcanza con el slug', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare, runner: 'npm test', tdd: 'strict' })
+    await $.prompt.submit(prompt('seguí') as any)
+    const again = await call($, { tool: DECLARE, slug: 'auth' })
+    expect(again.deny).toBe(undefined)
+    expect((await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })).deny).toBe(undefined)
+    expect(JSON.parse(w.files[STATE] ?? 'null').declaration).toEqual({ slug: 'auth', intent: 'change', route: 'tracked' })
+  })
+
+  test('una feature nueva con sólo el slug se rechaza diciendo qué falta', async ($, on) => {
+    world(on)
+    await nodd($, 'on')
+    const r = await call($, { tool: DECLARE, slug: 'nueva' })
+    expect(r.deny).toContain('intent, route and summary')
+    expect((await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })).deny).toContain('nodd/classify')
   })
 })
 

@@ -68,11 +68,12 @@ export const PROTOCOL = [
   '4. Track: on tracked or forge, list the tasks with nodd_task. NODD writes .nodd/; never edit it yourself.',
   '5. Implement task by task. Delegate wide exploration and independent pieces to subagents.',
   '6. Close: the outcome, the checks you ran and what they returned, what failed, and the next step.',
-  'Each new user request clears the previous declaration: declare again before its first write, even to continue the same slug.',
+  'Each new user request clears the previous declaration: declare again before its first write. To continue the previous request\'s feature, nodd_declare with only its slug is enough.',
+  'Your session scratchpad is yours: writing there needs no declaration.',
   'A refused call names its remedy. Only the user can grant a one-shot override, with /nodd allow <gate>.',
 ].join('\n')
 
-export const REMINDER = 'NODD: new request. Call nodd_declare before its first write.'
+export const REMINDER = 'NODD: new request. nodd_declare before its first write (only slug to continue).'
 
 export const BUILTIN_AGENTS: Record<string, boolean> = {
   explore: true,
@@ -212,7 +213,7 @@ export function snapshot(input: {
 }
 
 export const CC_DECLARE_SCHEMA = {
-  description: 'Declare intent and route before the first write of a request. inline: only intent, route, slug, summary. tracked/forge create .nodd/<slug>/feature.md and may add the other fields.',
+  description: 'Declare intent and route before the first write of a request. To continue the previous request\'s feature, send only slug. A new feature needs intent, route, slug, summary; inline stops there, tracked/forge create .nodd/<slug>/feature.md and may add the other fields.',
   parameters: {
     type: 'object',
     properties: {
@@ -228,7 +229,7 @@ export const CC_DECLARE_SCHEMA = {
       tdd: { type: 'string', enum: ['strict', 'off'], description: 'strict: a failing run before a checkoff' },
       files: { type: 'array', items: { type: 'string' } },
     },
-    required: ['intent', 'route', 'slug', 'summary'],
+    required: ['slug'],
   },
 }
 
@@ -245,4 +246,21 @@ export const CC_TASK_SCHEMA = {
     },
     required: ['action', 'id', 'slug'],
   },
+}
+
+export function inScratchpad(path: unknown, sessionId: string): boolean {
+  if (typeof path !== 'string' || sessionId === '') return false
+  const id = sessionId.replace(/[^\w-]/g, '')
+  return new RegExp(`/claude-\\d+/[^/]+/${id}/`).test(path)
+}
+
+const DECLARE_CORE = ['intent', 'route', 'summary'] as const
+
+export function continueDeclaration(
+  input: Record<string, unknown>,
+  previous: Record<string, unknown> | undefined,
+): { input: Record<string, unknown> } | { problem: string } {
+  if (DECLARE_CORE.every((k) => typeof input[k] === 'string' && input[k] !== '')) return { input }
+  if (previous && previous.slug === input.slug) return { input: { ...previous, ...input } }
+  return { problem: `nodd_declare: ${String(input.slug ?? '')} is a new feature here, so send intent, route and summary too. To continue the previous request's feature, send only its slug.` }
 }

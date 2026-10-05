@@ -14,7 +14,9 @@ import {
   REMINDER,
   agentReadOnly,
   ccReason,
+  continueDeclaration,
   gateOfReason,
+  inScratchpad,
   isForgeType,
   isNewRequest,
   normalizeCall,
@@ -30,6 +32,7 @@ const fs = stagedFs()
 const kernels = new Map<string, Kernel>()
 const agents = new Map<string, { type: string; parent: string }>()
 const capabilities = new Map<string, boolean | null>()
+const lastDeclared = new Map<string, Record<string, unknown>>()
 
 let booted: Promise<void> | undefined
 let home = ''
@@ -262,14 +265,21 @@ async function registerTools($: any) {
   }
 }
 
-async function serve($: any, kernel: Kernel, call: Call, id: string) {
-  if (call.toolName === 'nodd_declare') projectRoot = await resolveRoot($)
+async function serve($: any, key: string, call: Call, id: string) {
+  if (call.toolName === 'nodd_declare') {
+    const continued = continueDeclaration(call.input, lastDeclared.get(key) ?? lastDeclared.get(MAIN))
+    if ('problem' in continued) return { deny: continued.problem }
+    call = { ...call, input: continued.input }
+    projectRoot = await resolveRoot($)
+  }
+  const kernel = kernelFor(key)
   await stage($, pathsFor(kernel, call))
   kernel.onToolCall({ toolName: call.toolName, toolCallId: id, input: call.input })
   const reply = call.toolName === 'nodd_declare' ? kernel.declare(call.input as any) : kernel.task(call.input as any)
   const problems = await flush($)
   const final = problems.length === 0 ? reply : { ok: false, text: `${reply.text}\nnodd: ${problems.join('; ')}` }
   kernel.onToolResult({ toolName: call.toolName, toolCallId: id, input: call.input, isError: !final.ok, content: final.text })
+  if (final.ok && call.toolName === 'nodd_declare') lastDeclared.set(key, call.input)
   await exportState($)
   return final.ok ? { result: final.text } : { deny: final.text }
 }
@@ -422,7 +432,8 @@ export function register(on: any) {
     const key: string = e.agentId ?? MAIN
     const id = String(e.tool_use_id ?? `nodd-${Date.now()}`)
     const call = normalizeCall(String(e.tool), e, names)
-    if (isNodd) return serve($, kernelFor(key), call, id)
+    if (isNodd) return serve($, key, call, id)
+    if ((call.toolName === 'write' || call.toolName === 'edit') && inScratchpad(call.input.file_path ?? call.input.path, sessionId)) return next(e)
     if (await insideForge($, e, key)) return next(e)
     const kernel = kernelFor(key)
 
