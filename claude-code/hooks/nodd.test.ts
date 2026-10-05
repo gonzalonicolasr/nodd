@@ -7,11 +7,11 @@ const TASK = 'mcp__nodd__nodd_task'
 const STATE = '/h/.local/state/nodd/sessions/s1.json'
 const CONFIG = '/h/.pi/nodd.json'
 
-type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; repo: string | null; registered: string[]; store: Record<string, unknown> }
+type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; repo: string | null; registered: string[]; schemas: Record<string, any>; store: Record<string, unknown> }
 
 function world(on: any, seed: { files?: Record<string, string>; store?: Record<string, unknown>; agents?: any[] } = {}): World {
   mock.env(on, { HOME: '/h' })
-  const w: World = { files: { ...seed.files }, ran: [], agentsList: seed.agents ?? [], seenAgents: [], submitted: [], cwd: '/repo', repo: null, registered: [], store: { ...seed.store } }
+  const w: World = { files: { ...seed.files }, ran: [], agentsList: seed.agents ?? [], seenAgents: [], submitted: [], cwd: '/repo', repo: null, registered: [], schemas: {}, store: { ...seed.store } }
   on('store.get', async (_$: any, e: any) => ({ value: w.store[e.key] }))
   on('store.set', async (_$: any, e: any) => {
     w.store[e.key] = e.value
@@ -44,6 +44,7 @@ function world(on: any, seed: { files?: Record<string, string>; store?: Record<s
   on('agent.list', async () => ({ value: w.agentsList }))
   on('tool.register', async (_$: any, e: any) => {
     w.registered.push(e.name)
+    w.schemas[e.name] = e
     return { value: { tool: `mcp__nodd__${e.name}` } }
   })
   on('command.register', async (_$: any, e: any) => ({ value: { command: e.name } }))
@@ -188,6 +189,31 @@ describe('una sesión, su estado', () => {
     w.cwd = '/tmp/suelto'
     await call($, { tool: DECLARE, ...declare })
     expect(w.files['/tmp/suelto/.nodd/auth/feature.md']).toContain('login con tokens')
+  })
+})
+
+describe('costo en tokens', () => {
+  test('las tools del mod son cortas, sin comandos de pi, y piden sólo lo obligatorio para inline', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    const declare = w.schemas.nodd_declare
+    const task = w.schemas.nodd_task
+    const size = JSON.stringify(declare).length + JSON.stringify(task).length
+    expect(size).toBeLessThan(1500)
+    expect(JSON.stringify(declare)).not.toContain('/nodd-promote')
+    expect(declare.description).toContain('inline')
+    expect(declare.inputSchema.required).toEqual(['intent', 'route', 'slug', 'summary'])
+    expect(Object.keys(declare.inputSchema.properties).sort()).toEqual(['constraints', 'files', 'intent', 'problem', 'route', 'runner', 'scope', 'slug', 'summary', 'tdd', 'title'])
+    expect(task.inputSchema.required).toEqual(['action', 'id', 'slug'])
+  })
+
+  test('el recordatorio por pedido es una línea corta', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await $.prompt.submit(prompt('hola') as any)
+    const reminder = w.submitted.at(-1).context.at(-1)
+    expect(reminder).toContain('nodd_declare')
+    expect(reminder.length).toBeLessThan(90)
   })
 })
 

@@ -63,7 +63,7 @@ export const PROTOCOL = [
   '1. Authorize: a question, review or explanation is read-only. Do not write; if you declare, declare intent read-only.',
   '2. Explore in proportion to the request, and resolve uncertainty with at most one question before writing.',
   '3. Classify before the first write: call nodd_declare with intent, route, slug and summary.',
-  '   inline = small, one-step work. tracked = two or more steps, or progress worth resuming: it creates .nodd/<slug>/feature.md.',
+  '   inline = small, one-step work: send only intent, route, slug and summary. tracked = two or more steps, or progress worth resuming: it creates .nodd/<slug>/feature.md.',
   '   forge = needs a spec-driven run. Name the runner (the command that verifies the work) when there is one.',
   '4. Track: on tracked or forge, list the tasks with nodd_task. NODD writes .nodd/; never edit it yourself.',
   '5. Implement task by task. Delegate wide exploration and independent pieces to subagents.',
@@ -72,8 +72,7 @@ export const PROTOCOL = [
   'A refused call names its remedy. Only the user can grant a one-shot override, with /nodd allow <gate>.',
 ].join('\n')
 
-export const REMINDER =
-  'NODD: new request, no route declared yet. Classify it with nodd_declare (inline, tracked or forge) before the first write, or keep it read-only.'
+export const REMINDER = 'NODD: new request. Call nodd_declare before its first write.'
 
 export const BUILTIN_AGENTS: Record<string, boolean> = {
   explore: true,
@@ -210,4 +209,40 @@ export function snapshot(input: {
       agents: input.agents,
     },
   }
+}
+
+export const CC_DECLARE_SCHEMA = {
+  description: 'Declare intent and route before the first write of a request. inline: only intent, route, slug, summary. tracked/forge create .nodd/<slug>/feature.md and may add the other fields.',
+  parameters: {
+    type: 'object',
+    properties: {
+      intent: { type: 'string', enum: ['read-only', 'change'] },
+      route: { type: 'string', enum: ['inline', 'tracked', 'forge'] },
+      slug: { type: 'string' },
+      summary: { type: 'string', description: 'the objective, one sentence' },
+      title: { type: 'string' },
+      problem: { type: 'string' },
+      scope: { type: 'string' },
+      constraints: { type: 'string' },
+      runner: { type: 'string', description: 'verification command, pinned once' },
+      tdd: { type: 'string', enum: ['strict', 'off'], description: 'strict: a failing run before a checkoff' },
+      files: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['intent', 'route', 'slug', 'summary'],
+  },
+}
+
+export const CC_TASK_SCHEMA = {
+  description: 'Add, check off or reopen a task in the feature document. NODD writes the document.',
+  parameters: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['add', 'check', 'reopen'] },
+      id: { type: 'string', description: 'task id, e.g. T1' },
+      title: { type: 'string', description: 'required to add' },
+      slug: { type: 'string' },
+      reason: { type: 'string', description: 'required to reopen' },
+    },
+    required: ['action', 'id', 'slug'],
+  },
 }

@@ -1,11 +1,13 @@
-import { createKernel, DECLARE_SCHEMA, TASK_SCHEMA, featureDocPath, ledgerPath, type Kernel } from './core/kernel.ts'
+import { createKernel, featureDocPath, ledgerPath, type Kernel } from './core/kernel.ts'
 import { GATE_IDS, isGateId, type GateId } from './core/gates/registry.ts'
 import { grantHatch, resolveFlag, type Policy } from './core/gates/policy.ts'
 import { mergeConfig, noddConfigPath, parseConfig } from './core/config-core.ts'
 import { joinPath } from './core/path.ts'
 import {
   BUILTIN_AGENTS,
+  CC_DECLARE_SCHEMA,
   CC_FLAGS,
+  CC_TASK_SCHEMA,
   ENFORCED,
   MAIN,
   PROTOCOL,
@@ -249,8 +251,8 @@ async function exportState($: any) {
 async function registerTools($: any) {
   if (toolsRegistered) return
   try {
-    const declare = await $.tool.register({ name: 'nodd_declare', description: DECLARE_SCHEMA.description, inputSchema: DECLARE_SCHEMA.parameters })
-    const task = await $.tool.register({ name: 'nodd_task', description: TASK_SCHEMA.description, inputSchema: TASK_SCHEMA.parameters })
+    const declare = await $.tool.register({ name: 'nodd_declare', description: CC_DECLARE_SCHEMA.description, inputSchema: CC_DECLARE_SCHEMA.parameters })
+    const task = await $.tool.register({ name: 'nodd_task', description: CC_TASK_SCHEMA.description, inputSchema: CC_TASK_SCHEMA.parameters })
     if (typeof declare?.tool === 'string') names.declare = declare.tool
     if (typeof task?.tool === 'string') names.task = task.tool
     toolsRegistered = true
