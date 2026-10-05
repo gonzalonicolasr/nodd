@@ -162,7 +162,7 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
   { label: "`patch`", example: "patch -p1 < fix.diff", test: (c) => commandWord(["patch"]).test(c) },
   { label: "mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`)", example: "git commit -m 'x'", test: (c) => /\bgit\s+(apply|checkout|restore|reset|commit|stash|clean|mv|rm)\b/.test(c) },
   { label: "package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add)", example: "npm install lodash", test: (c) => /\b(npm|pnpm|yarn|pip|pip3|cargo)\s+(install|add|i)\b/.test(c) },
-  { label: "inline interpreters (`node -e`, `python -c`)", example: "node -e \"require('fs').writeFileSync('f','x')\"", test: (c) => /\b(node|deno|bun)\s+(-e|--eval)\b/.test(c) || /\bpython3?\s+-c\b/.test(c) },
+  { label: "inline code for `node` or `python` (`-e`, `-c` or a heredoc) that can write: a write mode, a file or process API, `eval`/`exec`", example: "node -e \"require('fs').writeFileSync('f','x')\"", tokenises: true, test: (c) => inlineCodeMayWrite(c) },
   { label: "an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`)", example: "node script.js", tokenises: true, test: (c) => runsScriptFile(c) },
 ];
 
@@ -278,6 +278,54 @@ function runsScriptFile(command: string): boolean {
   return false;
 }
 
+const INLINE_FLAG = /\b(node|deno|bun)\s+(-e|--eval)\b|\bpython3?\s+-c\b/g;
+const INLINE_INTERPRETERS = new Set(["node", "deno", "bun", "python", "python3"]);
+const INLINE_FLAGS = new Set(["-e", "--eval", "-c"]);
+
+const WRITE_CAPABLE = new RegExp([
+  String.raw`\bopen\s*\([^,)]*,\s*(mode\s*=\s*)?['"][^'"]*[wax+]`,
+  String.raw`\bopen\s*\([^)]*\bmode\s*=\s*['"][^'"]*[wax+]`,
+  String.raw`\.open\s*\(\s*['"][^'"]*[wax+]`,
+  String.raw`\.write\s*\(|\bwrite_text\b|\bwrite_bytes\b|\bwritelines\b`,
+  String.raw`\bos\.(remove|unlink|rename|replace|mkdir|makedirs|rmdir|removedirs|system|popen|chmod|chown|truncate|link|symlink|exec\w*|spawn\w*|fork|kill|utime)\b`,
+  String.raw`\bfrom\s+os\s+import\b|\bshutil\b|\bsubprocess\b|\bpty\b|\bctypes\b|\bsqlite3\b|\bpickle\b|\btempfile\b`,
+  String.raw`\.(unlink|mkdir|touch|rename|replace|rmdir|chmod|symlink_to|hardlink_to)\s*\(`,
+  String.raw`\bjson\.dump\s*\(`,
+  String.raw`\b(exec|eval|compile|getattr|Function)\s*\(|__import__|__builtins__|\bimportlib\b`,
+  String.raw`\bsocket\b|\burllib\b|\brequests\b|\bhttp\.client\b|\bfetch\s*\(`,
+  String.raw`\bfs\b|\brequire\s*\(|\bimport\s*\(|\bchild_process\b|\bDeno\.|\bBun\.|\bprocess\.(binding|dlopen|kill|chdir)\b`,
+].join("|"));
+
+const HEREDOC_TO_CODE = /\b(python3?|node|deno|bun)\b[^\n]*?<<-?\s*(['"]?)([A-Za-z_][\w-]*)\2/;
+
+function heredocCodeMayWrite(command: string): boolean {
+  const lines = command.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const opener = HEREDOC_TO_CODE.exec(lines[i]);
+    if (!opener) continue;
+    const end = lines.findIndex((line, at) => at > i && line.trim() === opener[3]);
+    if (end === -1) return true;
+    if (WRITE_CAPABLE.test(lines.slice(i + 1, end).join("\n"))) return true;
+    i = end;
+  }
+  return false;
+}
+
+function inlineCodeMayWrite(command: string): boolean {
+  if (heredocCodeMayWrite(command)) return true;
+  const invocations = blankQuotedData(command).match(INLINE_FLAG)?.length ?? 0;
+  if (invocations === 0) return false;
+  const tokens = tokenise(command);
+  let judged = 0;
+  for (let i = 0; i + 1 < tokens.length; i += 1) {
+    if (!INLINE_INTERPRETERS.has(baseOf(tokens[i].text)) || !INLINE_FLAGS.has(tokens[i + 1].text)) continue;
+    const code = tokens[i + 2]?.text;
+    if (code === undefined || code.includes("\\") || WRITE_CAPABLE.test(code)) return true;
+    judged += 1;
+  }
+  return judged < invocations;
+}
+
 export const NOT_COVERED: string[] = [
   "a script run without naming an interpreter, or a build target: `./build.sh`, `make`, `npm run build`",
   "an interpreter whose script follows a bare flag, or is passed as a string: `node --import=./r.mjs app.js`, `bash -lc '…'` (flags after `run` *are* covered: `deno run --allow-write main.ts`)",
@@ -286,6 +334,7 @@ export const NOT_COVERED: string[] = [
   "a wrapper that names a command instead of running it: `command -v node`, `xargs -I node echo` (a wrapper that *runs* one is covered, whatever flags it carries)",
   "compilers, formatters and codegen writing as a side effect",
   "redirection hidden behind a variable or `eval`",
+  "inline code that reaches a write through a name NODD does not list: `python3 -c \"vars(sys.modules['o'+'s'])['rem'+'ove']('f')\"`",
   "a pre-existing background process",
   "writes performed by other extensions' or MCP tools",
   "writes performed outside pi entirely",

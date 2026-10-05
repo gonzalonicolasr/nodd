@@ -74,7 +74,7 @@ pattern set (`src/bash-classifier.ts`) and asserted against by
 | `patch` | `patch -p1 < fix.diff` |
 | mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`) | `git commit -m 'x'` |
 | package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add) | `npm install lodash` |
-| inline interpreters (`node -e`, `python -c`) | `node -e "require('fs').writeFileSync('f','x')"` |
+| inline code for `node` or `python` (`-e`, `-c` or a heredoc) that can write: a write mode, a file or process API, `eval`/`exec` | `node -e "require('fs').writeFileSync('f','x')"` |
 | an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`) | `node script.js` |
 
 ### Not covered
@@ -88,6 +88,7 @@ These mutation vectors reach the filesystem without this classifier noticing:
 - a wrapper that names a command instead of running it: `command -v node`, `xargs -I node echo` (a wrapper that *runs* one is covered, whatever flags it carries)
 - compilers, formatters and codegen writing as a side effect
 - redirection hidden behind a variable or `eval`
+- inline code that reaches a write through a name NODD does not list: `python3 -c "vars(sys.modules['o'+'s'])['rem'+'ove']('f')"`
 - a pre-existing background process
 - writes performed by other extensions' or MCP tools
 - writes performed outside pi entirely
