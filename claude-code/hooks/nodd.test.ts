@@ -399,3 +399,15 @@ describe('piezas', () => {
     expect(gateOfReason('nodd/track: x')).toBe('track')
   })
 })
+
+test('el interruptor vive en un archivo compartido por todas las sesiones', async ($, on) => {
+  const w = world(on, { store: { enabled: true } })
+  await nodd($, 'off')
+  expect(JSON.parse(w.files['/h/.local/state/nodd/switch.json']).enabled).toBe(false)
+  w.files['/h/.local/state/nodd/switch.json'] = JSON.stringify({ enabled: true })
+  const r = await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
+  expect(r.deny).toContain('nodd/classify')
+  w.files['/h/.local/state/nodd/switch.json'] = JSON.stringify({ enabled: false })
+  const ok = await call($, { tool: 'Write', file_path: '/repo/b.ts', content: 'x' })
+  expect(ok.deny).toBe(undefined)
+})

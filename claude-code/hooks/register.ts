@@ -43,6 +43,24 @@ let refusals = 0
 let lastExport = ''
 
 const configPath = () => noddConfigPath(home)
+const switchPath = () => joinPath(home, '.local', 'state', 'nodd', 'switch.json')
+
+async function readSwitch($: any): Promise<boolean | undefined> {
+  const raw = home ? await readText($, switchPath()) : null
+  if (raw === null) return undefined
+  try {
+    const v = JSON.parse(raw)?.enabled
+    return typeof v === 'boolean' ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function writeSwitch($: any, value: boolean) {
+  await $.store.set('enabled', value).catch(() => undefined)
+  if (home) await $.fs.write(switchPath(), JSON.stringify({ enabled: value, at: new Date().toISOString() }) + '\n').catch(() => undefined)
+}
+
 const statePath = () => joinPath(home, '.local', 'state', 'nodd', 'sessions', `${sessionId || 'sin-id'}.json`)
 const rootDir = () => projectRoot || cwd
 
@@ -61,7 +79,7 @@ function boot($: any, sessionCwd?: string): Promise<void> {
     headless = (await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => '')) === 'sdk-cli'
     cwd = sessionCwd || (await $.session.cwd().catch(() => '')) || ''
     sessionId = (await $.session.id().catch(() => '')) || ''
-    enabled = (await $.store.get('enabled').catch(() => undefined)) === true
+    enabled = (await readSwitch($)) ?? (await $.store.get('enabled').catch(() => undefined)) === true
     const saved = await $.store.get('hatches').catch(() => undefined)
     hatches = saved && typeof saved === 'object' && !Array.isArray(saved) ? (saved as Policy['hatches']) : {}
   })()
@@ -69,7 +87,7 @@ function boot($: any, sessionCwd?: string): Promise<void> {
 }
 
 async function syncEnabled($: any) {
-  const stored = (await $.store.get('enabled').catch(() => enabled)) === true
+  const stored = (await readSwitch($)) ?? (await $.store.get('enabled').catch(() => enabled)) === true
   if (stored === enabled) return
   enabled = stored
   if (enabled) await registerTools($)
@@ -306,14 +324,14 @@ async function command($: any, args: string): Promise<string> {
   switch (verb.toLowerCase()) {
     case 'on':
       enabled = true
-      await $.store.set('enabled', true)
+      await writeSwitch($, true)
       await registerTools($)
       refreshContext($)
       await exportState($)
       return `nodd: encendido. Gates activos en Claude Code: ${ENFORCED.join(', ')}.`
     case 'off':
       enabled = false
-      await $.store.set('enabled', false)
+      await writeSwitch($, false)
       refreshContext($)
       await exportState($)
       return 'nodd: apagado. No bloquea nada.'
@@ -366,6 +384,7 @@ export function register(on: any) {
 
   on('command.run', { command: 'nodd' }, async ($: any, e: any) => {
     await boot($)
+    await syncEnabled($)
     return { text: (await command($, String(e.args ?? ''))).replace(/^nodd: /, '') }
   })
 
