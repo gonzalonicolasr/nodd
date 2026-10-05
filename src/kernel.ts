@@ -135,7 +135,8 @@ export type Kernel = {
 
 export type KernelOptions = {
   fs: Fs;
-  cwd: string;
+  /** A function when the project root is only known later, e.g. once a declaration names it. */
+  cwd: string | (() => string);
   now?: () => string;
   loadPolicy?: () => Policy;
   isReadOnlyAgent?: CapabilityLookup;
@@ -145,7 +146,8 @@ export type KernelOptions = {
 };
 
 export function createKernel(options: KernelOptions): Kernel {
-  const { fs, cwd } = options;
+  const { fs } = options;
+  const root = typeof options.cwd === "function" ? options.cwd : () => options.cwd as string;
   const now = options.now ?? (() => new Date().toISOString());
   const loadPolicy = options.loadPolicy ?? emptyPolicy;
   const isReadOnlyAgent = options.isReadOnlyAgent ?? (() => null);
@@ -159,13 +161,13 @@ export function createKernel(options: KernelOptions): Kernel {
   let policyIsPinned = false;
 
   const readDoc = (slug: string): FeatureDoc | null => {
-    const path = featureDocPath(cwd, slug);
+    const path = featureDocPath(root(), slug);
     if (!fs.existsSync(path)) return null;
     return parseFeatureDoc(fs.readFileSync(path, "utf8")).doc;
   };
 
   const saveDoc = (doc: FeatureDoc): ToolReply => {
-    const path = featureDocPath(cwd, doc.slug);
+    const path = featureDocPath(root(), doc.slug);
     const previous = fs.existsSync(path) ? fs.readFileSync(path, "utf8") : undefined;
     const result = writeVerified(path, renderFeatureDoc(doc), { fs, expectedPrevious: previous });
     if (!result.ok) return { ok: false, text: `nodd: ${result.limitation}` };
@@ -280,7 +282,7 @@ export function createKernel(options: KernelOptions): Kernel {
       // A checkoff is gated like any other claim: the evidence gate answers
       // from observed command results, and what it returns is what gets
       // written. NODD never invents a command it did not see run.
-      const ledger = ledgerPath(cwd, doc.slug);
+      const ledger = ledgerPath(root(), doc.slug);
       const { records } = readLedger(ledger, fs);
       const verdict = evidenceGate(
         state.committed,
@@ -353,7 +355,7 @@ export function createKernel(options: KernelOptions): Kernel {
       const decisions: Array<[(typeof GATE_IDS)[number], () => GateDecision]> = [
         ["authorize", () => authorizeGate(state.committed, request, policy, isReadOnlyAgent)],
         ["classify", () => classifyGate(state.committed, request, policy, state.pending)],
-        ["track", () => trackGate(state.committed, request, policy, (slug) => fs.existsSync(featureDocPath(cwd, slug)))],
+        ["track", () => trackGate(state.committed, request, policy, (slug) => fs.existsSync(featureDocPath(root(), slug)))],
         ["delegate", () => delegateGate(state.committed, request, policy, state.pending)],
         ["promotion", () => promotionGate(promotionSignals(state.committed, request), request, policy)],
       ];

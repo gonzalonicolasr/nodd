@@ -23,7 +23,7 @@ Siempre, junto a los otros mods (separados por `:`):
 | Comando | Qué hace |
 |---|---|
 | `/nodd` o `/nodd status` | Si está prendido, la declaración actual, los gates, overrides pendientes y el último rechazo |
-| `/nodd on` / `/nodd off` | El interruptor general. Se guarda entre sesiones. Apagado no frena nada |
+| `/nodd on` / `/nodd off` | El interruptor general: vale para todas las sesiones, también las que ya están abiertas. Apagado no frena nada |
 | `/nodd gates` | Los seis gates: prendido o apagado, quién lo decide y si ya se aplica en Claude Code |
 | `/nodd gate <id\|all> on\|off` | Prende o apaga un gate en `~/.pi/nodd.json`, **el mismo archivo que usa pi**: apagarlo acá lo apaga allá. Las demás claves del archivo (models, thinking, profiles) no se tocan |
 | `/nodd allow <gate> [motivo]` | Un override de un solo uso: lo gasta el próximo rechazo de ese gate |
@@ -80,17 +80,21 @@ sólo leen no pagan nada.
   frenada.
 - **Los rechazos nombran `/nodd allow <gate>`**, el comando de Claude Code. El
   kernel compartido escribe `/nodd-allow`, que es el de pi, y el mod lo traduce.
-- **Prender o apagar vale para las sesiones nuevas.** Cada sesión lee el
-  interruptor al arrancar: una que ya estaba abierta sigue como estaba hasta
-  que corras `/nodd on|off` ahí. `state.json` lo escribe la última sesión que
-  hizo algo, así que NERV puede mostrar otra sesión.
+- **El interruptor es uno solo.** Cada sesión lo relee antes de cada tool y de
+  cada pedido, así que un `/nodd on|off` llega a las sesiones que ya estaban
+  abiertas sin reiniciarlas.
 - **Agentes de sólo lectura.** Para `authorize` se lee el `tools:` del agente en
   `.claude/agents/` del proyecto y en `~/.claude/agents/`. Sin `Write`, `Edit`,
   `MultiEdit` ni `NotebookEdit` cuenta como de sólo lectura; sin `tools:` hereda
   todo y cuenta como escritor. `Explore`, `Plan` y `claude-code-guide` son de
   sólo lectura.
-- **Estado para NERV.** Después de cada cambio escribe
-  `~/.local/state/nodd/state.json`.
+- **Dónde va `.nodd/`.** Al declarar, el documento va a la raíz del repo git
+  donde se está trabajando en ese momento, no a la carpeta donde arrancó la
+  sesión. Fuera de un repo, a la carpeta actual.
+- **Estado para NERV.** Cada sesión escribe el suyo en
+  `~/.local/state/nodd/sessions/<id de sesión>.json`, y NERV lee el de su
+  propia sesión. Los archivos no se borran solos (el mod no puede borrar); son
+  de ~1 KB cada uno.
 
 ## Desarrollo
 

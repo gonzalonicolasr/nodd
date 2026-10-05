@@ -4,15 +4,20 @@ import { writeVerified } from './core/io-core.ts'
 
 const DECLARE = 'mcp__nodd__nodd_declare'
 const TASK = 'mcp__nodd__nodd_task'
-const STATE = '/h/.local/state/nodd/state.json'
+const STATE = '/h/.local/state/nodd/sessions/s1.json'
 const CONFIG = '/h/.pi/nodd.json'
 
-type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[] }
+type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; repo: string | null; registered: string[]; store: Record<string, unknown> }
 
 function world(on: any, seed: { files?: Record<string, string>; store?: Record<string, unknown>; agents?: any[] } = {}): World {
   mock.env(on, { HOME: '/h' })
-  mock.store(on, seed.store)
-  const w: World = { files: { ...seed.files }, ran: [], agentsList: seed.agents ?? [], seenAgents: [], submitted: [] }
+  const w: World = { files: { ...seed.files }, ran: [], agentsList: seed.agents ?? [], seenAgents: [], submitted: [], cwd: '/repo', repo: null, registered: [], store: { ...seed.store } }
+  on('store.get', async (_$: any, e: any) => ({ value: w.store[e.key] }))
+  on('store.set', async (_$: any, e: any) => {
+    w.store[e.key] = e.value
+    return { value: undefined }
+  })
+  on('ui.invalidate', async () => ({ value: undefined }))
   on('prompt.submit', async (_$: any, e: any) => {
     w.submitted.push(e)
     return { text: e.text, context: e.context }
@@ -33,9 +38,14 @@ function world(on: any, seed: { files?: Record<string, string>; store?: Record<s
       .map((p) => ({ name: p.slice(prefix.length), kind: 'file', size: 0, mtimeMs: 0, isLink: false }))
     return { value }
   })
-  on('session.cwd', async () => ({ value: '/repo' }))
+  on('session.cwd', async () => ({ value: w.cwd }))
+  on('session.id', async () => ({ value: 's1' }))
+  on('session.repo', async () => ({ value: w.repo === null ? null : { root: w.repo, remote: null, internal: false } }))
   on('agent.list', async () => ({ value: w.agentsList }))
-  on('tool.register', async (_$: any, e: any) => ({ value: { tool: `mcp__nodd__${e.name}` } }))
+  on('tool.register', async (_$: any, e: any) => {
+    w.registered.push(e.name)
+    return { value: { tool: `mcp__nodd__${e.name}` } }
+  })
   on('command.register', async (_$: any, e: any) => ({ value: { command: e.name } }))
   on('ui.log', async () => ({ value: undefined }))
   on('tool.call', async (_$: any, e: any) => {
@@ -137,6 +147,47 @@ describe('una declaración por pedido', () => {
     expect(ctx.blocks.map((b: any) => b.name)).toEqual(['currentDate', 'nodd'])
     const text = ctx.blocks[1].text
     for (const word of ['nodd_declare', 'inline', 'tracked', 'forge', 'nodd_task', '/nodd allow']) expect(text).toContain(word)
+  })
+})
+
+describe('una sesión, su estado', () => {
+  test('/nodd on en otra sesión llega a esta sin reiniciarla', async ($, on) => {
+    const w = world(on)
+    expect((await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })).deny).toBe(undefined)
+    w.store.enabled = true
+    expect((await call($, { tool: 'Write', file_path: '/repo/b.ts', content: 'x' })).deny).toContain('nodd/classify')
+    expect(w.registered).toContain('nodd_declare')
+    w.store.enabled = false
+    expect((await call($, { tool: 'Write', file_path: '/repo/c.ts', content: 'x' })).deny).toBe(undefined)
+  })
+
+  test('el estado se exporta a un archivo de esta sesión y no a uno compartido', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    const state = JSON.parse(w.files[STATE] ?? 'null')
+    expect(state.sessionId).toBe('s1')
+    expect(state.enabled).toBe(true)
+    expect(w.files['/h/.local/state/nodd/state.json']).toBe(undefined)
+  })
+
+  test('el documento va a la raíz del repo donde se declara, no a donde arrancó la sesión', async ($, on) => {
+    const w = world(on)
+    w.cwd = '/h'
+    await nodd($, 'on')
+    w.cwd = '/h/proyecto/pkg'
+    w.repo = '/h/proyecto'
+    await call($, { tool: DECLARE, ...declare })
+    expect(w.files['/h/proyecto/.nodd/auth/feature.md']).toContain('login con tokens')
+    expect(Object.keys(w.files).some((p) => p.startsWith('/h/.nodd/'))).toBe(false)
+    expect((await call($, { tool: 'Write', file_path: '/h/proyecto/pkg/a.ts', content: 'x' })).deny).toBe(undefined)
+  })
+
+  test('fuera de un repo, el documento va a la carpeta donde se declara', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    w.cwd = '/tmp/suelto'
+    await call($, { tool: DECLARE, ...declare })
+    expect(w.files['/tmp/suelto/.nodd/auth/feature.md']).toContain('login con tokens')
   })
 })
 

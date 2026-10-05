@@ -32,6 +32,8 @@ const capabilities = new Map<string, boolean | null>()
 let booted: Promise<void> | undefined
 let home = ''
 let cwd = ''
+let sessionId = ''
+let projectRoot = ''
 let headless = false
 let enabled = false
 let hatches: Policy['hatches'] = {}
@@ -41,7 +43,8 @@ let refusals = 0
 let lastExport = ''
 
 const configPath = () => noddConfigPath(home)
-const statePath = () => joinPath(home, '.local', 'state', 'nodd', 'state.json')
+const statePath = () => joinPath(home, '.local', 'state', 'nodd', 'sessions', `${sessionId || 'sin-id'}.json`)
+const rootDir = () => projectRoot || cwd
 
 async function readText($: any, path: string): Promise<string | null> {
   try {
@@ -57,11 +60,26 @@ function boot($: any, sessionCwd?: string): Promise<void> {
     home = (await $.env.get('HOME').catch(() => '')) || ''
     headless = (await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => '')) === 'sdk-cli'
     cwd = sessionCwd || (await $.session.cwd().catch(() => '')) || ''
+    sessionId = (await $.session.id().catch(() => '')) || ''
     enabled = (await $.store.get('enabled').catch(() => undefined)) === true
     const saved = await $.store.get('hatches').catch(() => undefined)
     hatches = saved && typeof saved === 'object' && !Array.isArray(saved) ? (saved as Policy['hatches']) : {}
   })()
   return booted
+}
+
+async function syncEnabled($: any) {
+  const stored = (await $.store.get('enabled').catch(() => enabled)) === true
+  if (stored === enabled) return
+  enabled = stored
+  if (enabled) await registerTools($)
+  refreshContext($)
+}
+
+async function resolveRoot($: any): Promise<string> {
+  const repo = await $.session.repo().catch(() => null)
+  if (repo && typeof repo.root === 'string' && repo.root !== '') return repo.root
+  return (await $.session.cwd().catch(() => '')) || cwd
 }
 
 function configGates(): Policy['config'] {
@@ -78,7 +96,7 @@ function kernelFor(key: string): Kernel {
   if (existing) return existing
   const kernel = createKernel({
     fs,
-    cwd,
+    cwd: rootDir,
     loadPolicy,
     isReadOnlyAgent: (name) => capabilities.get(name.toLowerCase()) ?? null,
     spendHatch: (gate) => {
@@ -184,10 +202,10 @@ async function resolveCapability($: any, name: unknown) {
 function pathsFor(kernel: Kernel, call: Call): string[] {
   const paths = [configPath()]
   const declared = kernel.state.committed.declaration?.slug
-  if (declared) paths.push(featureDocPath(cwd, declared))
+  if (declared) paths.push(featureDocPath(rootDir(), declared))
   const slug = call.input.slug
   if ((call.toolName === 'nodd_declare' || call.toolName === 'nodd_task') && typeof slug === 'string' && slug !== '') {
-    paths.push(featureDocPath(cwd, slug), ledgerPath(cwd, slug))
+    paths.push(featureDocPath(rootDir(), slug), ledgerPath(rootDir(), slug))
   }
   return paths
 }
@@ -196,6 +214,7 @@ async function exportState($: any) {
   if (headless || !home) return
   await stage($, [configPath()])
   const snap = snapshot({
+    sessionId,
     enabled,
     config: configGates(),
     committed: kernels.get(MAIN)?.state.committed ?? null,
@@ -223,6 +242,7 @@ async function registerTools($: any) {
 }
 
 async function serve($: any, kernel: Kernel, call: Call, id: string) {
+  if (call.toolName === 'nodd_declare') projectRoot = await resolveRoot($)
   await stage($, pathsFor(kernel, call))
   kernel.onToolCall({ toolName: call.toolName, toolCallId: id, input: call.input })
   const reply = call.toolName === 'nodd_declare' ? kernel.declare(call.input as any) : kernel.task(call.input as any)
@@ -352,12 +372,14 @@ export function register(on: any) {
   on('prompt.context', async ($: any, e: any, next: any) => {
     const r = await next(e)
     await boot($)
+    await syncEnabled($)
     if (!enabled) return r
     return { ...r, blocks: [...(r?.blocks ?? []), { name: 'nodd', text: PROTOCOL }] }
   })
 
   on('prompt.submit', async ($: any, e: any, next: any) => {
     await boot($)
+    await syncEnabled($)
     if (!enabled || !isNewRequest(e)) return next(e)
     clearDeclaration()
     await exportState($)
@@ -372,6 +394,7 @@ export function register(on: any) {
 
   on('tool.call', async ($: any, e: any, next: any) => {
     await boot($)
+    await syncEnabled($)
     const isNodd = e.tool === names.declare || e.tool === names.task
     if (!enabled && !isNodd) return next(e)
     const key: string = e.agentId ?? MAIN

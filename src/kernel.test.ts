@@ -52,3 +52,13 @@ test("without an override a task with no observed run stays unchecked", () => {
   assert.equal(kernel.task({ action: "check", id: "T1", slug: "demo" }).ok, false);
   assert.deepEqual(spent, []);
 });
+
+test("a cwd given as a function is read when the document is written, not when the kernel is made", () => {
+  const files = new Map<string, string>();
+  let root = "/home";
+  const kernel = createKernel({ fs: memoryFs(files), cwd: () => root });
+  root = "/repo";
+  kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "s" });
+  assert.ok(files.has("/repo/.nodd/demo/feature.md"));
+  assert.ok(![...files.keys()].some((path) => path.startsWith("/home/")));
+});

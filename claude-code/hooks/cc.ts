@@ -171,6 +171,7 @@ export type Refusal = { gate: string; reason: string; at: string }
 
 export type Snapshot = {
   version: string
+  sessionId: string
   enabled: boolean
   gates: Array<{ id: GateId; enabled: boolean; enforcedInClaudeCode: boolean }>
   declaration: { slug: string; intent: string; route: string } | null
@@ -179,6 +180,7 @@ export type Snapshot = {
 }
 
 export function snapshot(input: {
+  sessionId: string
   enabled: boolean
   config: Policy['config']
   committed: Committed | null
@@ -190,6 +192,7 @@ export function snapshot(input: {
   const declaration = input.committed?.declaration ?? null
   return {
     version: VERSION,
+    sessionId: input.sessionId,
     enabled: input.enabled,
     gates: GATE_IDS.map((id) => ({
       id,
