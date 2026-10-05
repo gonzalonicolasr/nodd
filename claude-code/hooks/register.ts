@@ -94,6 +94,7 @@ async function syncEnabled($: any) {
   enabled = stored
   if (enabled) await registerTools($)
   refreshContext($)
+  await exportState($)
 }
 
 async function resolveRoot($: any): Promise<string> {

@@ -162,6 +162,15 @@ describe('una sesión, su estado', () => {
     expect((await call($, { tool: 'Write', file_path: '/repo/c.ts', content: 'x' })).deny).toBe(undefined)
   })
 
+  test('si otra sesión apaga NODD, el estado de esta sesión lo refleja', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    expect(JSON.parse(w.files[STATE] ?? 'null').enabled).toBe(true)
+    w.files['/h/.local/state/nodd/switch.json'] = JSON.stringify({ enabled: false, at: 't' })
+    await call($, { tool: 'Read', file_path: '/repo/a.ts' })
+    expect(JSON.parse(w.files[STATE] ?? 'null').enabled).toBe(false)
+  })
+
   test('el estado se exporta a un archivo de esta sesión y no a uno compartido', async ($, on) => {
     const w = world(on)
     await nodd($, 'on')
