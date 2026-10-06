@@ -246,6 +246,7 @@ The line is written in Spanish, like the rest of the author's tooling:
 | a test file edited between a red and a green run of the runner | write order against run order |
 | `.skip`, `.only`, `xit`, `t.Skip`, `@pytest.mark.skip` added, assertions removed | the edit's old and new text |
 | files written outside the declared `files` | the declared set against the written set |
+| tests that vanished or got skipped: a green run passing fewer tests than an earlier green run of this request, or more skipped | the summary line of `node --test`, bun, jest, vitest, pytest, cargo and `go test -v` (`src/test-counts.ts`); no summary, no count |
 
 The warnings reach the model with the next request, so an unverified claim is
 not left standing. The close never blocks: it reports. It covers the session

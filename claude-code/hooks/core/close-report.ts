@@ -2,6 +2,7 @@ import type { Committed } from "./state.ts";
 import { isDeclaredRunner, masksExitStatus, writesByBash } from "./gates/evidence.ts";
 import { describeOutcome, isSuccess, parseOutcome } from "./outcome.ts";
 import { isDeclaredPath } from "./gates/request.ts";
+import { testCounts } from "./test-counts.ts";
 
 export type TestEdit = { path: string; seq: number; addedMarkers: string[]; droppedAssertions: number };
 
@@ -78,7 +79,10 @@ export function closeReport(input: CloseInput): CloseReport | null {
   else if (!last) status = `\`${runner}\` sin correr después de la última escritura`;
   else if (!isSuccess(lastOutcome!)) status = `✗ \`${last.command}\` → ${describeOutcome(lastOutcome!)}`;
   else if (isPartial(last.command, runner)) status = `verde parcial: \`${last.command}\`, no la suite declarada (\`${runner}\`)`;
-  else status = `✓ \`${last.command}\` verde después de la última escritura`;
+  else {
+    const count = testCounts(last.resultText);
+    status = `✓ \`${last.command}\` verde${count ? ` (${count.passed} tests)` : ""} después de la última escritura`;
+  }
 
   const warnings: string[] = [];
   const claim = CLAIM.exec(input.answer)?.[0];
@@ -86,6 +90,21 @@ export function closeReport(input: CloseInput): CloseReport | null {
     warnings.push(runner === null
       ? `la respuesta afirma «${claim}», pero no hay runner declarado contra el cual verificarlo`
       : `la respuesta afirma «${claim}», pero NODD no vio \`${runner}\` completo y verde después de la última escritura`);
+  }
+
+  if (verified) {
+    const full = runnerRuns
+      .filter((run) => !masksExitStatus(run.command, runner!) && !isPartial(run.command, runner!))
+      .map((run) => ({ run, count: testCounts(run.resultText) }))
+      .filter((entry): entry is { run: typeof entry.run; count: NonNullable<typeof entry.count> } => entry.count !== null);
+    const current = full.find((entry) => entry.run === last);
+    const earlier = full.filter((entry) => entry.run.seq < last.seq);
+    if (current && earlier.length > 0) {
+      const most = Math.max(...earlier.filter((entry) => isSuccess(parseOutcome(entry.run.isError, entry.run.resultText))).map((entry) => entry.count.passed), 0);
+      if (current.count.passed < most) warnings.push(`la última corrida verde pasó ${current.count.passed} tests; antes, en este pedido, pasaban ${most}`);
+      const first = earlier[0].count.skipped;
+      if (current.count.skipped > first) warnings.push(`los tests salteados subieron de ${first} a ${current.count.skipped}`);
+    }
   }
 
   if (input.declaredFiles.length > 0) {

@@ -101,3 +101,16 @@ test("a bash write after the green run leaves the request unverified, and a bash
   const committed = run(run(write(emptyCommitted(), "/r/a.ts"), "npm test"), "git commit -am x");
   assert.match(closeReport(input(committed))!.line, /✓ `npm test` verde/);
 });
+
+test("the close shows the count of a green run and flags tests that vanished or got skipped", () => {
+  const out = (pass: number, skipped = 0) => `ℹ pass ${pass}\nℹ fail 0\nℹ skipped ${skipped}`;
+  const green = (c: Committed, text: string) => step(c, "bash", { command: "npm test" }, false, text);
+  const first = green(write(emptyCommitted(), "/r/a.ts"), out(128));
+  const second = green(write(first, "/r/a.test.ts"), out(120, 3));
+  const report = closeReport(input(second))!;
+  assert.match(report.line, /✓ `npm test` verde \(120 tests\) después de la última escritura/);
+  assert.ok(report.warnings.some((w) => /pasó 120 tests; antes, en este pedido, pasaban 128/.test(w)));
+  assert.ok(report.warnings.some((w) => /salteados subieron de 0 a 3/.test(w)));
+  const steady = closeReport(input(green(write(first, "/r/b.ts"), out(130))))!;
+  assert.deepEqual(steady.warnings, []);
+});
