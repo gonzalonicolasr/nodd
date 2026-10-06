@@ -65,6 +65,24 @@ forcing it into a number would be the very sin NODD accuses prose of.
 Esas 10 quedan como prosa a propósito: *"¿exploré lo suficiente?"* no es
 observable, y mecanizarlo sería el mismo pecado que NODD le critica a la prosa.
 
+### What NODD checks that the model's word cannot / Lo que NODD verifica y la palabra del modelo no
+
+ODD puts these in the prompt. A spec-driven runner such as zero-pi's `/forge`
+caps rounds and validates the plan's shape mechanically, but its verdict, its
+TDD cycle and "run the whole suite" are still text the model writes. NODD reads
+the tool calls and their results instead:
+
+| check | how NODD knows |
+| --- | --- |
+| a task is done only when the declared runner was **seen** passing after the last write | the observed tool result, never a sentence |
+| `npm test 2>&1 \| tail`, `\|\| true` and `; echo` do not count as a pass | the status after `\|`, `;`, `\|\|` or `&` belongs to another command |
+| a `sed -i` or codegen after the green run makes it stale | mutating bash counts as a write |
+| every request ends with what was verified, and an answer that claims "done" without it is flagged back to the model | the observed close (`src/close-report.ts`) |
+| a test edited between a red and a green run, an added `.skip`/`.only`, removed assertions | the edit's text and the order of writes and runs |
+| a green run that passes fewer tests than an earlier one, or skips more | the runner's own summary line |
+| files written outside the declared set | the declared paths against the written ones |
+| `python3 -c` that only reads is a read; a `python3 - <<'PY'` script that writes is a write | the inline code is read before it is judged |
+
 ### Quick start
 
 ```bash

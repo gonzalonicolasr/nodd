@@ -5,6 +5,41 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The observed close (`src/close-report.ts`): after every request that wrote,
+  NODD reports the files written and the declared runner's state after the
+  last write (green, partial, red, exit status hidden, not run), and flags an
+  answer that claims success without a full green run, a test edited between
+  a red and a green run, added `.skip`/`.only`/`xit`/`t.Skip`/
+  `@pytest.mark.skip`, removed assertions, files outside the declared set, and
+  a green run that passes fewer tests than an earlier one or skips more.
+  Shown at `agent_end` in pi and beneath the answer in Claude Code; the
+  warnings reach the model with the next request.
+- `src/test-counts.ts` reads the summary of node --test, bun, jest, vitest,
+  pytest, cargo and go test -v.
+- The Claude Code mod (`claude-code/`): gates authorize, classify, track and
+  evidence, one declaration per request, the ODD protocol at the start of the
+  conversation, the observed close across the main session, its subagents and
+  forge's phase agents.
+
+### Fixed
+
+- A run of the runner whose exit status is hidden (`| tail`, `|| true`,
+  `; echo`, `&`) is no longer evidence, nor a failure in promotion's streak.
+- A mutating bash command after the green run makes the evidence stale.
+- The classifier reads the code of `python -c`, `node -e` and of a heredoc
+  given to python or node: read-only code is a read, code that can write is a
+  write. `python3 - <<'PY' … open(p, 'w') … PY` used to pass as a read.
+- gate-promotion refuses a file the declaration never named even when the
+  count fits; declared paths may be relative in promotion and delegate.
+- A refused or malformed `nodd_declare` no longer counts as a declaration.
+- gate-track refuses mutating bash that names `.nodd/`.
+- `/nodd-allow evidence` is spent by the next refused checkoff and records
+  `observed: none (override: <reason>)`.
+
 ## [0.8.5] - 2026-09-27
 
 ### Added
