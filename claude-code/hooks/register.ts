@@ -4,6 +4,7 @@ import { grantHatch, resolveFlag, type Policy } from './core/gates/policy.ts'
 import { mergeConfig, noddConfigPath, parseConfig } from './core/config-core.ts'
 import { joinPath } from './core/path.ts'
 import { closeReport, isTestFile, testEditSignals, type TestEdit } from './core/close-report.ts'
+import type { Committed } from './core/state.ts'
 import {
   BUILTIN_AGENTS,
   CC_DECLARE_SCHEMA,
@@ -35,8 +36,14 @@ const kernels = new Map<string, Kernel>()
 const agents = new Map<string, { type: string; parent: string }>()
 const capabilities = new Map<string, boolean | null>()
 const lastDeclared = new Map<string, Record<string, unknown>>()
-let requestStart = 0
-let testEdits: TestEdit[] = []
+let requestStartAt = ''
+let lastTick = 0
+
+function tick(): string {
+  lastTick = Math.max(Date.now(), lastTick + 1)
+  return new Date(lastTick).toISOString()
+}
+let testEdits: Array<Omit<TestEdit, 'seq'> & { at: string }> = []
 let pendingNote: string | null = null
 let lastReported = -1
 
@@ -127,6 +134,7 @@ function kernelFor(key: string): Kernel {
   const kernel = createKernel({
     fs,
     cwd: rootDir,
+    now: tick,
     loadPolicy,
     isReadOnlyAgent: (name) => capabilities.get(name.toLowerCase()) ?? null,
     spendHatch: (gate) => {
@@ -169,21 +177,50 @@ function testEditTexts(call: Call, before: string | null): [string, string] | nu
   return null
 }
 
+function requestView(): { committed: Committed; edits: TestEdit[]; size: number } {
+  const events: Array<{ at: string; write?: string; run?: Committed['commandResults'][number] }> = []
+  let size = 0
+  for (const kernel of kernels.values()) {
+    size += kernel.state.committed.toolCalls
+    for (const [path, write] of kernel.state.committed.filesWritten) if (write.at >= requestStartAt) events.push({ at: write.at, write: path })
+    for (const run of kernel.state.committed.commandResults) if (run.at >= requestStartAt) events.push({ at: run.at, run })
+  }
+  events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  const filesWritten = new Map<string, { at: string; seq: number }>()
+  const commandResults: Committed['commandResults'] = []
+  events.forEach((event, i) => {
+    if (event.write) filesWritten.set(event.write, { at: event.at, seq: i + 1 })
+    if (event.run) commandResults.push({ ...event.run, seq: i + 1 })
+  })
+  const seqAt = (at: string) => events.filter((event) => event.at <= at).length
+  const committed: Committed = {
+    seen: new Set(),
+    filesRead: new Set(),
+    filesWritten,
+    commandResults,
+    delegations: 0,
+    toolCalls: events.length,
+    declaration: kernels.get(MAIN)?.state.committed.declaration ?? null,
+  }
+  const edits = testEdits.map(({ at, ...edit }) => ({ ...edit, seq: seqAt(at) }))
+  return { committed, edits, size }
+}
+
 function closingText(answer: string): string | null {
-  const main = kernels.get(MAIN)
-  if (!main || main.state.committed.toolCalls === lastReported) return null
-  const declaration = main.state.committed.declaration
+  const view = requestView()
+  if (view.size === lastReported) return null
+  const declaration = view.committed.declaration
   const report = closeReport({
-    committed: main.state.committed,
-    since: requestStart,
+    committed: view.committed,
+    since: 0,
     slug: declaration?.slug ?? null,
     runner: declaration?.runner ?? null,
     declaredFiles: declaration?.files ?? [],
     answer,
-    testEdits,
+    testEdits: view.edits,
   })
   if (!report) return null
-  lastReported = main.state.committed.toolCalls
+  lastReported = view.size
   pendingNote = report.warnings.length > 0 ? `NODD, cierre del turno anterior: ${report.warnings.join(' | ')}` : null
   return [report.line, ...report.warnings.map((w) => `  ⚠ ${w}`)].join('\n')
 }
@@ -447,7 +484,7 @@ export function register(on: any) {
     await syncEnabled($)
     if (!enabled || !isNewRequest(e)) return next(e)
     clearDeclaration()
-    requestStart = kernels.get(MAIN)?.state.committed.toolCalls ?? 0
+    requestStartAt = tick()
     testEdits = []
     const note = pendingNote
     pendingNote = null
@@ -478,22 +515,24 @@ export function register(on: any) {
     const call = normalizeCall(String(e.tool), e, names)
     if (isNodd) return serve($, key, call, id)
     if ((call.toolName === 'write' || call.toolName === 'edit') && inScratchpad(call.input.file_path ?? call.input.path, sessionId)) return next(e)
-    if (await insideForge($, e, key)) return next(e)
+    const forge = await insideForge($, e, key)
     const kernel = kernelFor(key)
 
-    await stage($, pathsFor(kernel, call))
-    if (call.toolName === 'subagent') await resolveCapability($, call.input.agent)
     let decision: { block: true; reason: string } | null = null
-    const before = JSON.stringify(hatches)
-    try {
-      kernel.reloadPolicy()
-      decision = kernel.checkCall(call)
-    } catch {
-      decision = null
+    if (!forge) {
+      await stage($, pathsFor(kernel, call))
+      if (call.toolName === 'subagent') await resolveCapability($, call.input.agent)
+      const before = JSON.stringify(hatches)
+      try {
+        kernel.reloadPolicy()
+        decision = kernel.checkCall(call)
+      } catch {
+        decision = null
+      }
+      if (JSON.stringify(hatches) !== before) await saveHatches($)
+      await flush($)
     }
     kernel.onToolCall({ toolName: call.toolName, toolCallId: id, input: call.input })
-    if (JSON.stringify(hatches) !== before) await saveHatches($)
-    await flush($)
     if (decision) {
       kernel.forgetPending(id)
       refusals += 1
@@ -517,8 +556,8 @@ export function register(on: any) {
     else {
       const seen = call.toolName === 'bash' ? bashOutcome(r) : { isError: r?.isError === true, content: String(r?.text ?? '') }
       kernel.onToolResult({ toolName: call.toolName, toolCallId: id, input: call.input, ...seen })
-      const texts = testPath && key === MAIN && !seen.isError ? testEditTexts(call, prior) : null
-      if (texts) testEdits.push({ path: testPath!, seq: kernel.state.committed.toolCalls, ...testEditSignals(texts[0], texts[1]) })
+      const texts = testPath && !seen.isError ? testEditTexts(call, prior) : null
+      if (texts) testEdits.push({ path: testPath!, at: kernel.state.committed.filesWritten.get(testPath!)?.at ?? new Date().toISOString(), ...testEditSignals(texts[0], texts[1]) })
     }
     await exportState($)
     return r

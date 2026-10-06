@@ -51,7 +51,7 @@ test("only what happened in this request counts", () => {
 
 test("a claim of success without an observed green run is flagged", () => {
   const c = write(emptyCommitted(), "/r/a.ts");
-  for (const answer of ["Listo, pasan todos los tests.", "Done — all tests pass.", "Quedó arreglado y verificado."]) {
+  for (const answer of ["Listo, pasan todos los tests.", "Done — all tests pass.", "Quedó arreglado y verificado.", "VEREDICTO: pasa"]) {
     const report = closeReport(input(c, { answer }))!;
     assert.ok(report.warnings.some((w) => /la respuesta afirma/.test(w)), answer);
   }

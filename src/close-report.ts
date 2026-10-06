@@ -19,7 +19,7 @@ export type CloseReport = { line: string; warnings: string[]; verified: boolean 
 
 const MARKER = /\.(skip|only|todo)\(|\bx(it|describe|test)\(|\bf(it|describe)\(|\bt\.Skip(Now|f)?\(|@pytest\.mark\.(skip|xfail)|@unittest\.skip/g;
 const ASSERTION = /\bexpect\s*\(|\bassert\w*\s*[(.\s]|\bt\.(Error|Fatal)f?\s*\(|\brequire\.\w+\s*\(/g;
-const CLAIM = /(?<!\bno\s)(?<!\bnot\s)\b(pasan|verdes?|anda|funciona|listo|lista|arreglad[oa]|resuelt[oa]|verificad[oa]|terminad[oa]|tests? pass(es)?|passing|fixed|done|works|verified|all green)\b/i;
+const CLAIM = /(?<!\bno\s)(?<!\bnot\s)\b(pasan|verdes?|anda|funciona|listo|lista|arreglad[oa]|resuelt[oa]|verificad[oa]|terminad[oa]|tests? pass(es)?|passing|fixed|done|works|verified|all green|veredicto:\s*pasa)\b/i;
 
 export function isTestFile(path: string): boolean {
   return /(^|\/)(tests?|__tests__|spec)\//.test(path)

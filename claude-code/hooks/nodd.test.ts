@@ -350,6 +350,31 @@ describe('cierre observado', () => {
     expect(r.text).toContain('se sacaron 1 assertions')
   })
 
+  test('lo que escribe y corre un subagente entra en el cierre del pedido', async ($, on) => {
+    const w = world(on, { agents: [{ id: 'a9', type: 'general-purpose', status: 'running', description: 'g' }] })
+    await nodd($, 'on')
+    await $.prompt.submit(prompt('delegá el login') as any)
+    await call($, { tool: DECLARE, ...declare, runner: 'npm test' })
+    await call($, { tool: 'Write', file_path: '/repo/sub.ts', content: 'x', agentId: 'a9' })
+    const unverified: any = await $.turn.complete(done('El subagente terminó, pasan los tests.') as any)
+    expect(unverified.text).toContain('1 archivo')
+    expect(unverified.text).toContain('⚠ la respuesta afirma')
+    w.respond = green
+    await call($, { tool: 'Bash', command: 'npm test', agentId: 'a9' })
+    await call($, { tool: 'Read', file_path: '/repo/sub.ts' })
+    const verified: any = await $.turn.complete(done('Listo.') as any)
+    expect(verified.text).toContain('✓ `npm test` verde después de la última escritura')
+  })
+
+  test('lo que escribe un agente de forge, que no pasa por los gates, igual entra en el cierre', async ($, on) => {
+    world(on, { agents: [{ id: 'f1', type: 'forge:build', status: 'running', description: 'b' }] })
+    await nodd($, 'on')
+    await $.prompt.submit(prompt('forge') as any)
+    expect((await call($, { tool: 'Write', file_path: '/repo/f.ts', content: 'x', agentId: 'f1' })).deny).toBe(undefined)
+    const r: any = await $.turn.complete(done('VEREDICTO: pasa') as any)
+    expect(r.text).toContain('sin declarar · 1 archivo')
+  })
+
   test('sin escrituras, o apagado, la respuesta queda como estaba', async ($, on) => {
     world(on)
     await nodd($, 'on')

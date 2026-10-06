@@ -90,8 +90,10 @@ una corrida roja y una corrida que escondió su exit status. Avisa además cuand
 un test se editó entre una corrida roja y la verde, cuando se le agregaron
 `.skip`/`.only`/`xit`/`t.Skip`/`@pytest.mark.skip` o se le sacaron assertions,
 y cuando se escribió fuera de los `files` declarados. Los avisos le llegan al
-modelo con tu pedido siguiente. Cuenta lo de la sesión principal; lo que escribe
-un subagente queda en su propio kernel.
+modelo con tu pedido siguiente. Junta lo que escribieron y corrieron la sesión
+principal y sus subagentes desde que empezó el pedido, incluidos los agentes de
+forge: no pasan por los gates, pero lo que hacen se observa, así que un
+`VEREDICTO: pasa` sin una corrida verde observada queda marcado.
 
 ## Cosas que conviene saber
 
