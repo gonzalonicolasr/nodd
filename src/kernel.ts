@@ -17,7 +17,7 @@ import { authorizeGate, type CapabilityLookup } from "./gates/authorize.ts";
 import { classifyGate } from "./gates/classify.ts";
 import { trackGate } from "./gates/track.ts";
 import { delegateGate } from "./gates/delegate.ts";
-import { evidenceGate, isDeclaredRunner } from "./gates/evidence.ts";
+import { evidenceGate, isDeclaredRunner, masksExitStatus } from "./gates/evidence.ts";
 import { promotionGate } from "./gates/promotion.ts";
 import { isFileWrite, targetPath, type GateRequest } from "./gates/request.ts";
 import { appendRecord, readLedger } from "./ledger-core.ts";
@@ -557,7 +557,7 @@ function promotionSignals(committed: Committed, request: GateRequest) {
   if (runner !== null) {
     for (let i = committed.commandResults.length - 1; i >= 0; i--) {
       const run = committed.commandResults[i];
-      if (!isDeclaredRunner(run.command, runner)) continue;
+      if (!isDeclaredRunner(run.command, runner) || masksExitStatus(run.command, runner)) continue;
       if (isSuccess(parseOutcome(run.isError, run.resultText))) break;
       consecutiveFailures += 1;
     }

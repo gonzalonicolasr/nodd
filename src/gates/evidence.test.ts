@@ -298,7 +298,7 @@ test("a refusal says why the observed run did not count", () => {
     `the refusal lists what it saw but never says why it did not count: "${reason}"`,
   );
   // And it must name the *right* cause. `isDeclaredRunner` prefix-matches
-  // tokens, so a pipe or a redirect after the runner is fine — what refused
+  // tokens, so what refused it here is not the pipe after the runner — what refused
   // this command was the leading `timeout 120`. Blaming the pipe sends the
   // reader to strip the pipe, land on `timeout 120 npm test`, and get refused
   // again: the same lost cycle this message exists to prevent.
@@ -309,7 +309,7 @@ test("a refusal says why the observed run did not count", () => {
   assert.doesNotMatch(
     reason,
     /pipe[^)]*is not the runner|no pipe/i,
-    `the message blames the pipe, but \`npm test | tail -15\` is accepted: "${reason}"`,
+    `the message blames the pipe, but what ran first was the prefix: "${reason}"`,
   );
 
   // And the explanation is for the near miss only. A command with nothing to
@@ -325,4 +325,31 @@ test("a refusal says why the observed run did not count", () => {
     /pipe|wrapper|on its own/i,
     `an unrelated command got the wrapper explanation: "${other.reason}"`,
   );
+});
+
+test("a run whose exit status is masked is not evidence", () => {
+  for (const command of ["npm test 2>&1 | tail -5", "npm test || true", "npm test; echo done", "npm test &", "npm test |& tee log"]) {
+    const run = afterCommand(command, false);
+    const decision = evidenceGate(run, ledgerFor(run), check, emptyPolicy());
+    assert.equal(decision.allow, false, command);
+    const reason = (decision as { reason: string }).reason;
+    assert.match(reason, /exit status/, `${command}: "${reason}"`);
+  }
+});
+
+test("redirections and && keep the runner's exit status", () => {
+  for (const command of ["npm test 2>&1", "npm test > out.log 2>&1", "npm test &> out.log", "npm test && echo ok", "npm test -- a.test.ts"]) {
+    const run = afterCommand(command, false);
+    assert.equal(evidenceGate(run, ledgerFor(run), check, emptyPolicy()).allow, true, command);
+  }
+});
+
+test("a clean run counts even after a masked one", () => {
+  const masked = afterCommand("npm test | tail -3", false, "", "m1");
+  const both = fold(masked, observation({
+    toolCallId: "c1", toolName: "bash", input: { command: "npm test" }, isError: false, resultText: "", at: "2026-09-19T10:06:00.000Z",
+  }));
+  const decision = evidenceGate(both, ledgerFor(both), check, emptyPolicy());
+  assert.equal(decision.allow, true);
+  assert.equal((decision as { observed: { command: string } }).observed.command, "npm test");
 });

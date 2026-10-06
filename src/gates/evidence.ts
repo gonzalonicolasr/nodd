@@ -89,7 +89,28 @@ export function isDeclaredRunner(command: string, runner: string): boolean {
   const actual = command.trim().split(/\s+/);
   const declared = runner.trim().split(/\s+/);
   if (declared.length === 0 || actual.length < declared.length) return false;
-  return declared.every((token, i) => actual[i] === token);
+  const last = declared.length - 1;
+  return declared.every((token, i) => actual[i] === token || (i === last && actual[i].startsWith(token) && /^[;|&]/.test(actual[i].slice(token.length))));
+}
+
+export function masksExitStatus(command: string, runner: string): boolean {
+  let rest = command.trimStart();
+  for (const token of runner.trim().split(/\s+/)) rest = rest.slice(token.length).replace(/^[ \t]+/, "");
+  let quote: string | null = null;
+  for (let i = 0; i < rest.length; i += 1) {
+    const ch = rest[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === "|" || ch === ";" || ch === "\n") return true;
+    else if (ch === "&") {
+      if (rest[i + 1] === "&") i += 1;
+      else if (rest[i - 1] !== ">" && rest[i + 1] !== ">") return true;
+    }
+  }
+  return false;
 }
 
 function deny(reason: string, remedy: string = REMEDY): EvidenceDecision {
@@ -187,8 +208,8 @@ export function evidenceGate(
     // the message held the evidence and made the reader derive the rule.
     //
     // The rule has to be the true one. `isDeclaredRunner` matches a prefix, so
-    // what follows the runner — a pipe, a redirect, `|| true` — is fine; what
-    // refuses is anything *before* it. An earlier version of this message
+    // this branch is about what comes *before* the runner; what hides its exit
+    // status after it is refused further down, by `masksExitStatus`. An earlier version of this message
     // blamed the pipe, which would send the reader to strip the pipe, land on
     // `timeout 120 npm test`, and be refused again.
     const prefixed = runs
@@ -200,14 +221,23 @@ export function evidenceGate(
           ? `. \`${prefixed}\` runs before it, and a runner reached through another command is not the runner: NODD reads the command it was given, not what the shell eventually resolved`
           : ""),
       prefixed
-        ? `run \`${request.runner}\` with nothing before it — a pipe or redirect after it is fine — then check ${request.task} off once it is observed to succeed`
+        ? `run \`${request.runner}\` with nothing before it and nothing after it that hides its exit status (a redirect or \`&&\` is fine; \`|\`, \`;\` and \`||\` are not), then check ${request.task} off once it is observed to succeed`
         : `run \`${request.runner}\`, then check ${request.task} off once it is observed to succeed`,
     );
   }
 
-  const green = relevant.filter((run) => isSuccess(run.outcome));
-  if (green.length === 0) {
+  const trusted = request.runner === null ? relevant : relevant.filter((run) => !masksExitStatus(run.command, request.runner!));
+  if (trusted.length === 0) {
     const last = relevant[relevant.length - 1];
+    return deny(
+      `every observed run of \`${request.runner}\` hid its exit status (last: \`${last.command}\`): after \`|\`, \`;\`, \`||\` or \`&\` the status NODD sees belongs to another command, so a failing run can look like a success`,
+      `run \`${request.runner}\` with only redirects or \`&&\` after it; to keep the output short, redirect it to a file and read the file with a second command, then check ${request.task} off`,
+    );
+  }
+
+  const green = trusted.filter((run) => isSuccess(run.outcome));
+  if (green.length === 0) {
+    const last = trusted[trusted.length - 1];
     return deny(`the last observed run of \`${last.command}\` ended ${describeOutcome(last.outcome)}, which is not success`);
   }
 
@@ -221,7 +251,7 @@ export function evidenceGate(
 
   if (request.tdd?.mode === "strict") {
     const chosen = afterWrite[afterWrite.length - 1];
-    const red = relevant.find((run) => !isSuccess(run.outcome) && run.at <= chosen.at);
+    const red = trusted.find((run) => !isSuccess(run.outcome) && run.at <= chosen.at);
     if (!red) {
       return deny(
         `TDD mode is strict (${request.tdd.source}) but no failing (RED) run was observed before this success, so the test was never seen to fail first`,

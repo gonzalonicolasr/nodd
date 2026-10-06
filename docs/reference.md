@@ -168,6 +168,12 @@ up, because a green command proves something only about *which* command ran and
    runner cannot be re-pinned: re-declaring with a different one is refused, so
    a refused checkoff cannot be repaired by renaming the check to whatever did
    pass.
+   **The exit status has to be the runner's own.** `npm test 2>&1 | tail -5`,
+   `npm test || true`, `npm test; echo done` and `npm test &` all hand back
+   another command's status, so a failing run reads as a success. Those runs
+   count neither as evidence nor as failures. Redirects and `&&` keep the
+   runner's status and are fine; to keep the output short, redirect it to a
+   file and read the file with a second command.
 3. **After the task's last write.** A run observed before the edit it supposedly
    verifies proves nothing about the edit. Ordering uses the kernel's
    observation sequence rather than the wall clock, because a write and the run
