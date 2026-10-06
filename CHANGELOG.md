@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evidence, one declaration per request, the ODD protocol at the start of the
   conversation, the observed close across the main session, its subagents and
   forge's phase agents.
+- `src/destructive.ts`: the Claude Code mod refuses irreversible commands
+  (`git reset --hard`, `git clean -f`, `git checkout -- .`, `rm -rf` outside
+  the project, `terraform destroy`, `kubectl delete`, a DROP/TRUNCATE against a
+  non-local database) for every agent, forge's phase agents included;
+  `/nodd allow destructive` lets one through.
 
 ### Fixed
 
