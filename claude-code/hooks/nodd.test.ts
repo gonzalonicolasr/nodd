@@ -393,6 +393,39 @@ describe('cierre observado', () => {
   })
 })
 
+describe('irreversible', () => {
+  test('un git reset --hard se frena, aunque lo corra un agente de forge', async ($, on) => {
+    const w = world(on, { agents: [{ id: 'f1', type: 'forge:build', status: 'running', description: 'b' }] })
+    await nodd($, 'on')
+    const forge = await call($, { tool: 'Bash', command: 'git reset --hard HEAD~2', agentId: 'f1' })
+    expect(forge.deny).toContain('nodd/destructive')
+    expect(forge.deny).toContain('! ')
+    expect((await call($, { tool: 'Bash', command: 'rm -rf /home/gon/otro' })).deny).toContain('deletes outside the project')
+    expect(w.ran).toEqual([])
+  })
+
+  test('/nodd allow destructive deja pasar uno solo', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare })
+    const granted: any = await nodd($, 'allow destructive')
+    expect(granted.text).toContain('un solo uso')
+    expect((await call($, { tool: 'Bash', command: 'git reset --hard' })).deny).toBe(undefined)
+    expect((await call($, { tool: 'Bash', command: 'git reset --hard' })).deny).toContain('nodd/destructive')
+    expect(w.ran).toEqual(['Bash'])
+  })
+
+  test('lo contenido pasa, y apagado no frena nada', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare })
+    expect((await call($, { tool: 'Bash', command: 'rm -rf build' })).deny).toBe(undefined)
+    await nodd($, 'off')
+    expect((await call($, { tool: 'Bash', command: 'git reset --hard' })).deny).toBe(undefined)
+    expect(w.ran).toEqual(['Bash', 'Bash'])
+  })
+})
+
 describe('gates compartidos con pi', () => {
   test('/nodd gate classify off deja pasar el Write y escribe ~/.pi/nodd.json sin perder claves', async ($, on) => {
     const original = {

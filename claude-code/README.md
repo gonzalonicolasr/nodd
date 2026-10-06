@@ -71,6 +71,20 @@ siquiera con `intent: read-only`: ahí no se cambia nada del usuario. Un Bash qu
 escribe ahí sí pasa por los gates, porque NODD no puede saber con certeza a
 dónde escribe un comando.
 
+## Lo irreversible no lo corre el modelo
+
+Con NODD prendido, un Bash irreversible se frena **siempre**, también dentro de
+un agente de forge (que no pasa por los otros gates): `git reset --hard`,
+`git clean -f`, `git checkout -- .`, `git restore .`, `rm -rf` fuera del
+proyecto, del home de la sesión y de `/tmp`, `terraform destroy`,
+`kubectl delete`, y `DROP`/`TRUNCATE` contra una base que no es local. El
+rechazo le dice al modelo que te pida correrlo con `! <comando>`, o vos lo
+habilitás una vez con `/nodd allow destructive`.
+
+Medido sobre una semana de comandos reales: frena 45 de 17.162, todos
+destructivos de verdad. Una base local (`-h 127.0.0.1`, `localhost`) se puede
+borrar sin aviso, porque es el caso de las bases de test descartables.
+
 ## Cierre observado
 
 Al terminar cada turno en el que se escribió algo, NODD agrega una línea debajo

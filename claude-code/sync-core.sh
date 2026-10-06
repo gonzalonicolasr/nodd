@@ -4,7 +4,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 src="$(cd "$here/../src" && pwd)"
 dest="$here/hooks/core"
-entries=(kernel.ts config-core.ts gates/registry.ts gates/policy.ts path.ts close-report.ts)
+entries=(kernel.ts config-core.ts gates/registry.ts gates/policy.ts path.ts close-report.ts destructive.ts)
 
 mode="${1:-sync}"
 if [[ "$mode" != "sync" && "$mode" != "--check" ]]; then

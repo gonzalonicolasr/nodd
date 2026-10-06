@@ -5,6 +5,7 @@ import { mergeConfig, noddConfigPath, parseConfig } from './core/config-core.ts'
 import { joinPath } from './core/path.ts'
 import { closeReport, isTestFile, testEditSignals, type TestEdit } from './core/close-report.ts'
 import type { Committed } from './core/state.ts'
+import { destructiveReason } from './core/destructive.ts'
 import {
   BUILTIN_AGENTS,
   CC_DECLARE_SCHEMA,
@@ -38,6 +39,7 @@ const capabilities = new Map<string, boolean | null>()
 const lastDeclared = new Map<string, Record<string, unknown>>()
 let requestStartAt = ''
 let lastTick = 0
+let allowDestructive = false
 
 function tick(): string {
   lastTick = Math.max(Date.now(), lastTick + 1)
@@ -436,6 +438,10 @@ async function command($: any, args: string): Promise<string> {
     }
     case 'allow': {
       const [gate, ...why] = rest
+      if (gate === 'destructive') {
+        allowDestructive = true
+        return 'nodd: override de un solo uso para un comando irreversible. Lo consume el próximo.'
+      }
       if (!gate || !isGateId(gate)) return `uso: /nodd allow <gate> [motivo]. Gates: ${GATE_IDS.join(', ')}`
       if (!ENFORCED.includes(gate)) return `nodd: ${gate} todavía no se aplica en Claude Code, así que no hay nada que saltear.`
       hatches = grantHatch({ config: {}, flags: {}, hatches }, gate, why.join(' '), new Date().toISOString()).hatches
@@ -522,6 +528,17 @@ export function register(on: any) {
     const call = normalizeCall(String(e.tool), e, names)
     if (isNodd) return serve($, key, call, id)
     if ((call.toolName === 'write' || call.toolName === 'edit') && inScratchpad(call.input.file_path ?? call.input.path, sessionId)) return next(e)
+    if (call.toolName === 'bash') {
+      const harm = destructiveReason(String(call.input.command ?? ''), [rootDir(), cwd, '/tmp'], home)
+      if (harm && allowDestructive) allowDestructive = false
+      else if (harm) {
+        refusals += 1
+        const reason = `nodd/destructive: ${harm}, and NODD never runs that on the model's behalf, not even inside forge. To proceed: if the user wants it, ask them to run it themselves with \`! ${String(call.input.command ?? '').split('\n')[0]}\`, or to allow it once with /nodd allow destructive`
+        lastRefusal = { gate: 'destructive', reason, at: new Date().toISOString() }
+        await exportState($)
+        return { deny: reason }
+      }
+    }
     const forge = await insideForge($, e, key)
     const kernel = kernelFor(key)
 
