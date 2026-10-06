@@ -341,6 +341,14 @@ describe('cierre observado', () => {
     expect(w.submitted.at(-1).context.join('\n')).toContain('la respuesta afirma')
   })
 
+  test('el aviso del cierre también le llega a un mensaje escrito durante el turno', async ($, on) => {
+    const w = await working($, on)
+    await $.turn.complete(done('Listo, pasan todos los tests.') as any)
+    await $.prompt.submit(prompt('y esto?', 'composer', 'turn-2') as any)
+    expect((w.submitted.at(-1).context ?? []).join('\\n')).toContain('la respuesta afirma')
+    expect((await call($, { tool: 'Write', file_path: '/repo/b.ts', content: 'x' })).deny).toBe(undefined)
+  })
+
   test('un .skip agregado a un test aparece en el cierre', async ($, on) => {
     const w = await working($, on)
     w.files['/repo/a.test.ts'] = "it('x', () => { expect(f()).toBe(1) })"

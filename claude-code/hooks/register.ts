@@ -482,7 +482,14 @@ export function register(on: any) {
   on('prompt.submit', async ($: any, e: any, next: any) => {
     await boot($)
     await syncEnabled($)
-    if (!enabled || !isNewRequest(e)) return next(e)
+    if (!enabled) return next(e)
+    if (!isNewRequest(e)) {
+      const fromUser = ['composer', 'bridge', 'sdk'].includes(String(e?.origin?.kind))
+      if (!fromUser || !pendingNote) return next(e)
+      const note = pendingNote
+      pendingNote = null
+      return next({ ...e, context: [...(e.context ?? []), note] })
+    }
     clearDeclaration()
     requestStartAt = tick()
     testEdits = []
