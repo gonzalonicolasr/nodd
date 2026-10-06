@@ -36,7 +36,7 @@ Siempre, junto a los otros mods (separados por `:`):
 | `classify` | activo: no hay primera escritura sin `nodd_declare` |
 | `track` | activo: en ruta `tracked`/`forge` hace falta `.nodd/<slug>/feature.md`, y `.nodd/**` lo escribe NODD, no el modelo |
 | `delegate` | pendiente en Claude Code |
-| `evidence` | pendiente en Claude Code (un `nodd_task check` queda registrado como `none (gate disabled)`) |
+| `evidence` | activo: `nodd_task check` sólo tilda si NODD vio el runner declarado salir bien después de la última escritura. Un Bash con exit distinto de 0, interrumpido, pasado a segundo plano o con su status escondido (`\| tail`, `\|\| true`, `;`) no cuenta |
 | `promotion` | pendiente en Claude Code |
 
 Los pendientes igual observan: el kernel cuenta lecturas, escrituras y

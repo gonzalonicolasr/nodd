@@ -5,7 +5,7 @@ import type { Committed } from './core/state.ts'
 
 export const VERSION = '0.1.0'
 export const MAIN = 'main'
-export const ENFORCED: readonly GateId[] = ['authorize', 'classify', 'track']
+export const ENFORCED: readonly GateId[] = ['authorize', 'classify', 'track', 'evidence']
 export const CC_FLAGS: Record<string, boolean> = Object.fromEntries(
   GATE_IDS.filter((id) => !ENFORCED.includes(id)).map((id) => [id, false]),
 )
@@ -263,4 +263,17 @@ export function continueDeclaration(
   if (DECLARE_CORE.every((k) => typeof input[k] === 'string' && input[k] !== '')) return { input }
   if (previous && previous.slug === input.slug) return { input: { ...previous, ...input } }
   return { problem: `nodd_declare: ${String(input.slug ?? '')} is a new feature here, so send intent, route and summary too. To continue the previous request's feature, send only its slug.` }
+}
+
+export function bashOutcome(r: any): { isError: boolean; content: string } {
+  const text = String(r?.text ?? '')
+  const out = r?.result
+  if (r?.isError === true) {
+    const code = /^\s*Exit code (\d+)/.exec(text)?.[1]
+    return { isError: true, content: code === undefined ? text : `${text}\nCommand exited with code ${code}` }
+  }
+  if (out?.interrupted === true) return { isError: true, content: `${text}\nCommand aborted` }
+  if (typeof out?.timedOutAfterMs === 'number') return { isError: true, content: `${text}\nCommand timed out after ${Math.round(out.timedOutAfterMs / 1000)} seconds` }
+  if (out?.backgroundTaskId) return { isError: true, content: text }
+  return { isError: false, content: text }
 }

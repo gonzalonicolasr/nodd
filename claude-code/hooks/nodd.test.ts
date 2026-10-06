@@ -7,7 +7,7 @@ const TASK = 'mcp__nodd__nodd_task'
 const STATE = '/h/.local/state/nodd/sessions/s1.json'
 const CONFIG = '/h/.pi/nodd.json'
 
-type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; repo: string | null; registered: string[]; schemas: Record<string, any>; store: Record<string, unknown> }
+type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; repo: string | null; registered: string[]; schemas: Record<string, any>; store: Record<string, unknown>; respond?: (e: any) => any }
 
 function world(on: any, seed: { files?: Record<string, string>; store?: Record<string, unknown>; agents?: any[] } = {}): World {
   mock.env(on, { HOME: '/h' })
@@ -52,7 +52,7 @@ function world(on: any, seed: { files?: Record<string, string>; store?: Record<s
   on('tool.call', async (_$: any, e: any) => {
     w.ran.push(e.tool)
     w.seenAgents.push(e.agentId)
-    return { result: 'ok', text: 'ok' }
+    return w.respond?.(e) ?? { result: 'ok', text: 'ok' }
   })
   return w
 }
@@ -265,6 +265,50 @@ describe('scratchpad y continuar', () => {
   })
 })
 
+describe('evidence en Claude Code', () => {
+  const tracked = { ...declare, runner: 'npm test', files: ['/repo/a.ts'] }
+  const bash = (respond: (e: any) => any) => (e: any) => (e.tool === 'Bash' ? respond(e) : undefined)
+
+  async function setup($: any, on: any) {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...tracked })
+    await call($, { tool: TASK, action: 'add', id: 'T1', title: 'login', slug: 'auth' })
+    await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
+    return w
+  }
+
+  test('una corrida roja no tilda, una verde después de escribir sí', async ($, on) => {
+    const w = await setup($, on)
+    w.respond = bash(() => ({ isError: true, result: 'Exit code 1\nFAIL 2 tests', text: 'Exit code 1\nFAIL 2 tests' }))
+    await call($, { tool: 'Bash', command: 'npm test' })
+    const red = await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })
+    expect(red.deny).toContain('exit 1')
+    w.respond = bash(() => ({ result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok' }))
+    await call($, { tool: 'Bash', command: 'npm test' })
+    const green = await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })
+    expect(green.deny).toBe(undefined)
+    expect(w.files['/repo/.nodd/auth/feature.md']).toContain('observed: `npm test` → success')
+  })
+
+  test('un npm test con | tail no tilda aunque salga bien', async ($, on) => {
+    const w = await setup($, on)
+    w.respond = bash(() => ({ result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok' }))
+    await call($, { tool: 'Bash', command: 'npm test 2>&1 | tail -3' })
+    expect((await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })).deny).toContain('exit status')
+  })
+
+  test('una corrida pasada a segundo plano o interrumpida no cuenta como verde', async ($, on) => {
+    const w = await setup($, on)
+    w.respond = bash(() => ({ result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b1' }, text: 'Command running in background' }))
+    await call($, { tool: 'Bash', command: 'npm test' })
+    expect((await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })).deny).toContain('nodd/evidence')
+    w.respond = bash(() => ({ result: { stdout: '', stderr: '', interrupted: true }, text: '' }))
+    await call($, { tool: 'Bash', command: 'npm test' })
+    expect((await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })).deny).toContain('nodd/evidence')
+  })
+})
+
 describe('gates compartidos con pi', () => {
   test('/nodd gate classify off deja pasar el Write y escribe ~/.pi/nodd.json sin perder claves', async ($, on) => {
     const original = {
@@ -298,6 +342,7 @@ describe('gates compartidos con pi', () => {
     expect(r.text).toMatch(/classify\s+on\s+default\s+activo en Claude Code/)
     expect(r.text).toMatch(/promotion\s+off\s+config\s+pendiente en Claude Code/)
     expect(r.text).toMatch(/delegate\s+on\s+default\s+pendiente en Claude Code/)
+    expect(r.text).toMatch(/evidence\s+on\s+default\s+activo en Claude Code/)
   })
 })
 
@@ -417,7 +462,7 @@ describe('estado exportado', () => {
       ['classify', true],
       ['track', true],
       ['delegate', false],
-      ['evidence', false],
+      ['evidence', true],
       ['promotion', false],
     ])
     await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })

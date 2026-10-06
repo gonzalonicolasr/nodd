@@ -13,6 +13,7 @@ import {
   PROTOCOL,
   REMINDER,
   agentReadOnly,
+  bashOutcome,
   ccReason,
   continueDeclaration,
   gateOfReason,
@@ -467,7 +468,10 @@ export function register(on: any) {
       throw err
     }
     if (r && typeof r.deny === 'string') kernel.forgetPending(id)
-    else kernel.onToolResult({ toolName: call.toolName, toolCallId: id, input: call.input, isError: r?.isError === true, content: String(r?.text ?? '') })
+    else {
+      const seen = call.toolName === 'bash' ? bashOutcome(r) : { isError: r?.isError === true, content: String(r?.text ?? '') }
+      kernel.onToolResult({ toolName: call.toolName, toolCallId: id, input: call.input, ...seen })
+    }
     await exportState($)
     return r
   })
