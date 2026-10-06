@@ -11,7 +11,7 @@
 // sibling would take its innocent siblings with it.
 
 import { join } from "node:path";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { renderPrompt } from "../src/prompt.ts";
 import { type Policy, emptyPolicy } from "../src/gates/policy.ts";
@@ -19,6 +19,7 @@ import { flagsFromCli } from "./nodd-gates.ts";
 import type { CapabilityLookup } from "../src/gates/authorize.ts";
 import { nodeFs } from "../src/io.ts";
 import { statusLine } from "../src/status.ts";
+import { closeReport, isTestFile, testEditSignals, type TestEdit } from "../src/close-report.ts";
 import {
   clearHatch,
   configComplaint,
@@ -44,7 +45,7 @@ export {
   type ToolReply,
 } from "../src/kernel.ts";
 
-type Ui = { ui?: { setStatus?(key: string, text?: string): void } };
+type Ui = { ui?: { setStatus?(key: string, text?: string): void; notify?(message: string, type?: string): void } };
 type SessionStartContext = { sessionManager?: { getEntries?(): SessionEntry[] } } & Ui;
 type AgentStartEvent = { systemPrompt?: unknown };
 
@@ -174,7 +175,30 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
 
   // Enforcement. The gates are useless unless they run here: this is the only
   // point in a session where NODD can refuse a call before it happens.
+  let requestStart = 0;
+  let testEdits: TestEdit[] = [];
+  let pendingNote: string | null = null;
+  const priorText = new Map<string, string | null>();
+
+  const testPathOf = (event: ToolCallEvent): string | null => {
+    const input = normalizeInput(event?.input);
+    const path = input.path ?? input.file_path;
+    return (event?.toolName === "write" || event?.toolName === "edit") && typeof path === "string" && isTestFile(path) ? path : null;
+  };
+
+  const editTexts = (input: Record<string, unknown>, prior: string | null): [string, string] | null => {
+    if (Array.isArray(input.edits)) {
+      const edits = input.edits as Array<Record<string, unknown>>;
+      return [edits.map((e) => String(e.oldText ?? e.old_string ?? "")).join("\n"), edits.map((e) => String(e.newText ?? e.new_string ?? "")).join("\n")];
+    }
+    if (typeof input.newText === "string") return [String(input.oldText ?? ""), input.newText];
+    if (typeof input.content === "string") return [prior ?? "", input.content];
+    return null;
+  };
+
   pi.on("tool_call", ((event: ToolCallEvent, ctx?: Ui) => {
+    const testPath = testPathOf(event);
+    if (testPath) priorText.set(event.toolCallId, existsSync(testPath) ? readFileSync(testPath, "utf8") : null);
     let decision: { block: true; reason: string } | null = null;
     try {
       // Re-read the flags before deciding. `/nodd-gates disable` writes the
@@ -206,6 +230,12 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
 
   pi.on("tool_result", ((event: ToolResultEvent, ctx?: Ui) => {
     const obs = kernel.onToolResult(event);
+    const testPath = testPathOf(event);
+    if (testPath && !event.isError) {
+      const texts = editTexts(normalizeInput(event.input), priorText.get(event.toolCallId) ?? null);
+      if (texts) testEdits.push({ path: testPath, seq: kernel.state.committed.toolCalls, ...testEditSignals(texts[0], texts[1]) });
+    }
+    priorText.delete(event.toolCallId);
     try {
       pi.appendEntry?.(OBSERVATION_ENTRY, obs);
     } catch {
@@ -264,11 +294,40 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
   // returned byte-for-byte with NODD's two blocks appended, so another
   // extension's contribution survives ours. Rebuilt from current state each
   // turn rather than accumulated, and budgeted in `src/prompt.ts`.
+  pi.on("agent_end", ((event: { messages?: Array<{ role?: string; content?: unknown }> }, ctx?: Ui) => {
+    try {
+      const assistant = [...(event?.messages ?? [])].reverse().find((m) => m?.role === "assistant");
+      const content = assistant?.content;
+      const answer = typeof content === "string"
+        ? content
+        : Array.isArray(content) ? content.map((part) => (part as { type?: string; text?: string })?.type === "text" ? String((part as { text?: string }).text ?? "") : "").join("\n") : "";
+      const declaration = kernel.state.committed.declaration;
+      const report = closeReport({
+        committed: kernel.state.committed,
+        since: requestStart,
+        slug: declaration?.slug ?? null,
+        runner: declaration?.runner ?? null,
+        declaredFiles: declaration?.files ?? [],
+        answer,
+        testEdits,
+      });
+      if (!report) return;
+      pendingNote = report.warnings.length > 0 ? `NODD, cierre del pedido anterior: ${report.warnings.join(" | ")}` : null;
+      ctx?.ui?.notify?.([report.line, ...report.warnings.map((w) => `  ⚠ ${w}`)].join("\n"), report.warnings.length > 0 ? "warning" : "info");
+    } catch {
+      return;
+    }
+  }) as never);
+
   pi.on("before_agent_start", ((event: AgentStartEvent) => {
+    requestStart = kernel.state.committed.toolCalls;
+    testEdits = [];
+    const note = pendingNote;
+    pendingNote = null;
     try {
       const incoming = typeof event?.systemPrompt === "string" ? event.systemPrompt : "";
       const { blockA, blockB } = renderPrompt(kernel.evidenceView(), kernel.policy());
-      const appended = [blockA, blockB].filter((block) => block !== "").join("\n\n");
+      const appended = [blockA, blockB, note ?? ""].filter((block) => block !== "").join("\n\n");
       return { systemPrompt: incoming === "" ? appended : `${incoming}\n\n${appended}` };
     } catch {
       // A prompt NODD cannot render must not stop the turn: leaving the

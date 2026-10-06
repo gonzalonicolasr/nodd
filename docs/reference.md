@@ -219,6 +219,35 @@ The evidence ledger is distinct from the feature document. Editing the ledger
 from outside degrades its entries rather than being silently accepted, and a
 degraded entry counts as no evidence at all.
 
+## The observed close
+
+ODD asks the model to close with the outcome and the checks that failed, and
+trusts it to. NODD computes the close from observations (`src/close-report.ts`)
+and shows it after every request that wrote: in pi as a notification at
+`agent_end`, in Claude Code beneath the answer.
+
+The line is written in Spanish, like the rest of the author's tooling:
+
+```
+◆ NODD · auth · 2 archivos · `npm test` sin correr después de la última escritura
+  ⚠ la respuesta afirma «listo», pero NODD no vio `npm test` completo y verde después de la última escritura
+  ⚠ src/a.test.ts: se agregó .skip(
+```
+
+| it reports | from |
+| --- | --- |
+| the runner after the last write: green, partial (`npm test -- one.test.ts`), red with its code, exit status hidden, or not run | `commandResults` after the last `filesWritten` entry of this request |
+| an answer claiming success with no full green run | the final assistant text |
+| a test file edited between a red and a green run of the runner | write order against run order |
+| `.skip`, `.only`, `xit`, `t.Skip`, `@pytest.mark.skip` added, assertions removed | the edit's old and new text |
+| files written outside the declared `files` | the declared set against the written set |
+
+The warnings reach the model with the next request, so an unverified claim is
+not left standing. The close never blocks: it reports. It covers the session
+that wrote; a delegated child reports in its own process. Its language detection
+is a list of patterns, so a claim phrased some other way, or a test file named
+outside the usual conventions, goes unnoticed.
+
 ## Command outcomes
 
 A command's outcome is parsed from the observed tool result

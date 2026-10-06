@@ -176,6 +176,15 @@ the declared runner, after the task's last write, with a RED before it under
 strict TDD. A model writing "all tests pass" changes nothing — the evidence line
 in the document is rendered from the observed tool result, never from prose.
 
+**Every request closes with what NODD saw, not with what the model says.**
+After a request that wrote, one line reports the files written and whether the
+declared runner was observed passing after the last write — or ran red, ran
+only part of the suite, hid its exit status behind `| tail`, or did not run at
+all. It flags an answer that claims "done" or "tests pass" with no such run, a
+test edited between a red and a green run, an added `.skip`/`.only`, removed
+assertions, and files written outside the declared ones. See
+**The observed close** in the reference.
+
 **When a gate is wrong, turn it off.** `/nodd-gates disable track` disables it
 entirely and stays disabled; `/nodd-gates disable all` does it for every gate at
 once; `/nodd-allow track` grants exactly one override.
