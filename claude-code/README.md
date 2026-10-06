@@ -71,6 +71,28 @@ siquiera con `intent: read-only`: ahí no se cambia nada del usuario. Un Bash qu
 escribe ahí sí pasa por los gates, porque NODD no puede saber con certeza a
 dónde escribe un comando.
 
+## Cierre observado
+
+Al terminar cada turno en el que se escribió algo, NODD agrega una línea debajo
+de la respuesta con lo que **vio**, no con lo que el modelo dice:
+
+    ◆ NODD · auth · 3 archivos · ✓ `npm test` verde después de la última escritura
+
+o, cuando algo no cierra:
+
+    ◆ NODD · auth · 2 archivos · `npm test` sin correr después de la última escritura
+      ⚠ la respuesta afirma «listo», pero NODD no vio `npm test` completo y verde después de la última escritura
+      ⚠ src/a.test.ts: se agregó .skip(
+      ⚠ 1 archivo fuera de lo declarado: src/extra.ts
+
+Distingue un verde de la suite declarada, un verde parcial (`npm test -- un.test.ts`),
+una corrida roja y una corrida que escondió su exit status. Avisa además cuando
+un test se editó entre una corrida roja y la verde, cuando se le agregaron
+`.skip`/`.only`/`xit`/`t.Skip`/`@pytest.mark.skip` o se le sacaron assertions,
+y cuando se escribió fuera de los `files` declarados. Los avisos le llegan al
+modelo con tu pedido siguiente. Cuenta lo de la sesión principal; lo que escribe
+un subagente queda en su propio kernel.
+
 ## Cosas que conviene saber
 
 - **El override es de Claude Code.** `/nodd allow` no escribe

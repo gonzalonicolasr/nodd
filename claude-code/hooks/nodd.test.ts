@@ -23,6 +23,7 @@ function world(on: any, seed: { files?: Record<string, string>; store?: Record<s
     return { text: e.text, context: e.context }
   })
   on('prompt.context', async (_$: any, e: any) => ({ blocks: e.blocks }))
+  on('turn.complete', async (_$: any, e: any) => ({ text: e.answer }))
   on('fs.read', async (_$: any, e: any) => {
     if (e.path in w.files) return { value: w.files[e.path] }
     throw new Error(`ENOENT: ${e.path}`)
@@ -306,6 +307,56 @@ describe('evidence en Claude Code', () => {
     w.respond = bash(() => ({ result: { stdout: '', stderr: '', interrupted: true }, text: '' }))
     await call($, { tool: 'Bash', command: 'npm test' })
     expect((await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })).deny).toContain('nodd/evidence')
+  })
+})
+
+describe('cierre observado', () => {
+  const done = (answer: string) => ({ answer, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const green = (e: any) => (e.tool === 'Bash' ? { result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok' } : undefined)
+
+  async function working($: any, on: any) {
+    const w = world(on)
+    await nodd($, 'on')
+    await $.prompt.submit(prompt('hacé el login') as any)
+    await call($, { tool: DECLARE, ...declare, runner: 'npm test' })
+    await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
+    return w
+  }
+
+  test('con el runner verde después de escribir, el cierre lo dice sin avisos', async ($, on) => {
+    const w = await working($, on)
+    w.respond = green
+    await call($, { tool: 'Bash', command: 'npm test' })
+    const r: any = await $.turn.complete(done('Listo, pasan los tests.') as any)
+    expect(r.text).toContain('✓ `npm test` verde después de la última escritura')
+    expect(r.text).not.toContain('⚠')
+  })
+
+  test('una afirmación sin corrida verde se marca y le llega al modelo en el pedido siguiente', async ($, on) => {
+    const w = await working($, on)
+    const r: any = await $.turn.complete(done('Listo, pasan todos los tests.') as any)
+    expect(r.text).toContain('sin correr después de la última escritura')
+    expect(r.text).toContain('⚠ la respuesta afirma')
+    await $.prompt.submit(prompt('y ahora?') as any)
+    expect(w.submitted.at(-1).context.join('\n')).toContain('la respuesta afirma')
+  })
+
+  test('un .skip agregado a un test aparece en el cierre', async ($, on) => {
+    const w = await working($, on)
+    w.files['/repo/a.test.ts'] = "it('x', () => { expect(f()).toBe(1) })"
+    await call($, { tool: 'Edit', file_path: '/repo/a.test.ts', old_string: "it('x', () => { expect(f()).toBe(1) })", new_string: "it.skip('x', () => {})" })
+    const r: any = await $.turn.complete(done('hecho') as any)
+    expect(r.text).toContain('se agregó .skip(')
+    expect(r.text).toContain('se sacaron 1 assertions')
+  })
+
+  test('sin escrituras, o apagado, la respuesta queda como estaba', async ($, on) => {
+    world(on)
+    await nodd($, 'on')
+    await $.prompt.submit(prompt('qué hace esto?') as any)
+    expect(((await $.turn.complete(done('explicación')) as any) as any).text).toBe('explicación')
+    await nodd($, 'off')
+    expect(((await $.turn.complete(done('otra')) as any) as any).text).toBe('otra')
   })
 })
 

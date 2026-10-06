@@ -3,6 +3,7 @@ import { GATE_IDS, isGateId, type GateId } from './core/gates/registry.ts'
 import { grantHatch, resolveFlag, type Policy } from './core/gates/policy.ts'
 import { mergeConfig, noddConfigPath, parseConfig } from './core/config-core.ts'
 import { joinPath } from './core/path.ts'
+import { closeReport, isTestFile, testEditSignals, type TestEdit } from './core/close-report.ts'
 import {
   BUILTIN_AGENTS,
   CC_DECLARE_SCHEMA,
@@ -34,6 +35,10 @@ const kernels = new Map<string, Kernel>()
 const agents = new Map<string, { type: string; parent: string }>()
 const capabilities = new Map<string, boolean | null>()
 const lastDeclared = new Map<string, Record<string, unknown>>()
+let requestStart = 0
+let testEdits: TestEdit[] = []
+let pendingNote: string | null = null
+let lastReported = -1
 
 let booted: Promise<void> | undefined
 let home = ''
@@ -154,6 +159,33 @@ async function flush($: any): Promise<string[]> {
     }
   }
   return problems
+}
+
+function testEditTexts(call: Call, before: string | null): [string, string] | null {
+  const input = call.input as any
+  if (Array.isArray(input.edits)) return [input.edits.map((x: any) => String(x?.old_string ?? '')).join('\n'), input.edits.map((x: any) => String(x?.new_string ?? '')).join('\n')]
+  if (typeof input.new_string === 'string') return [String(input.old_string ?? ''), input.new_string]
+  if (typeof input.content === 'string') return [before ?? '', input.content]
+  return null
+}
+
+function closingText(answer: string): string | null {
+  const main = kernels.get(MAIN)
+  if (!main || main.state.committed.toolCalls === lastReported) return null
+  const declaration = main.state.committed.declaration
+  const report = closeReport({
+    committed: main.state.committed,
+    since: requestStart,
+    slug: declaration?.slug ?? null,
+    runner: declaration?.runner ?? null,
+    declaredFiles: declaration?.files ?? [],
+    answer,
+    testEdits,
+  })
+  if (!report) return null
+  lastReported = main.state.committed.toolCalls
+  pendingNote = report.warnings.length > 0 ? `NODD, cierre del turno anterior: ${report.warnings.join(' | ')}` : null
+  return [report.line, ...report.warnings.map((w) => `  ⚠ ${w}`)].join('\n')
 }
 
 function clearDeclaration() {
@@ -415,8 +447,19 @@ export function register(on: any) {
     await syncEnabled($)
     if (!enabled || !isNewRequest(e)) return next(e)
     clearDeclaration()
+    requestStart = kernels.get(MAIN)?.state.committed.toolCalls ?? 0
+    testEdits = []
+    const note = pendingNote
+    pendingNote = null
     await exportState($)
-    return next({ ...e, context: [...(e.context ?? []), REMINDER] })
+    return next({ ...e, context: [...(e.context ?? []), ...(note ? [note] : []), REMINDER] })
+  })
+
+  on('turn.complete', async ($: any, e: any, next: any) => {
+    const r = await next(e)
+    if (!enabled || e?.agentId || e?.isAborted) return r
+    const text = closingText(String(e?.answer ?? ''))
+    return text ? { ...r, text } : r
   })
 
   on('agent.spawn', async ($: any, e: any, next: any) => {
@@ -460,6 +503,9 @@ export function register(on: any) {
       return { deny: reason }
     }
 
+    const path = call.input.file_path ?? call.input.path
+    const testPath = (call.toolName === 'write' || call.toolName === 'edit') && typeof path === 'string' && isTestFile(path) ? path : null
+    const prior = testPath && typeof call.input.content === 'string' ? await readText($, testPath) : null
     let r: any
     try {
       r = await next(e)
@@ -471,6 +517,8 @@ export function register(on: any) {
     else {
       const seen = call.toolName === 'bash' ? bashOutcome(r) : { isError: r?.isError === true, content: String(r?.text ?? '') }
       kernel.onToolResult({ toolName: call.toolName, toolCallId: id, input: call.input, ...seen })
+      const texts = testPath && key === MAIN && !seen.isError ? testEditTexts(call, prior) : null
+      if (texts) testEdits.push({ path: testPath!, seq: kernel.state.committed.toolCalls, ...testEditSignals(texts[0], texts[1]) })
     }
     await exportState($)
     return r
