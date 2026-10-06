@@ -17,7 +17,7 @@ import { authorizeGate, type CapabilityLookup } from "./gates/authorize.ts";
 import { classifyGate } from "./gates/classify.ts";
 import { trackGate } from "./gates/track.ts";
 import { delegateGate } from "./gates/delegate.ts";
-import { evidenceGate, isDeclaredRunner, masksExitStatus } from "./gates/evidence.ts";
+import { evidenceGate, isDeclaredRunner, masksExitStatus, writesByBash } from "./gates/evidence.ts";
 import { promotionGate } from "./gates/promotion.ts";
 import { isFileWrite, targetPath, type GateRequest } from "./gates/request.ts";
 import { appendRecord, readLedger } from "./ledger-core.ts";
@@ -291,7 +291,7 @@ export function createKernel(options: KernelOptions): Kernel {
           task: args.id,
           // The task's own files when it declared some, the whole session's
           // writes otherwise. Either way a real timestamp, not a bash proxy.
-          ...lastWrite(state.committed, doc.verification.files),
+          ...lastWrite(state.committed, doc.verification.files, doc.verification.runner),
           runner: doc.verification.runner,
           ...(doc.verification.tdd === "strict" && doc.verification.runner
             ? { tdd: { mode: "strict" as const, source: doc.verification.source, runner: doc.verification.runner } }
@@ -519,7 +519,7 @@ export function ledgerPath(cwd: string, slug: string): string {
  * Scoped to the declared files when there are any: a task is certified by a run
  * postdating *its* edits, not every edit in the session.
  */
-function lastWrite(committed: Committed, declaredFiles: string[] = []): { lastWriteAt: string; lastWriteSeq: number } {
+function lastWrite(committed: Committed, declaredFiles: string[] = [], runner: string | null = null): { lastWriteAt: string; lastWriteSeq: number } {
   const relevant = declaredFiles.length > 0
     ? [...committed.filesWritten].filter(([path]) => declaredFiles.includes(path))
     : [...committed.filesWritten];
@@ -527,6 +527,9 @@ function lastWrite(committed: Committed, declaredFiles: string[] = []): { lastWr
   let latest = { at: new Date(0).toISOString(), seq: 0 };
   for (const [, write] of relevant) {
     if (write.seq > latest.seq) latest = write;
+  }
+  for (const run of committed.commandResults) {
+    if (run.seq > latest.seq && writesByBash(run.command, runner)) latest = { at: run.at, seq: run.seq };
   }
   return { lastWriteAt: latest.at, lastWriteSeq: latest.seq };
 }

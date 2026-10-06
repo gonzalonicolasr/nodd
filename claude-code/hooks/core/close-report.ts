@@ -1,5 +1,5 @@
 import type { Committed } from "./state.ts";
-import { isDeclaredRunner, masksExitStatus } from "./gates/evidence.ts";
+import { isDeclaredRunner, masksExitStatus, writesByBash } from "./gates/evidence.ts";
 import { describeOutcome, isSuccess, parseOutcome } from "./outcome.ts";
 
 export type TestEdit = { path: string; seq: number; addedMarkers: string[]; droppedAssertions: number };
@@ -59,10 +59,11 @@ function plural(count: number, word: string): string {
 export function closeReport(input: CloseInput): CloseReport | null {
   const { committed, since, runner } = input;
   const written = [...committed.filesWritten].filter(([, write]) => write.seq > since);
-  if (written.length === 0) return null;
-
-  const lastWrite = Math.max(...written.map(([, write]) => write.seq));
   const runs = committed.commandResults.filter((run) => run.seq > since);
+  const bashWrites = runs.filter((run) => writesByBash(run.command, runner));
+  if (written.length === 0 && bashWrites.length === 0) return null;
+
+  const lastWrite = Math.max(...written.map(([, write]) => write.seq), ...bashWrites.map((run) => run.seq));
   const runnerRuns = runner === null ? [] : runs.filter((run) => isDeclaredRunner(run.command, runner));
   const after = runnerRuns.filter((run) => run.seq > lastWrite);
   const trusted = after.filter((run) => !masksExitStatus(run.command, runner!));
@@ -101,5 +102,6 @@ export function closeReport(input: CloseInput): CloseReport | null {
     if (edit.droppedAssertions > 0) warnings.push(`${edit.path}: se sacaron ${edit.droppedAssertions} assertions`);
   }
 
-  return { line: `◆ NODD · ${input.slug ?? "sin declarar"} · ${plural(written.length, "archivo")} · ${status}`, warnings, verified };
+  const files = plural(written.length, "archivo") + (bashWrites.length > 0 ? " + escrituras por bash" : "");
+  return { line: `◆ NODD · ${input.slug ?? "sin declarar"} · ${files} · ${status}`, warnings, verified };
 }

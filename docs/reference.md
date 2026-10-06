@@ -178,6 +178,11 @@ up, because a green command proves something only about *which* command ran and
    verifies proves nothing about the edit. Ordering uses the kernel's
    observation sequence rather than the wall clock, because a write and the run
    after it routinely land in the same millisecond.
+   A write through bash counts as a write too: a `sed -i`, a redirect or a
+   codegen command run after the green run makes it stale, whatever file it
+   touched, because NODD cannot tell which file a command wrote. Runs of the
+   declared runner itself and `git commit`/`push`/`tag`/`add` do not count,
+   since they leave the working tree's code as it was.
 4. **A RED first, under strict TDD**, when the declaration set `tdd: strict`.
    `tdd: strict` without a runner is refused at declaration, because a RED run
    is a failing run *of the declared runner*: accepting it would write

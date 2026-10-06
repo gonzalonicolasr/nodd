@@ -40,6 +40,7 @@
 // not make the document assert something that was never verified.
 
 import type { Committed } from "../state.ts";
+import { classifyBash } from "../bash-classifier.ts";
 import { classifyRecords, describeDegraded, type LedgerRecord } from "../ledger-core.ts";
 import { describeOutcome, isSuccess, parseOutcome } from "../outcome.ts";
 import { refuse, resolveFlag, type Policy, type Remedy } from "./policy.ts";
@@ -91,6 +92,15 @@ export function isDeclaredRunner(command: string, runner: string): boolean {
   if (declared.length === 0 || actual.length < declared.length) return false;
   const last = declared.length - 1;
   return declared.every((token, i) => actual[i] === token || (i === last && actual[i].startsWith(token) && /^[;|&]/.test(actual[i].slice(token.length))));
+}
+
+export function writesByBash(command: string, runner: string | null): boolean {
+  if (runner !== null && isDeclaredRunner(command, runner)) return false;
+  const rest = command
+    .split(/&&|\|\||;|\n/)
+    .filter((segment) => !/^\s*git\s+(commit|push|tag|add)\b/.test(segment))
+    .join("\n");
+  return classifyBash(rest) === "mutating";
 }
 
 export function masksExitStatus(command: string, runner: string): boolean {

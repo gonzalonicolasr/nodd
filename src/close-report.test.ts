@@ -92,3 +92,12 @@ test("test files and edit signals are recognised across languages", () => {
   assert.deepEqual(testEditSignals("def test_a():\n    assert f() == 1", "@pytest.mark.skip\ndef test_a():\n    pass"), { addedMarkers: ["@pytest.mark.skip"], droppedAssertions: 1 });
   assert.deepEqual(testEditSignals("expect(a).toBe(1)", "expect(a).toBe(2)"), { addedMarkers: [], droppedAssertions: 0 });
 });
+
+test("a bash write after the green run leaves the request unverified, and a bash-only request is reported", () => {
+  const c = run(run(write(emptyCommitted(), "/r/a.ts"), "npm test"), "sed -i 's/a/b/' /r/a.ts");
+  assert.match(closeReport(input(c))!.line, /sin correr después de la última escritura/);
+  const bashOnly = run(emptyCommitted(), "echo x > /r/gen.ts");
+  assert.match(closeReport(input(bashOnly))!.line, /0 archivos \+ escrituras por bash · `npm test` sin correr/);
+  const committed = run(run(write(emptyCommitted(), "/r/a.ts"), "npm test"), "git commit -am x");
+  assert.match(closeReport(input(committed))!.line, /✓ `npm test` verde/);
+});

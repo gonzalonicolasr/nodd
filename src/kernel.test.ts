@@ -62,3 +62,40 @@ test("a cwd given as a function is read when the document is written, not when t
   assert.ok(files.has("/repo/.nodd/demo/feature.md"));
   assert.ok(![...files.keys()].some((path) => path.startsWith("/home/")));
 });
+
+function observedKernel(runner: string) {
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/repo" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  let id = 0;
+  const tool = (toolName: string, input: Record<string, unknown>, isError = false) => {
+    const toolCallId = `k${++id}`;
+    kernel.onToolCall({ toolName, toolCallId, input });
+    kernel.onToolResult({ toolName, toolCallId, input, isError, content: isError ? "FAIL\nCommand exited with code 1" : "ok" });
+  };
+  tool("nodd_declare", { intent: "change", route: "tracked", slug: "demo", summary: "s", runner });
+  kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "s", runner });
+  kernel.task({ action: "add", id: "T1", title: "t", slug: "demo" });
+  tool("write", { path: "/repo/a.ts" });
+  return { kernel, tool };
+}
+
+test("a mutating bash after the green run makes the evidence stale", () => {
+  const { kernel, tool } = observedKernel("npm test");
+  tool("bash", { command: "npm test" });
+  tool("bash", { command: "sed -i 's/a/b/' src/a.ts" });
+  const check = kernel.task({ action: "check", id: "T1", slug: "demo" });
+  assert.equal(check.ok, false);
+  assert.match(check.text, /before the last write/);
+});
+
+test("committing after the green run does not make it stale, and a runner the classifier calls mutating still counts", () => {
+  const committed = observedKernel("npm test");
+  committed.tool("bash", { command: "npm test" });
+  committed.tool("bash", { command: "git add -A && git commit -m 'x'" });
+  assert.equal(committed.kernel.task({ action: "check", id: "T1", slug: "demo" }).ok, true);
+
+  const script = observedKernel("python3 manage.py test");
+  script.tool("bash", { command: "python3 manage.py test" });
+  assert.equal(script.kernel.task({ action: "check", id: "T1", slug: "demo" }).ok, true);
+});
