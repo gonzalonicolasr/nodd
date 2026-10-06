@@ -24,7 +24,7 @@ import type { PendingCall } from "../observations.ts";
 import { THRESHOLDS } from "../manifest.ts";
 import { classifyBash } from "../bash-classifier.ts";
 import { allow, refuse, resolveFlag, type GateDecision, type Policy } from "./policy.ts";
-import { isFileWrite, targetPath, type GateRequest } from "./request.ts";
+import { isFileWrite, targetPath, type GateRequest, isDeclaredPath } from "./request.ts";
 
 /**
  * Files written under the current declaration, plus the ones about to be.
@@ -48,20 +48,20 @@ function writtenFiles(committed: Committed, request: GateRequest, pending: Map<s
   // no `subagent` tool, so "delegate" — the remedy the refusal names — is the
   // one thing its own toolset forbids, and with a threshold of two it could
   // write a single file. Implementation plus its test is two.
-  const promised = new Set(committed.declaration?.files ?? []);
+  const promised = committed.declaration?.files ?? [];
   const files = new Set(
     [...committed.filesWritten.entries()]
-      .filter(([path, write]) => write.seq > since && !promised.has(path))
+      .filter(([path, write]) => write.seq > since && !isDeclaredPath(path, promised))
       .map(([path]) => path),
   );
   for (const call of pending.values()) {
     if (isFileWrite(call)) {
       const path = targetPath(call);
-      if (path && !promised.has(path)) files.add(path);
+      if (path && !isDeclaredPath(path, promised)) files.add(path);
     }
   }
   const path = targetPath(request);
-  if (path && !promised.has(path)) files.add(path);
+  if (path && !isDeclaredPath(path, promised)) files.add(path);
   return files;
 }
 
@@ -102,7 +102,7 @@ export function delegateGate(
   // write the first of the files it declared — and it can reach none of the
   // remedies. Mutating bash has no target and still meets every trigger.
   const target = targetPath(request);
-  if (target && (committed.declaration?.files ?? []).includes(target)) return allow();
+  if (target && isDeclaredPath(target, committed.declaration?.files ?? [])) return allow();
 
   if (committed.filesRead.size >= THRESHOLDS.mappingMinUnderstandingFiles) {
     return refuse(

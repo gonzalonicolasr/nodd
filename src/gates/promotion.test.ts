@@ -149,3 +149,9 @@ test("the remedy names a step reachable without a slash command", () => {
     `every remedy needs a slash command or describes a state, not a step; got: ${decision.allow === false ? decision.remedy.action : ""}`,
   );
 });
+
+test("writing a file the declaration never named is a divergence even when the count fits", () => {
+  const decision = decide({ declaredFiles: 2, observedFiles: 2, undeclared: ["/r/src/extra.ts"] });
+  assert.equal(decision.allow, false);
+  assert.ok(decision.allow === false && decision.reason.includes("/r/src/extra.ts"));
+});

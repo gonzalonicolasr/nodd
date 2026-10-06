@@ -10,6 +10,10 @@ export type GateRequest = {
   input: Record<string, unknown>;
 };
 
+export function isDeclaredPath(path: string, declared: readonly string[]): boolean {
+  return declared.some((file) => path === file || path.endsWith(`/${file.replace(/^\.\//, "")}`));
+}
+
 export function targetPath(request: GateRequest): string | null {
   // pi's own write and edit tools accept either name and read `file_path ??
   // path` (`write.js:99`, `edit.js:92`), and the write tool sends `file_path`.

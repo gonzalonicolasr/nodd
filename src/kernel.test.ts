@@ -99,3 +99,21 @@ test("committing after the green run does not make it stale, and a runner the cl
   script.tool("bash", { command: "python3 manage.py test" });
   assert.equal(script.kernel.task({ action: "check", id: "T1", slug: "demo" }).ok, true);
 });
+
+test("promotion compares the declared set with what this declaration wrote", () => {
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/repo" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  let id = 0;
+  const tool = (toolName: string, input: Record<string, unknown>) => {
+    const toolCallId = `p${++id}`;
+    kernel.onToolCall({ toolName, toolCallId, input });
+    kernel.onToolResult({ toolName, toolCallId, input, isError: false, content: "ok" });
+  };
+  tool("write", { path: "/repo/old.ts" });
+  tool("nodd_declare", { intent: "change", route: "inline", slug: "s", summary: "s", files: ["src/a.ts", "src/b.ts"] });
+  tool("write", { path: "/repo/src/a.ts" });
+  assert.equal(kernel.checkCall({ toolName: "write", input: { path: "/repo/src/b.ts" } }), null);
+  const outside = kernel.checkCall({ toolName: "write", input: { path: "/repo/src/c.ts" } });
+  assert.ok(outside && /src\/c\.ts/.test(outside.reason) && outside.reason.startsWith("nodd/promotion"));
+});

@@ -45,6 +45,7 @@ export type PromotionSignals = {
   declaredFiles: number;
   /** Distinct files it has actually written. */
   observedFiles: number;
+  undeclared?: string[];
 };
 
 const CONSECUTIVE_FAILURE_LIMIT = 2;
@@ -74,6 +75,16 @@ export function promotionGate(signals: PromotionSignals, request: GateRequest, p
 
   // Zero declared means nothing was promised, so there is nothing to diverge
   // from — that is an undeclared task, which is `gate-track`'s business.
+  const undeclared = signals.undeclared ?? [];
+  if (signals.declaredFiles > 0 && undeclared.length > 0) {
+    return refuse(
+      "promotion",
+      `this task declared ${signals.declaredFiles} file(s) and has written ${signals.observedFiles}, ${undeclared.length} of them never named (${undeclared.join(", ")}): ` +
+        "the work is not the shape it was declared to be",
+      action,
+    );
+  }
+
   if (signals.declaredFiles > 0 && signals.observedFiles > signals.declaredFiles) {
     return refuse(
       "promotion",

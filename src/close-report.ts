@@ -1,6 +1,7 @@
 import type { Committed } from "./state.ts";
 import { isDeclaredRunner, masksExitStatus, writesByBash } from "./gates/evidence.ts";
 import { describeOutcome, isSuccess, parseOutcome } from "./outcome.ts";
+import { isDeclaredPath } from "./gates/request.ts";
 
 export type TestEdit = { path: string; seq: number; addedMarkers: string[]; droppedAssertions: number };
 
@@ -90,7 +91,7 @@ export function closeReport(input: CloseInput): CloseReport | null {
   if (input.declaredFiles.length > 0) {
     const outside = written
       .map(([path]) => path)
-      .filter((path) => !input.declaredFiles.some((file) => path === file || path.endsWith(`/${file}`)));
+      .filter((path) => !isDeclaredPath(path, input.declaredFiles));
     if (outside.length > 0) warnings.push(`${plural(outside.length, "archivo")} fuera de lo declarado: ${outside.join(", ")}`);
   }
 

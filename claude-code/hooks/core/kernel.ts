@@ -19,7 +19,7 @@ import { trackGate } from "./gates/track.ts";
 import { delegateGate } from "./gates/delegate.ts";
 import { evidenceGate, isDeclaredRunner, masksExitStatus, writesByBash } from "./gates/evidence.ts";
 import { promotionGate } from "./gates/promotion.ts";
-import { isFileWrite, targetPath, type GateRequest } from "./gates/request.ts";
+import { isDeclaredPath, isFileWrite, targetPath, type GateRequest } from "./gates/request.ts";
 import { appendRecord, readLedger } from "./ledger-core.ts";
 import { isSuccess, parseOutcome } from "./outcome.ts";
 import { candidateFor, candidateIdentity } from "./review-candidate.ts";
@@ -569,9 +569,12 @@ function promotionSignals(committed: Committed, request: GateRequest) {
   // The file this call is about to write counts too. Write intent is known at
   // preflight, and a gate that only saw finished writes would refuse the
   // divergence one file late — after the divergent write already happened.
-  const files = new Set(committed.filesWritten.keys());
+  const since = declaration?.seq ?? 0;
+  const files = new Set([...committed.filesWritten].filter(([, write]) => write.seq > since).map(([path]) => path));
   const target = targetPath(request);
   if (target && isFileWrite(request)) files.add(target);
+  const declared = declaration?.files ?? [];
+  const undeclared = [...files].filter((path) => !isDeclaredPath(path, declared));
 
   return {
     slug: declaration?.slug ?? "",
@@ -579,6 +582,7 @@ function promotionSignals(committed: Committed, request: GateRequest) {
     failedTaskId: consecutiveFailures > 0 ? runner : null,
     declaredFiles: declaration?.files.length ?? 0,
     observedFiles: files.size,
+    undeclared,
   };
 }
 
