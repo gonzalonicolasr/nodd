@@ -59,11 +59,11 @@ test("a claim of success without an observed green run is flagged", () => {
   assert.deepEqual(verified.warnings, []);
 });
 
-test("without a runner the report says the work cannot be called verified", () => {
+test("without a runner the report says so, and a green test run is not flagged", () => {
   const c = run(write(emptyCommitted(), "/r/a.ts"), "npm test");
   const report = closeReport(input(c, { runner: null, answer: "listo, anda" }))!;
   assert.match(report.line, /sin runner declarado/);
-  assert.ok(report.warnings.some((w) => /la respuesta afirma/.test(w)));
+  assert.deepEqual(report.warnings, []);
 });
 
 test("files outside the declared ones are named", () => {
@@ -113,4 +113,80 @@ test("the close shows the count of a green run and flags tests that vanished or 
   assert.ok(report.warnings.some((w) => /salteados subieron de 0 a 3/.test(w)));
   const steady = closeReport(input(green(write(first, "/r/b.ts"), out(130))))!;
   assert.deepEqual(steady.warnings, []);
+});
+
+test("a generic 'done' with nothing to verify against is not flagged; a test claim still is", () => {
+  const c = write(emptyCommitted(), "/r/manual.html");
+  assert.deepEqual(closeReport(input(c, { runner: null, answer: "Listo, quedó el manual." }))!.warnings, []);
+  const claimed = closeReport(input(c, { runner: null, answer: "Listo, pasan los tests." }))!;
+  assert.ok(claimed.warnings.some((w) => /pasan los tests|ninguna corrida de tests/.test(w)), claimed.warnings.join("|"));
+});
+
+test("without a runner, a green test run after the last write backs a test claim", () => {
+  const c = run(write(emptyCommitted(), "/r/a.ts"), "cd /r && npm test");
+  const report = closeReport(input(c, { runner: null, answer: "Listo, pasan los tests." }))!;
+  assert.deepEqual(report.warnings, []);
+  assert.match(report.line, /✓ `cd \/r && npm test` verde \(sin runner declarado\)/);
+});
+
+test("a declared runner with a cd prefix matches the same run written with ~", () => {
+  const c = run(write(emptyCommitted(), "/r/a.ts"), "cd ~/projects/nerv && claude plugin test .");
+  const report = closeReport(input(c, { runner: "cd /home/gon/projects/nerv && claude plugin test .", answer: "verde", home: "/home/gon" }))!;
+  assert.match(report.line, /✓/);
+  assert.deepEqual(report.warnings, []);
+});
+
+test("test data that only mentions .skip is not an added skip", () => {
+  assert.deepEqual(testEditSignals("", "const cases = [\"it.skip('a')\", 't.Skip()'];\ntest('x', () => { assert.ok(1) })").addedMarkers, []);
+  assert.deepEqual(testEditSignals("it('a', () => {})", "it.skip('a', () => {})").addedMarkers, [".skip("]);
+});
+
+test("writes to the scratchpad or to Claude's own files are not outside the declaration", () => {
+  const c = write(write(write(emptyCommitted(), "/r/src/a.ts"), "/tmp/claude-1000/-r/s1/scratchpad/n.md"), "/home/gon/.claude/projects/-home-gon/memory/x.md");
+  assert.deepEqual(closeReport(input(c, { declaredFiles: ["src/a.ts"] }))!.warnings.filter((w) => w.includes("fuera")), []);
+});
+
+test("only a claim about tests counts as a test claim", () => {
+  const c = write(emptyCommitted(), "/r/a.ts");
+  for (const answer of ["Mapeado y verificado contra DynamoDB TEST.", "El botón quedó verde.", "Listo, quedó."]) {
+    assert.deepEqual(closeReport(input(c, { runner: null, answer }))!.warnings, [], answer);
+  }
+  for (const answer of ["Pasan los 12 tests.", "Todos los tests en verde.", "All tests pass.", "Suite verde."]) {
+    assert.ok(closeReport(input(c, { runner: null, answer }))!.warnings.length > 0, answer);
+  }
+});
+
+test("a run whose status is hidden is read from the runner's summary or the printed $?, and says so", () => {
+  const base = write(emptyCommitted(), "/r/a.ts");
+  const tail = step(base, "bash", { command: "npm test 2>&1 | tail -5" }, false, "Tests  120 passed (120)");
+  const r1 = closeReport(input(tail, { runner: null, answer: "Pasan los tests." }))!;
+  assert.deepEqual(r1.warnings, []);
+  assert.match(r1.line, /verde según el resumen/);
+  const echo = step(base, "bash", { command: "npm test > /tmp/u.log 2>&1; echo \"exit=$?\"" }, false, "exit=0");
+  assert.deepEqual(closeReport(input(echo, { runner: null, answer: "Pasan los tests." }))!.warnings, []);
+  const echoRed = step(base, "bash", { command: "npm test > /tmp/u.log 2>&1; echo \"exit=$?\"" }, false, "exit=1");
+  assert.ok(closeReport(input(echoRed, { runner: null, answer: "Pasan los tests." }))!.warnings.length > 0);
+  const tailRed = step(base, "bash", { command: "npm test 2>&1 | tail -3" }, false, "Tests  3 failed | 117 passed (120)");
+  assert.ok(closeReport(input(tailRed, { runner: "npm test", answer: "Pasan los tests." }))!.warnings.length > 0);
+});
+
+test("writing docs, memory or scratch after the green run does not undo it", () => {
+  const green = run(write(emptyCommitted(), "/r/src/a.ts"), "npm test");
+  const docs = write(write(green, "/r/docs/RFC.md"), "/home/gon/.claude/projects/-home-gon/memory/x.md");
+  const notes = run(docs, "cat >> /home/gon/.claude/projects/-home-gon/memory/y.md <<'EOF'\nnota\nEOF");
+  const report = closeReport(input(notes, { runner: "npm test", answer: "Listo, pasan los tests." }))!;
+  assert.match(report.line, /✓ `npm test` verde/);
+  assert.deepEqual(report.warnings, []);
+});
+
+test("a request that only touched docs has nothing to re-verify", () => {
+  const c = write(emptyCommitted(), "/r/README.md");
+  assert.deepEqual(closeReport(input(c, { runner: "npm test", answer: "Listo, quedó. Pasan los tests." }))!.warnings, []);
+});
+
+test("passing CI checks back a test claim, and a negated claim is not a claim", () => {
+  const c = write(emptyCommitted(), "/r/src/a.ts");
+  const ci = run(c, "gh pr checks 71 --watch");
+  assert.deepEqual(closeReport(input(ci, { runner: null, answer: "PR 71 arriba, todo verde." }))!.warnings, []);
+  assert.deepEqual(closeReport(input(c, { runner: null, answer: "Corrección: la integración falló, no quedó todo verde." }))!.warnings, []);
 });
