@@ -49,6 +49,11 @@ const CASES: Array<[string, "mutating" | "non-mutating"]> = [
   ["uv run python -c 'import shutil; shutil.rmtree(\"build\")'", "mutating"],
   ["python3 -c \"\nimport json\nd = {}\nopen('out.json', 'w').write(json.dumps(d))\n\"", "mutating"],
   ["node -e 'require(\"child_process\").execSync(\"rm f\")'", "mutating"],
+  ["node -e \"require('fs').writeFileSync('f','x')\"", "mutating"],
+  ["node -e \"const m=require(process.argv[1])\"", "mutating"],
+  ["node -e \"const db=require('better-sqlite3')('x.db'); db.prepare('DELETE FROM jobs').run()\"", "mutating"],
+  ["node -e \"require('./server').start()\"", "mutating"],
+  ["python3 -c \"x=\\\"a\\\"; open('f','w').write(x)\"", "mutating"],
   ["python3 - <<'PY'\np = 'a.txt'\nopen(p, 'w').write('x')\nPY", "mutating"],
   ["cd x && python3 <<EOF\nimport os\nos.remove('f')\nEOF", "mutating"],
   ["node - <<'JS'\nrequire('fs').writeFileSync('f', 'x')\nJS", "mutating"],
@@ -67,6 +72,10 @@ const CASES: Array<[string, "mutating" | "non-mutating"]> = [
   ["ls && node build.js", "mutating"],
 
   // --- non-mutating: the ones a wrong gate would break ---
+  ["python3 -c \"import re; print(re.compile('a').sub('b', 'aa').replace('b', 'c'))\"", "non-mutating"],
+  ["node -e \"const s=require('./package.json').scripts; for (const k in s) console.log(k)\"", "non-mutating"],
+  ["node -e \"const m=/a/.exec('a'); console.log(require('fs').readFileSync('x','utf8'))\"", "non-mutating"],
+  ["curl -s api | python3 -c \"import sys,json; print(f\\\"{json.load(sys.stdin)['a']}\\\")\"", "non-mutating"],
   ["hyprctl clients -j | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'", "non-mutating"],
   ["python3 -c \"import json; print(json.load(open('/tmp/state.json'))['run'])\"", "non-mutating"],
   ["python3 -c \"print(open('notes.txt', 'r').read()[:200])\"", "non-mutating"],

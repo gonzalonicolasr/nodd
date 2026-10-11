@@ -219,9 +219,17 @@ function tokenise(command: string): Token[] {
   };
 
   let escaped = false;
+  let quotedEscape = false;
   for (const ch of command) {
     if (escaped) { text += ch; escaped = false; continue; }
+    if (quotedEscape) {
+      quotedEscape = false;
+      if (ch === "\n") continue;
+      text += `"\\$\``.includes(ch) ? ch : `\\${ch}`;
+      continue;
+    }
     if (ch === "\\" && !quote) { escaped = true; continue; }
+    if (ch === "\\" && quote === '"') { quotedEscape = true; continue; }
     if (quote) {
       if (ch === quote) quote = null;
       else text += ch;
@@ -289,11 +297,14 @@ const WRITE_CAPABLE = new RegExp([
   String.raw`\.write\s*\(|\bwrite_text\b|\bwrite_bytes\b|\bwritelines\b`,
   String.raw`\bos\.(remove|unlink|rename|replace|mkdir|makedirs|rmdir|removedirs|system|popen|chmod|chown|truncate|link|symlink|exec\w*|spawn\w*|fork|kill|utime)\b`,
   String.raw`\bfrom\s+os\s+import\b|\bshutil\b|\bsubprocess\b|\bpty\b|\bctypes\b|\bsqlite3\b|\bpickle\b|\btempfile\b`,
-  String.raw`\.(unlink|mkdir|touch|rename|replace|rmdir|chmod|symlink_to|hardlink_to)\s*\(`,
+  String.raw`\.(unlink|mkdir|touch|rename|rmdir|chmod|symlink_to|hardlink_to)\s*\(`,
   String.raw`\bjson\.dump\s*\(`,
-  String.raw`\b(exec|eval|compile|getattr|Function)\s*\(|__import__|__builtins__|\bimportlib\b`,
+  String.raw`(?<![\w.])(exec|eval|compile|getattr|Function)\s*\(|__import__|__builtins__|\bimportlib\b`,
   String.raw`\bsocket\b|\burllib\b|\brequests\b|\bhttp\.client\b|\bfetch\s*\(`,
-  String.raw`\bfs\b|\brequire\s*\(|\bimport\s*\(|\bchild_process\b|\bDeno\.|\bBun\.|\bprocess\.(binding|dlopen|kill|chdir)\b`,
+  String.raw`\b(require|import)\s*\(\s*[^'"\s)]|\b(require|import)\s*\(\s*['"](?!(node:)?(fs|fs\/promises|path|os|util|url|crypto|readline|assert|buffer|events|string_decoder|querystring|zlib)['"])(?![^'"]*\.json['"])`,
+  String.raw`\b(writeFile|writeFileSync|appendFile|appendFileSync|unlinkSync|rmSync|rmdirSync|mkdirSync|renameSync|copyFile|copyFileSync|cpSync|symlinkSync|chmodSync|chownSync|truncateSync|createWriteStream|writeSync|openSync)\b`,
+  String.raw`\bfs\.(promises\.)?(unlink|rm|rmdir|mkdir|rename|cp|symlink|chmod|chown|truncate|open|writeFile|appendFile)\b`,
+  String.raw`\bchild_process\b|\bDeno\.|\bBun\.|\bprocess\.(binding|dlopen|kill|chdir)\b`,
 ].join("|"));
 
 const HEREDOC_TO_CODE = /\b(python3?|node|deno|bun)\b[^\n]*?<<-?\s*(['"]?)([A-Za-z_][\w-]*)\2/;
@@ -320,7 +331,7 @@ function inlineCodeMayWrite(command: string): boolean {
   for (let i = 0; i + 1 < tokens.length; i += 1) {
     if (!INLINE_INTERPRETERS.has(baseOf(tokens[i].text)) || !INLINE_FLAGS.has(tokens[i + 1].text)) continue;
     const code = tokens[i + 2]?.text;
-    if (code === undefined || code.includes("\\") || WRITE_CAPABLE.test(code)) return true;
+    if (code === undefined || WRITE_CAPABLE.test(code)) return true;
     judged += 1;
   }
   return judged < invocations;

@@ -47,3 +47,11 @@ test("the home counts as inside when the session runs in it, and a local test da
   assert.ok(destructiveReason("mysql -h db.prod.internal -e 'DROP TABLE x'", roots, home));
   assert.equal(destructiveReason("echo ok && mysql -h db -e 'SELECT 1'\ncat drop.sql", roots, home), null);
 });
+
+test("each refusal offers the safe way when there is one", () => {
+  assert.match(destructiveReason("git reset --hard origin/main", roots, home)!, /git reset --keep/);
+  assert.match(destructiveReason("git checkout -- .", roots, home)!, /git stash/);
+  assert.match(destructiveReason("git restore .", roots, home)!, /git stash/);
+  assert.match(destructiveReason("git clean -fd", roots, home)!, /git clean -n/);
+  assert.equal(destructiveReason("git reset --keep origin/main", roots, home), null);
+});

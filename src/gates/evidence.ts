@@ -86,9 +86,32 @@ const REMEDY = "run the verification command, then check the task off once it is
  * Exported because `gate-promotion`'s failure streak counts runs of the same
  * declared runner, and the two gates must agree on what "a run of it" means.
  */
+export function splitCd(command: string): { dir: string | null; rest: string } {
+  let rest = command.trimStart();
+  let dir: string | null = null;
+  for (let m = /^cd\s+(\S+)\s*&&\s*/.exec(rest); m; m = /^cd\s+(\S+)\s*&&\s*/.exec(rest)) {
+    dir = m[1].replace(/^["']|["']$/g, "");
+    rest = rest.slice(m[0].length);
+  }
+  return { dir, rest };
+}
+
+function sameDir(a: string, b: string): boolean {
+  const clean = (d: string) => d.replace(/^\$HOME(?=\/|$)/, "~").replace(/\/+$/, "");
+  const x = clean(a);
+  const y = clean(b);
+  if (x === y) return true;
+  const tilde = x.startsWith("~") ? x : y.startsWith("~") ? y : null;
+  const other = tilde === x ? y : x;
+  return tilde !== null && other.startsWith("/") && other.endsWith(tilde.slice(1)) && /^\/home\/[^/]+$|^\/root$/.test(other.slice(0, other.length - tilde.length + 1));
+}
+
 export function isDeclaredRunner(command: string, runner: string): boolean {
-  const actual = command.trim().split(/\s+/);
-  const declared = runner.trim().split(/\s+/);
+  const run = splitCd(command);
+  const want = splitCd(runner);
+  if (run.dir !== null && want.dir !== null && !sameDir(run.dir, want.dir)) return false;
+  const actual = run.rest.trim().split(/\s+/);
+  const declared = want.rest.trim().split(/\s+/);
   if (declared.length === 0 || actual.length < declared.length) return false;
   const last = declared.length - 1;
   return declared.every((token, i) => actual[i] === token || (i === last && actual[i].startsWith(token) && /^[;|&]/.test(actual[i].slice(token.length))));
@@ -104,8 +127,8 @@ export function writesByBash(command: string, runner: string | null): boolean {
 }
 
 export function masksExitStatus(command: string, runner: string): boolean {
-  let rest = command.trimStart();
-  for (const token of runner.trim().split(/\s+/)) rest = rest.slice(token.length).replace(/^[ \t]+/, "");
+  let rest = splitCd(command).rest;
+  for (const token of splitCd(runner).rest.trim().split(/\s+/)) rest = rest.slice(token.length).replace(/^[ \t]+/, "");
   let quote: string | null = null;
   for (let i = 0; i < rest.length; i += 1) {
     const ch = rest[i];

@@ -353,3 +353,10 @@ test("a clean run counts even after a masked one", () => {
   assert.equal(decision.allow, true);
   assert.equal((decision as { observed: { command: string } }).observed.command, "npm test");
 });
+
+test("a leading cd is context, not part of the runner", () => {
+  const run = afterCommand("cd ~/projects/x && npm test", false);
+  assert.equal(evidenceGate(run, ledgerFor(run), { ...check, runner: "cd /home/gon/projects/x && npm test" }, emptyPolicy()).allow, true);
+  const bare = afterCommand("npm test", false, "", "b2");
+  assert.equal(evidenceGate(bare, ledgerFor(bare), { ...check, runner: "cd /home/gon/projects/x && npm test" }, emptyPolicy()).allow, true);
+});
