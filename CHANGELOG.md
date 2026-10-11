@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sessions (234 requests), NODD's share of the context drops from 1,396 to
   about 540 tokens per request, and of the re-read context from 0.83 % to
   0.26 %.
+- `nodd_task add` without an `id` gives the task the next free one (`T2`,
+  `T3`…). Claude Code does not validate a mod tool's arguments, so the task
+  used to be written as `undefined` and could not be checked off on its own;
+  `check` and `reopen` without an `id` are refused, naming the remedy.
 
 ## [0.9.0] - 2026-10-11
 

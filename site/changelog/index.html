@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NODD — cambios</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 8 8%22%3E%3Crect width=%228%22 height=%228%22 fill=%22%23d0337a%22/%3E%3C/svg%3E">
+<meta name="description" content="Qué cambió en NODD, versión por versión, y lo que ya está en el repo esperando la próxima.">
+<meta property="og:title" content="NODD · cambios">
+<meta property="og:description" content="Qué cambió en NODD, versión por versión.">
+<meta property="og:image" content="https://nodd.ceroclawd.com/img/fig1.jpg">
+<style>
+html{background:#f4f2ec;scroll-behavior:smooth}body{-webkit-font-smoothing:antialiased}
+p,h1,h2,h3,li{text-wrap:pretty}
+a{color:#1b1a17;text-decoration:underline;text-decoration-color:oklch(0.58 0.2 355);text-underline-offset:3px}a:hover{color:oklch(0.5 0.2 355)}
+::selection{background:oklch(0.93 0.04 355);color:#1b1a17}:focus-visible{outline:2px solid oklch(0.58 0.2 355);outline-offset:2px}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em;background:#ebe8df;padding:.05em .3em}
+.rel{display:grid;grid-template-columns:1fr;gap:.75rem;padding:2.5rem 0;border-top:1px solid #dcd8cd}
+@media (min-width:640px){.rel{grid-template-columns:9.5rem 1fr;gap:2rem}}
+.rel h2{font-size:1.375rem;line-height:1.25;font-weight:600;letter-spacing:-.01em}
+.rel ul{margin-top:1.1rem;display:flex;flex-direction:column;gap:.85rem}
+.rel li{display:grid;grid-template-columns:4.6rem 1fr;gap:.75rem;font-size:16px;line-height:1.6;color:#5d5a52}
+.rel li strong{color:#1b1a17;font-weight:500}
+.tag{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;line-height:1;padding:.4em .45em;height:fit-content;margin-top:.3em;text-align:center;border:1px solid #dcd8cd;color:#5d5a52;white-space:nowrap}
+.tag.new{background:oklch(0.93 0.04 355);border-color:transparent;color:#1b1a17}
+.tag.fix{border-color:#1b1a17;color:#1b1a17}
+.ver{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;color:#8a867c;margin-right:.4em}
+.state{display:inline-block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;padding:.25em .5em;margin-top:.5rem}
+.state.npm{background:#1b1a17;color:#f4f2ec}
+.state.repo{border:1px dashed oklch(0.58 0.2 355);color:oklch(0.5 0.2 355)}
+</style>
+</head>
+<body class="bg-ink text-fg font-sans">
+<header class="border-b border-line sticky top-0 bg-ink/95 backdrop-blur z-20">
+<div class="max-w-3xl mx-auto px-5 h-12 flex items-center justify-between font-mono text-[13px]">
+<a href="../" class="font-semibold tracking-wide flex items-center gap-2" style="text-decoration:none"><span class="w-2 h-2 bg-gentle"></span>nodd</a>
+<nav class="flex items-center gap-5 text-mute"><a href="../#como" class="hidden sm:inline" style="text-decoration:none">cómo funciona</a><a href="../#instalar" style="text-decoration:none">instalar</a><span class="text-fg">cambios</span><span class="text-dim">v0.9.0</span></nav>
+</div>
+</header>
+<main class="max-w-3xl mx-auto px-5">
+
+<section class="pt-16 pb-12 sm:pt-20">
+<p class="font-mono text-[13px] text-mute mb-8">registro de cambios</p>
+<h1 class="text-[40px] leading-[1.06] sm:text-[62px] font-semibold tracking-[-0.025em]">Qué cambió en NODD.<br><span class="text-gentle">Medido, no prometido.</span></h1>
+<p class="mt-7 text-[17px] leading-relaxed text-mute max-w-[34rem]">Cada versión publicada en npm, y lo que ya está en el repo esperando la próxima. Cuando un cambio se midió, el número está acá. El detalle técnico completo vive en el <a href="https://github.com/gonzalonicolasr/nodd/blob/master/CHANGELOG.md">CHANGELOG del repo</a>.</p>
+</section>
+
+<article class="rel" id="proxima">
+<div><div class="font-mono text-[13px] text-fg">próxima</div><span class="state repo">en el repo</span></div>
+<div>
+<h2>Menos tokens, y tareas que siempre tienen nombre.</h2>
+<ul>
+<li><span class="tag fix">arreglo</span><span><strong>NODD gasta menos tokens.</strong> Cuando el agente quería tildar una tarea sin haber corrido los tests, el rechazo copiaba cada comando de la sesión: uno llegó a 99.000 caracteres. Ahora nombra los tres últimos, recortados a su primera línea. Medido en 41 sesiones reales: de unos 1.400 a unos 540 tokens por pedido. Revisamos los rechazos de un mes y el intento útil siempre estaba entre esos tres.</span></li>
+<li><span class="tag fix">arreglo</span><span><strong>Una tarea sin id ya no se llama "undefined".</strong> En Claude Code, un <code>nodd_task add</code> sin id dejaba tareas imposibles de tildar una por una. Ahora reciben el siguiente libre (T2, T3…).</span></li>
+</ul>
+</div>
+</article>
+
+<article class="rel" id="v0.9">
+<div><div class="font-mono text-[13px] text-fg">0.9.0</div><div class="font-mono text-[12px] text-dim">11 oct 2026</div><span class="state npm">en npm</span></div>
+<div>
+<h2>NODD llega a Claude Code y mira cómo termina cada pedido.</h2>
+<ul>
+<li><span class="tag new">nuevo</span><span><strong>Mod para Claude Code.</strong> Los gates authorize, classify, track y evidence, con una declaración por pedido. Corren también sobre los subagentes y los agentes de forge.</span></li>
+<li><span class="tag new">nuevo</span><span><strong>Cierre observado.</strong> Después de cada pedido que escribió, NODD dice qué archivos tocó y cómo quedaron los tests después del último cambio: verde, parcial, rojo, estado oculto o sin correr. Avisa si la respuesta dice "pasan los tests" sin un verde completo, si se editó un test entre el rojo y el verde, si apareció un <code>.skip</code> o <code>.only</code>, si se borraron assertions o si pasan menos tests que antes.</span></li>
+<li><span class="tag new">nuevo</span><span><strong>Freno a lo irreversible.</strong> <code>git reset --hard</code>, <code>git clean -f</code>, <code>rm -rf</code> fuera del proyecto, <code>terraform destroy</code>, <code>kubectl delete</code> o un <code>DROP</code> contra una base que no es local se frenan antes de correr, para cualquier agente. El rechazo propone primero la forma segura, y <code>/nodd allow destructive</code> deja pasar uno.</span></li>
+<li><span class="tag new">nuevo</span><span>Lee el resumen de node --test, bun, jest, vitest, pytest, cargo y go test. Lo que el agente escribe en su scratchpad pasa sin trámite.</span></li>
+<li><span class="tag fix">arreglo</span><span><strong>El cierre dejó de gritar lobo.</strong> Tres rondas de precisión medidas sobre 14 días de sesiones reales (2.761 pedidos): los avisos bajaron de 987 a 24, y los pedidos con verde confirmado subieron de 10 a 234.</span></li>
+<li><span class="tag fix">arreglo</span><span>Los formateadores que reescriben archivos (<code>eslint --fix</code>, <code>prettier --write</code>, <code>black</code>, <code>gofmt -w</code>, <code>cargo fmt</code>) cuentan como escritura e invalidan el verde anterior.</span></li>
+<li><span class="tag fix">arreglo</span><span>El clasificador de bash dejó de inventar escrituras: 624 comandos menos sobre 21.538 reales, sin dejar pasar las verdaderas. Lee el código de <code>python -c</code>, <code>node -e</code> y de un heredoc antes de decidir.</span></li>
+<li><span class="tag fix">arreglo</span><span>Una corrida con el estado de salida oculto (<code>| tail</code>, <code>|| true</code>) ya no cuenta como evidencia. La declaración sobrevive a una recarga del mod.</span></li>
+</ul>
+</div>
+</article>
+
+<article class="rel" id="v0.8">
+<div><div class="font-mono text-[13px] text-fg">0.8</div><div class="font-mono text-[12px] text-dim">21 – 27 sep 2026</div><span class="state npm">en npm</span></div>
+<div>
+<h2>Repo público, y los agentes delegados pueden declarar solos.</h2>
+<ul>
+<li><span class="tag new">nuevo</span><span><span class="ver">0.8.5</span><code>/nodd-gates enable all</code> y <code>disable all</code> prenden o apagan todos los gates de una vez.</span></li>
+<li><span class="tag fix">arreglo</span><span><span class="ver">0.8.5</span>gate-delegate ya no frena la escritura de un archivo que la declaración nombró. Los agentes generados no tenían cómo salir de ese rechazo y forge terminaba escribiendo desde el orquestador.</span></li>
+<li><span class="tag">cambio</span><span><span class="ver">0.8.1–0.8.4</span>El repo es público. El README volvió a ser una puerta de entrada (de 594 a 252 líneas), el detalle pasó a <code>docs/reference.md</code>, y el crédito a ODD y a Gentleman-Programming quedó explícito.</span></li>
+<li><span class="tag new">nuevo</span><span><span class="ver">0.8.0</span><strong>Los agentes generados traen <code>nodd_declare</code>.</strong> Antes, todo writer delegado quedaba bloqueado al llegar, y forge no podía convivir con NODD.</span></li>
+</ul>
+</div>
+</article>
+
+<article class="rel" id="v0.7">
+<div><div class="font-mono text-[13px] text-fg">0.7</div><div class="font-mono text-[12px] text-dim">20 – 21 sep 2026</div><span class="state npm">en npm</span></div>
+<div>
+<h2>El gate de bash lee el comando entero.</h2>
+<ul>
+<li><span class="tag">cambio</span><span><span class="ver">0.7.0</span><strong>Antes sólo veía la primera línea:</strong> un <code>ls</code> seguido de <code>rm -rf build</code> en la línea siguiente pasaba como lectura. Ahora separa por saltos de línea, subshells, <code>then</code> y <code>do</code>.</span></li>
+<li><span class="tag new">nuevo</span><span><span class="ver">0.7.0</span>Correr un script con un intérprete (<code>node script.js</code>, <code>bash setup.sh</code>) cuenta como escritura.</span></li>
+<li><span class="tag fix">arreglo</span><span><span class="ver">0.7.1–0.7.3</span>Lo que está entre comillas, en un comentario o en un heredoc es dato, no comando, salvo que un intérprete lo ejecute. <code>sudo</code>, <code>nice</code>, <code>timeout</code> o <code>env</code> ya no esconden un heredoc: 48 de 48 casos, contra 41 antes.</span></li>
+<li><span class="tag new">nuevo</span><span><span class="ver">0.7.4</span><code>nodd_declare</code> acepta problema, alcance y restricciones, que antes quedaban vacíos en el documento de la feature.</span></li>
+<li><span class="tag fix">arreglo</span><span><span class="ver">0.7.4–0.7.7</span>El rechazo de evidencia nombra la causa real, por ejemplo un <code>timeout 120</code> delante del runner. gate-delegate cuenta los archivos de la tarea actual, y volver a declarar el mismo slug no reinicia el contador.</span></li>
+</ul>
+</div>
+</article>
+
+<article class="rel" id="v0.6">
+<div><div class="font-mono text-[13px] text-fg">0.6</div><div class="font-mono text-[12px] text-dim">19 – 20 sep 2026</div><span class="state npm">en npm</span></div>
+<div>
+<h2>Los botones de emergencia funcionan de verdad.</h2>
+<ul>
+<li><span class="tag fix">arreglo</span><span><span class="ver">0.6.2</span><strong>El interruptor, <code>/nodd-allow</code> y <code>--nodd-off</code></strong> respondían bien y no cambiaban nada. Ahora llegan al núcleo, y una config que NODD no entiende se reporta en vez de resetear los gates en silencio.</span></li>
+<li><span class="tag fix">arreglo</span><span><span class="ver">0.6.0–0.6.1</span>Una llamada rechazada ya no cuenta como efecto observado: los contadores escalaban por trabajo que nunca pasó. Los rechazos proponen remedios que un subagente puede hacer.</span></li>
+<li><span class="tag">cambio</span><span><span class="ver">0.6.0</span>Se quitó el slot de modelo <code>orchestrator</code>, que nadie leía. La config se migra sola, con backup.</span></li>
+<li><span class="tag new">nuevo</span><span><span class="ver">0.6.1</span>El footer cuenta tareas: <code>nodd · tracked · mi-feature · 0/2</code>.</span></li>
+</ul>
+</div>
+</article>
+
+<article class="rel" id="v0.2">
+<div><div class="font-mono text-[13px] text-fg">0.2 – 0.5</div><div class="font-mono text-[12px] text-dim">19 sep 2026</div><span class="state npm">en npm</span></div>
+<div>
+<h2>Primera versión publicada.</h2>
+<ul>
+<li><span class="tag new">nuevo</span><span><span class="ver">0.2.0</span><strong>Los seis gates</strong> (authorize, classify, track, delegate, evidence y promotion), el clasificador de bash, el registro de evidencia, los documentos de feature, los slots de modelo con perfiles, los agentes generados y <code>/nodd-promote</code>.</span></li>
+<li><span class="tag">cambio</span><span><span class="ver">0.3.0</span>La política de gates se relee en cada llamada: apagar un gate no pide reiniciar pi.</span></li>
+<li><span class="tag new">nuevo</span><span><span class="ver">0.4–0.5</span>Selector de modelos con paneles, y un footer que dice que NODD está prendido y qué está siguiendo.</span></li>
+<li><span class="tag fix">arreglo</span><span><span class="ver">0.2.1–0.5.1</span>Las tools registran el campo que pi llama, los gates leen <code>file_path</code>, y un redirect a <code>/dev/null</code> no es escritura.</span></li>
+</ul>
+</div>
+</article>
+
+</main>
+<footer class="border-t border-line mt-12">
+<div class="max-w-6xl mx-auto px-5 py-6 flex flex-wrap justify-between gap-x-6 gap-y-2 font-mono text-[12px] text-dim"><span>nodd 0.9.0 · <a href="https://www.npmjs.com/package/@gonrocca/nodd">npm</a> · <a href="https://github.com/gonzalonicolasr/nodd">github</a></span><span>las reglas son de <span class="text-gentle">ODD · Gentleman-Programming</span></span></div>
+</footer>
+</body>
+</html>
