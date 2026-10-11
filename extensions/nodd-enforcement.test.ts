@@ -47,10 +47,10 @@ function session(options: { cwd?: string; home?: string; entries?: Array<Record<
     appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
   };
   const cwd = options.cwd ?? mkdtempSync(join(tmpdir(), "nodd-enforce-"));
-  // Undeclared home reads the real ~/.pi/agent/agents -- every existing test
-  // here relies on that default. Tests that need a controlled agent roster
-  // (T006) pass their own.
-  const kernel = register(pi as never, cwd, options.home);
+  // Undeclared home is an empty one: the real ~/.pi/nodd.json can switch gates
+  // off and turn these tests into a reading of the user's config. Tests that
+  // need a controlled agent roster (T006) pass their own.
+  const kernel = register(pi as never, cwd, options.home ?? mkdtempSync(join(tmpdir(), "nodd-home-")));
 
   const toolCall = handlers.get("tool_call");
   const toolResult = handlers.get("tool_result");
