@@ -42,6 +42,16 @@ Siempre, junto a los otros mods (separados por `:`):
 Los pendientes igual observan: el kernel cuenta lecturas, escrituras y
 delegaciones, así que prenderlos más adelante no arranca de cero.
 
+`delegate` queda pendiente a propósito. Simulado contra 30 días de sesiones
+reales de Claude Code con NODD prendido, habría frenado el 14% de los pedidos
+que escriben y el 80% de las escrituras de los subagentes, que son justamente
+los que escriben. Sus contadores son de toda la sesión: una sola delegación lo
+destraba para siempre, y sin ninguna frena todo lo que pase de 20 tool calls.
+Contarlos por pedido es peor (27%). Para aplicarlo acá haría falta otro diseño:
+sólo en la sesión principal, con umbrales más altos y una delegación que
+destrabe el pedido, no la sesión. El interruptor de `/nodd gate delegate`
+sigue valiendo para pi.
+
 Prendido, el modelo tiene dos tools: `nodd_declare` y `nodd_task`
 (`mcp__nodd__nodd_declare` y `mcp__nodd__nodd_task`).
 

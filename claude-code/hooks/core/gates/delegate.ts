@@ -84,15 +84,14 @@ export function delegateGate(
   // needs no tool at all, so it is reachable by anyone.
   const remedy =
     "report the block to whoever delegated this work, " +
-    "or delegate the work with the `subagent` tool, " +
-    "or declare this as small inline work";
+    "or delegate the work with the `subagent` tool";
 
   const written = writtenFiles(committed, request, pending);
   if (written.size >= THRESHOLDS.writerMinNonTrivialFiles) {
     return refuse(
       "delegate",
       `this session has written ${written.size} distinct files (threshold ${THRESHOLDS.writerMinNonTrivialFiles}) without delegating`,
-      remedy,
+      `${remedy}, or declare this as small inline work`,
     );
   }
 

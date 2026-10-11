@@ -51,10 +51,12 @@ code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em;backgrou
 <article class="rel" id="proxima">
 <div><div class="font-mono text-[13px] text-fg">próxima</div><span class="state repo">en el repo</span></div>
 <div>
-<h2>Menos tokens, y tareas que siempre tienen nombre.</h2>
+<h2>Menos tokens, tareas que siempre tienen nombre y un gate medido antes de prenderlo.</h2>
 <ul>
 <li><span class="tag fix">arreglo</span><span><strong>NODD gasta menos tokens.</strong> Cuando el agente quería tildar una tarea sin haber corrido los tests, el rechazo copiaba cada comando de la sesión: uno llegó a 99.000 caracteres. Ahora nombra los tres últimos, recortados a su primera línea. Medido en 41 sesiones reales: de unos 1.400 a unos 540 tokens por pedido. Revisamos los rechazos de un mes y el intento útil siempre estaba entre esos tres.</span></li>
 <li><span class="tag fix">arreglo</span><span><strong>Una tarea sin id ya no se llama "undefined".</strong> En Claude Code, un <code>nodd_task add</code> sin id dejaba tareas imposibles de tildar una por una. Ahora reciben el siguiente libre (T2, T3…).</span></li>
+<li><span class="tag fix">arreglo</span><span><strong>El freno por no delegar ya no ofrece una salida que no existe.</strong> Cuando frenaba por haber leído muchos archivos o por una sesión larga, sugería declarar el trabajo como chico. Eso sólo destraba el freno por archivos escritos, así que el agente lo intentaba y quedaba igual de trabado. Ahora esa salida aparece sólo donde sirve.</span></li>
+<li><span class="tag">medido</span><span><strong>En Claude Code, <code>delegate</code> sigue sin aplicarse, y ahora se sabe por qué.</strong> Lo corrimos contra 30 días de sesiones reales: habría frenado el 14% de los pedidos que escriben y el 80% de lo que escriben los subagentes, que son los que hacen el trabajo delegado. Queda apagado hasta tener un diseño que encaje con Claude Code. El panel de NERV ahora lo muestra como <code>sólo en pi</code> en vez de "pendiente".</span></li>
 </ul>
 </div>
 </article>

@@ -183,6 +183,32 @@ test("the remedy is reachable by a writer that cannot delegate or declare", () =
   );
 });
 
+test("only the writer refusal offers a new inline declaration, the one trigger a declaration resets", () => {
+  n = 0;
+  const writer = delegateGate(
+    foldAll(emptyCommitted(), [obs("write", { path: "a.ts" }), obs("write", { path: "b.ts" })]),
+    { toolName: "write", input: { path: "c.ts" } },
+    emptyPolicy(),
+    noPending,
+  );
+  const mapping = delegateGate(reads(4), write, emptyPolicy(), noPending);
+  n = 0;
+  const long = delegateGate(
+    foldAll(emptyCommitted(), Array.from({ length: THRESHOLDS.longSessionToolCalls }, () => obs("grep", { pattern: "x" }))),
+    write,
+    emptyPolicy(),
+    noPending,
+  );
+
+  assert.ok(writer.allow === false && /inline/.test(writer.remedy.action));
+  for (const decision of [mapping, long]) {
+    assert.equal(decision.allow, false);
+    assert.ok(decision.allow === false && !/inline/.test(decision.remedy.action), decision.allow === false ? decision.remedy.action : "");
+    assert.ok(decision.allow === false && /report|delegator/i.test(decision.remedy.action));
+    assert.ok(decision.allow === false && /subagent/.test(decision.remedy.action));
+  }
+});
+
 test("re-declaring the same feature does not reset the writer count", () => {
   // Scoping the count to the current declaration (so a new feature does not
   // inherit the previous one's total) handed the blocked actor a one-call

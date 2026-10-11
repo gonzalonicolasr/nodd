@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `T3`…). Claude Code does not validate a mod tool's arguments, so the task
   used to be written as `undefined` and could not be checked off on its own;
   `check` and `reopen` without an `id` are refused, naming the remedy.
+- `gate-delegate` offered "declare this as small inline work" on every
+  refusal, but a new declaration only resets the writer trigger. The mapping
+  and long-session refusals now name only the remedies that clear them.
+
+### Documented
+
+- Why `delegate` stays pending in Claude Code. Replayed against 30 days of
+  real Claude Code sessions with NODD on, it would have refused 14 % of the
+  requests that write and 80 % of subagent writes; per-request counters
+  raise the first figure to 27 %.
 
 ## [0.9.0] - 2026-10-11
 
