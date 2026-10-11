@@ -232,3 +232,70 @@ test("a hidden go test run is read from its package lines", () => {
   const bad = step(base, "bash", { command: "go test ./... 2>&1 | tail -20" }, false, "--- FAIL: TestX\nFAIL\texample.com/a\t0.01s");
   assert.ok(closeReport(input(bad, { runner: null, answer: "Pasan los tests." }))!.warnings.length > 0);
 });
+
+test("only bash writes with an identifiable code target make a green run stale in the close", () => {
+  const green = run(write(emptyCommitted(), "/r/src/a.ts"), "npm test");
+  const harmless = [
+    "git checkout main && git stash pop",
+    "git commit --amend --no-edit && git branch -D old",
+    "cd /home/gon/.claude/projects/x/memory && python3 - <<'PY'\nopen('n.md','w').write('x')\nPY",
+    "SP=/tmp/claude-1000/-home-gon/abc/scratchpad; cat > $SP/body.md <<'EOF2'\nhola\nEOF2",
+    "rm -rf /tmp/nodd-medicion && mkdir -p /tmp/x",
+    "sqlite3 data.db 'DELETE FROM jobs'",
+  ];
+  for (const command of harmless) {
+    assert.deepEqual(closeReport(input(run(green, command), { answer: "Listo, pasan los tests." }))!.warnings, [], command);
+  }
+  const code = [
+    "sed -i 's/a/b/' src/a.ts",
+    "echo x > src/b.ts",
+    "cd /r && cp /tmp/x.ts src/c.ts",
+    "npx eslint --fix src",
+    "git apply /tmp/claude-1000/p.diff",
+    "python3 - <<'PY'\nopen('src/d.py','w').write('x')\nPY",
+  ];
+  for (const command of code) {
+    assert.ok(closeReport(input(run(green, command), { answer: "Listo, pasan los tests." }))!.warnings.length > 0, command);
+  }
+});
+
+test("the runner is found anywhere in a chain, and a pipe or ; after it does not make it partial", () => {
+  const base = write(emptyCommitted(), "/r/src/a.py");
+  const chained = run(base, "kill 123; uv run pytest -q");
+  assert.deepEqual(closeReport(input(chained, { runner: "uv run pytest -q", answer: "Pasan los tests." }))!.warnings, []);
+  const piped = step(base, "bash", { command: "npm test 2>&1 | grep -E 'pass|fail'" }, false, "      Tests  12 passed (12)");
+  assert.deepEqual(closeReport(input(piped, { answer: "Pasan los tests." }))!.warnings, []);
+  const then = run(base, "npm test; git status");
+  assert.doesNotMatch(closeReport(input(then))!.line, /parcial/);
+});
+
+test("a missing script has no verdict and does not hide an earlier green", () => {
+  const base = write(emptyCommitted(), "/r/src/a.ts");
+  const green = step(base, "bash", { command: "npm run test:unit" }, false, "Tests  223 passed (223)");
+  const missing = step(green, "bash", { command: "npm run test-e2e" }, true, "npm error Missing script: \"test-e2e\"\nCommand exited with code 1");
+  assert.deepEqual(closeReport(input(missing, { runner: null, answer: "Pasan los tests." }))!.warnings, []);
+});
+
+test("'todo verde' alone is not a test claim", () => {
+  const c = write(emptyCommitted(), "/r/src/a.ts");
+  assert.deepEqual(closeReport(input(c, { runner: null, answer: "El servicio volvió, está todo en verde." }))!.warnings, []);
+});
+
+test("a script in ~/.claude is code, the memory under ~/.claude/projects is not", () => {
+  const green = run(write(emptyCommitted(), "/r/src/a.ts"), "npm test");
+  const script = run(green, "f=~/.claude/statusline.sh; sed -i 's/a/b/' $f");
+  assert.ok(closeReport(input(script, { answer: "Pasan los tests.", home: "/home/gon" }))!.warnings.length > 0);
+  const memory = write(green, "/home/gon/.claude/projects/-home-gon/memory/x.json");
+  assert.deepEqual(closeReport(input(memory, { answer: "Pasan los tests.", home: "/home/gon" }))!.warnings, []);
+});
+
+test("a wrapped runner, a test run inside $(…) and a concatenated python path are read as such", () => {
+  const base = write(emptyCommitted(), "/r/src/a.py");
+  const wrapped = step(base, "bash", { command: "timeout 120 uv run pytest -q 2>&1 | tail -1" }, false, "34 passed in 7.57s");
+  assert.deepEqual(closeReport(input(wrapped, { runner: "uv run pytest -q", answer: "Pasan los tests." }))!.warnings, []);
+  const inside = step(base, "bash", { command: 'echo "== mod $(claude plugin test . 2>&1 | tail -3)"' }, false, "== mod 54 pass 0 fail");
+  assert.deepEqual(closeReport(input(inside, { runner: null, answer: "Pasan los tests." }))!.warnings, []);
+  const green = run(base, "npm test");
+  const patch = run(green, "python3 - <<'EOF'\nimport subprocess\nP='/tmp/claude-1000/x/scratchpad/'\nopen(P+'mine.patch','w').write('x')\nEOF");
+  assert.deepEqual(closeReport(input(patch, { answer: "Pasan los tests." }))!.warnings, []);
+});

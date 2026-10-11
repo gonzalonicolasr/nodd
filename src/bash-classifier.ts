@@ -153,6 +153,8 @@ function redirectsToFile(command: string): boolean {
   return />>?\s*\S/.test(withoutSinks);
 }
 
+const FORMATTER = /\b(eslint\b[^;&|\n]*\s--fix\b|prettier\b[^;&|\n]*\s(--write|-w)\b|biome\b[^;&|\n]*\s(--write|--apply)\b|ruff\b[^;&|\n]*(\s--fix\b|\sformat\b)|black\s|isort\s|gofmt\b[^;&|\n]*\s-w\b|goimports\b[^;&|\n]*\s-w\b|cargo\s+fmt\b|rustfmt\s)/;
+
 export const COVERED_PATTERNS: CoveredPattern[] = [
   { label: "output redirection (`>`, `>>`), excluding fd-only forms like `2>&1`", example: "echo hi > f.txt", test: redirectsToFile },
   { label: "`tee`", example: "ls | tee out.txt", test: (c) => commandWord(["tee"]).test(c) || /\|\s*(sudo\s+)?tee\b/.test(c) },
@@ -161,6 +163,7 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
   { label: "permission changes (`chmod`, `chown`)", example: "chmod +x run.sh", test: (c) => commandWord(["chmod", "chown"]).test(c) },
   { label: "`patch`", example: "patch -p1 < fix.diff", test: (c) => commandWord(["patch"]).test(c) },
   { label: "mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`)", example: "git commit -m 'x'", test: (c) => /\bgit\s+(apply|checkout|restore|reset|commit|stash|clean|mv|rm)\b/.test(c) },
+  { label: "formatters and linters that rewrite files (`eslint --fix`, `prettier --write`, `biome --write`, `ruff --fix`/`ruff format`, `black`, `isort`, `gofmt -w`, `cargo fmt`)", example: "npx eslint --fix src", test: (c) => FORMATTER.test(c) && !/--check\b/.test(c) },
   { label: "package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add)", example: "npm install lodash", test: (c) => /\b(npm|pnpm|yarn|pip|pip3|cargo)\s+(install|add|i)\b/.test(c) },
   { label: "inline code for `node` or `python` (`-e`, `-c` or a heredoc) that can write: a write mode, a file or process API, `eval`/`exec`", example: "node -e \"require('fs').writeFileSync('f','x')\"", tokenises: true, test: (c) => inlineCodeMayWrite(c) },
   { label: "an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`)", example: "node script.js", tokenises: true, test: (c) => runsScriptFile(c) },

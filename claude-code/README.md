@@ -115,7 +115,14 @@ verde", "all tests pass", "veredicto: pasa"); un "listo" genérico se marca sól
 si hay runner declarado. Sin runner, cualquier corrida de tests verde observada
 (incluido `gh pr checks`) la respalda. Escribir docs, la memoria de Claude o el
 scratchpad después del verde no lo invalida, y un pedido que sólo tocó docs no
-tiene nada que verificar. Avisa además cuando
+tiene nada que verificar. Para el cierre, un Bash invalida el verde sólo si
+escribe un archivo de código que NODD puede nombrar: una redirección, `cp`, `mv`,
+`tee`, `rm`, `sed -i`, un `open(…, 'w')` de Python, `git apply`/`merge`/`restore`/
+`checkout --`, o un formateador con `--fix`/`--write`. Resuelve el `cd` y las
+variables del mismo comando. Un `git commit`, un `git checkout <rama>`, una
+escritura a `/tmp` o un script que corre no lo invalidan acá. El gate `evidence`
+sigue siendo estricto: para tildar una tarea, cualquier Bash que escribe después
+del verde lo invalida. Avisa además cuando
 un test se editó entre una corrida roja y la verde, cuando se le agregaron
 `.skip`/`.only`/`xit`/`t.Skip`/`@pytest.mark.skip` o se le sacaron assertions,
 y cuando se escribió fuera de los `files` declarados. Los avisos le llegan al

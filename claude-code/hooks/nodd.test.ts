@@ -659,3 +659,26 @@ test('el interruptor vive en un archivo compartido por todas las sesiones', asyn
   const ok = await call($, { tool: 'Write', file_path: '/repo/b.ts', content: 'x' })
   expect(ok.deny).toBe(undefined)
 })
+
+describe('recarga del mod', () => {
+  const inline = { intent: 'change', route: 'inline', slug: 'fix', summary: 'arreglo chico' }
+
+  test('la declaración y la última declarada quedan en el store de la sesión', async ($, on) => {
+    const w = world(on, { store: { enabled: true } })
+    await call($, { tool: DECLARE, ...inline })
+    const saved: any = w.store['session:s1']
+    expect(saved.declaration.slug).toBe('fix')
+    expect(saved.lastDeclared.summary).toBe('arreglo chico')
+  })
+
+  test('tras recargar, la declaración guardada sigue valiendo y alcanza con el slug', async ($, on) => {
+    const declaration = { intent: 'change', route: 'inline', slug: 'fix', seq: 40, runner: null, files: [] }
+    const w = world(on, { store: { enabled: true, 'session:s1': { declaration, lastDeclared: inline, projectRoot: '/repo', requestStartAt: '' } } })
+    const r = await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
+    expect(r.deny).toBe(undefined)
+    await $.prompt.submit({ text: 'otro pedido', origin: { kind: 'composer' } } as any)
+    const again = await call($, { tool: DECLARE, slug: 'fix' })
+    expect(again.deny).toBe(undefined)
+    expect(w.ran).toEqual(['Write'])
+  })
+})

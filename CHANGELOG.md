@@ -37,6 +37,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Third precision round of the observed close, measured on the same 14 days
+  (2761 requests): warnings 53 → 24, confirmed-green requests 144 → 231,
+  claim warnings 41 → 12. A Bash write only makes a green run stale in the
+  close when it writes a code file NODD can name (`src/code-targets.ts`:
+  redirect, cp/mv/tee/rm, `sed -i`, Python `open(…, 'w')`, `git apply`/`merge`/
+  `restore`/`checkout --`, a formatter with `--fix`/`--write`), with `cd`,
+  shell variables and Python string joins resolved; `git commit`, a branch
+  checkout, `/tmp` and running a script no longer do. The runner is found in
+  any segment of a chain, behind `timeout`/`env`/`nice`, and inside `$(…)`; a
+  pipe, `;` or `)` after it is not a partial run; a missing script has no
+  verdict; "todo verde" alone is not a test claim. The evidence gate keeps the
+  strict rule. A subagent classified the remaining claim warnings: 1 true, 3
+  defensible for another reason, the rest a green NODD cannot see (an
+  `| tail` later in the line, a runner written as `.`, a glob, a subagent's run).
+- The classifier counts formatters that rewrite files (`eslint --fix`,
+  `prettier --write`, `ruff format`, `black`, `gofmt -w`, `cargo fmt`) as
+  writes, so they also make the evidence stale.
+- A script under `~/.claude/` or a worktree under `.claude/worktrees/` is code;
+  only `~/.claude*/{projects,plans,todos,tasks,shell-snapshots}/` is the
+  agent's own.
+- The Claude Code mod keeps the declaration and the last declared feature in
+  its store per session, so a hot reload of the mod no longer drops them.
+
 - The observed close stopped crying wolf: replaying 14 days of real sessions
   (2761 requests), warnings went from 987 to 81 and confirmed-green requests
   from 10 to 72. A bare "done" with no runner is no longer flagged, test claims

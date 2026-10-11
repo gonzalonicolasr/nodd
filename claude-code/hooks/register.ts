@@ -103,6 +103,7 @@ function boot($: any, sessionCwd?: string): Promise<void> {
     enabled = (await readSwitch($)) ?? (await $.store.get('enabled').catch(() => undefined)) === true
     const saved = await $.store.get('hatches').catch(() => undefined)
     hatches = saved && typeof saved === 'object' && !Array.isArray(saved) ? (saved as Policy['hatches']) : {}
+    await restoreSession($)
   })()
   return booted
 }
@@ -307,7 +308,37 @@ function pathsFor(kernel: Kernel, call: Call): string[] {
   return paths
 }
 
+async function restoreSession($: any) {
+  if (!sessionId) return
+  const saved = await $.store.get(`session:${sessionId}`).catch(() => undefined)
+  if (!saved || typeof saved !== 'object') return
+  if (typeof saved.projectRoot === 'string') projectRoot = saved.projectRoot
+  if (typeof saved.requestStartAt === 'string') requestStartAt = saved.requestStartAt
+  if (saved.lastDeclared && typeof saved.lastDeclared === 'object') lastDeclared.set(MAIN, saved.lastDeclared)
+  if (saved.declaration && typeof saved.declaration === 'object') {
+    const main = kernelFor(MAIN)
+    main.state.committed = { ...main.state.committed, declaration: { ...saved.declaration, seq: 0 } }
+  }
+}
+
+let lastSaved = ''
+
+async function saveSession($: any) {
+  if (!sessionId) return
+  const session = {
+    declaration: kernels.get(MAIN)?.state.committed.declaration ?? null,
+    lastDeclared: lastDeclared.get(MAIN) ?? null,
+    projectRoot,
+    requestStartAt,
+  }
+  const text = JSON.stringify(session)
+  if (text === lastSaved) return
+  lastSaved = text
+  await $.store.set(`session:${sessionId}`, session).catch(() => undefined)
+}
+
 async function exportState($: any) {
+  await saveSession($)
   if (headless || !home) return
   await stage($, [configPath()])
   const snap = snapshot({

@@ -21,3 +21,7 @@ test("without a recognisable summary there is no count, never a guess", () => {
 test("colored vitest output is read", () => {
   assert.deepEqual(testCounts("\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m154 passed\x1b[39m\x1b[22m\x1b[2m | \x1b[22m\x1b[33m33 skipped\x1b[39m\x1b[90m (187)\x1b[39m"), { passed: 154, failed: 0, skipped: 33 });
 });
+
+test("plain vitest summary with skipped tests is read", () => {
+  assert.deepEqual(testCounts(" Test Files  12 passed (12)\n      Tests  154 passed | 33 skipped (187)\n   Start at  10:00:00"), { passed: 154, failed: 0, skipped: 33 });
+});

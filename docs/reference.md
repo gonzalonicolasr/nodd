@@ -73,6 +73,7 @@ pattern set (`src/bash-classifier.ts`) and asserted against by
 | permission changes (`chmod`, `chown`) | `chmod +x run.sh` |
 | `patch` | `patch -p1 < fix.diff` |
 | mutating `git` subcommands (`apply`, `checkout`, `restore`, `reset`, `commit`, `stash`, `clean`, `mv`, `rm`) | `git commit -m 'x'` |
+| formatters and linters that rewrite files (`eslint --fix`, `prettier --write`, `biome --write`, `ruff --fix`/`ruff format`, `black`, `isort`, `gofmt -w`, `cargo fmt`) | `npx eslint --fix src` |
 | package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add) | `npm install lodash` |
 | inline code for `node` or `python` (`-e`, `-c` or a heredoc) that can write: a write mode, a file or process API, `eval`/`exec` | `node -e "require('fs').writeFileSync('f','x')"` |
 | an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`) | `node script.js` |

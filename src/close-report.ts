@@ -3,7 +3,7 @@ import { isDeclaredRunner, masksExitStatus, splitCd, writesByBash } from "./gate
 import { describeOutcome, isSuccess, parseOutcome } from "./outcome.ts";
 import { isDeclaredPath } from "./gates/request.ts";
 import { testCounts } from "./test-counts.ts";
-import { writesOnlyUnder } from "./scratch.ts";
+import { bashChangesCode } from "./code-targets.ts";
 
 export type TestEdit = { path: string; seq: number; addedMarkers: string[]; droppedAssertions: number };
 
@@ -22,16 +22,16 @@ export type CloseReport = { line: string; warnings: string[]; verified: boolean 
 
 const MARKER = /\.(skip|only|todo)\(|\bx(it|describe|test)\(|\bf(it|describe)\(|\bt\.Skip(Now|f)?\(|@pytest\.mark\.(skip|xfail)|@unittest\.skip/g;
 const ASSERTION = /\bexpect\s*\(|\bassert\w*\s*[(.\s]|\bt\.(Error|Fatal)f?\s*\(|\brequire\.\w+\s*\(/g;
-const CLAIM_TESTS = /\b(pasan (los |todos los )?(\d+ )?tests?|(los |todos los |\d+ )?tests (pasan|pasaron|pass(es|ed)?|passing|en verde|verdes)|(suite|todo) (en )?verde|all (the )?tests pass(ed)?|all green|veredicto:\s*pasa)\b/gi;
+const CLAIM_TESTS = /\b(pasan (los |todos los )?(\d+ )?tests?|(los |todos los |\d+ )?tests (pasan|pasaron|pass(es|ed)?|passing|en verde|verdes)|suite (en )?verde|all (the )?tests pass(ed)?|all green|veredicto:\s*pasa)\b/gi;
 const CLAIM_DONE = /(^|\n)\s*[*#>-]*\s*(listo|lista|hecho|done|fixed)\b(?!\s+(de|para|los|las|el|la|que)\b)|\b(está|quedó|quedaron|queda|quedan)\s+(listo|lista|listos|listas|arreglad[oa]s?|resuelt[oa]s?|terminad[oa]s?|funcionando)\b|\b(it works|now works|is fixed|is done)\b/gi;
 const NEGATED = /\b(no|not|ni|sin|nunca|never)\b[^.!?\n]{0,20}$/i;
 const TEST_RUN = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(node|deno|bun)\s+(--)?test\b|\b(pytest|vitest|jest|rspec|phpunit|tox|nox)\b|\bgo\s+test\b|\bcargo\s+test\b|\bmvn\s+\S*\s*test\b|\bgradlew?\s+\S*test\b|\bmake\s+test\b|\bclaude\s+plugin\s+test\b|\bgh\s+pr\s+checks\b|\bgh\s+run\s+watch\b[^\n]*--exit-status|[\w./-]*_test\.sh\b|\btest_[\w-]*\.py\b/;
 const ARTIFACT = /(^|\/)(\.next|dist|build|coverage|node_modules|target|__pycache__|\.cache|\.turbo|out)(\/|$)/;
-const PATH_LITERAL = /["']((?:~|\.{0,2}\/|\/)[^"'\s]*\.[A-Za-z0-9]+)["']/g;
-const OTHER_WRITES = /\bsubprocess\b|\bshutil\b|\bos\.(remove|rename|replace|system|makedirs|mkdir|unlink)\b|\bchild_process\b|writeFileSync|\bsed\s+-i\b/;
+const WRAPPER = /^(?:(?:timeout\s+(?:-\S+\s+)*\d+[smh]?|nice(?:\s+-n\s*-?\d+)?|env(?:\s+[A-Za-z_]\w*=\S*)*)\s+)+/;
+const MISSING = /Missing script:|command not found|No such file or directory|ModuleNotFoundError|Cannot find module/;
 const STRING = /(["'`])(?:\\.|(?!\1)[^\\\n])*\1/g;
-const AGENT_OWN = /^\/tmp\/claude-\d+\/|\/\.claude[^/]*\//;
-const HARMLESS = (path: string) => AGENT_OWN.test(path) || ARTIFACT.test(path) || /\.(md|mdx|txt|rst|adoc|png|jpe?g|gif|svg|webp)$/i.test(path);
+const AGENT_OWN = /^\/tmp\/claude-\d+\/|\/\.claude[^/]*\/(projects|plans|todos|tasks|shell-snapshots)\//;
+const HARMLESS = (path: string) => AGENT_OWN.test(path) || ARTIFACT.test(path) || /\.(md|mdx|txt|rst|adoc|log|png|jpe?g|gif|svg|webp)$/i.test(path);
 
 function withoutData(command: string): string {
   const lines = command.split("\n");
@@ -44,17 +44,11 @@ function withoutData(command: string): string {
     if (end === -1) break;
     i = end;
   }
-  return kept.join("\n").replace(STRING, '""');
+  return kept.join("\n").replace(STRING, (match) => `"${match.startsWith('"') ? (match.match(/\$\([^)]*\)/g) ?? []).join(" ") : ""}"`);
 }
 
 function isTestRun(command: string): boolean {
   return TEST_RUN.test(splitCd(withoutData(command)).rest);
-}
-
-function onlyTouchesHarmless(command: string): boolean {
-  if (OTHER_WRITES.test(command)) return false;
-  const paths = [...command.matchAll(PATH_LITERAL)].map((match) => match[1]);
-  return paths.length > 0 && paths.every(HARMLESS);
 }
 
 type RunnerView = { command: string; runner: string };
@@ -62,11 +56,10 @@ type RunnerView = { command: string; runner: string };
 function runnerView(command: string, runner: string): RunnerView | null {
   if (isDeclaredRunner(command, runner)) return { command, runner };
   const segments = splitCd(runner).rest.split("&&").map((segment) => segment.trim()).filter(Boolean);
-  if (segments.length < 2) return null;
   const tail = segments[segments.length - 1];
   const parts = command.split(/&&|;|\n/);
   for (let i = 0; i < parts.length; i += 1) {
-    const rest = parts.slice(i).join("&&").trim();
+    const rest = parts.slice(i).join("&&").trim().replace(WRAPPER, "");
     if (isDeclaredRunner(rest, tail)) return { command: rest, runner: tail };
   }
   return null;
@@ -107,7 +100,7 @@ export function testEditSignals(oldText: string, newText: string): { addedMarker
 function isPartial(command: string, runner: string): boolean {
   let rest = splitCd(command).rest;
   for (const token of splitCd(runner).rest.trim().split(/\s+/)) rest = rest.trimStart().slice(token.length);
-  const own = rest.split("&&")[0];
+  const own = rest.split(/&&|\|\||[;|)]/)[0];
   return own.replace(/\s*\d*&?>>?&?\s*\S+/g, "").trim() !== "";
 }
 
@@ -140,7 +133,7 @@ export function closeReport(input: CloseInput): CloseReport | null {
   if (written.length === 0 && bashWrites.length === 0) return null;
 
   const codeWritten = written.filter(([path]) => !HARMLESS(path));
-  const codeBash = bashWrites.filter((run) => !writesOnlyUnder(run.command, HARMLESS) && !onlyTouchesHarmless(run.command));
+  const codeBash = bashWrites.filter((run) => bashChangesCode(run.command, HARMLESS, input.home));
   const codeChanged = codeWritten.length > 0 || codeBash.length > 0;
   const lastWrite = codeChanged ? Math.max(...codeWritten.map(([, write]) => write.seq), ...codeBash.map((run) => run.seq)) : since;
   const views = new Map(runs.map((run) => [run, runner === null ? null : runnerView(run.command, runner)]));
@@ -154,7 +147,7 @@ export function closeReport(input: CloseInput): CloseReport | null {
     const rest = splitCd(run.command).rest;
     return masksExitStatus(rest, rest.split(/\s+/)[0]);
   };
-  const verdictOf = (run: (typeof runs)[number]): Verdict => masked(run) ? hiddenVerdict(run.command, run.resultText) : isSuccess(parseOutcome(run.isError, run.resultText)) ? "green" : "red";
+  const verdictOf = (run: (typeof runs)[number]): Verdict => MISSING.test(run.resultText) ? null : masked(run) ? hiddenVerdict(run.command, run.resultText) : isSuccess(parseOutcome(run.isError, run.resultText)) ? "green" : "red";
   const testRuns = runner !== null ? [] : runs.filter((run) => run.seq > lastWrite && isTestRun(run.command));
   const testRun = [...testRuns].reverse().find((run) => verdictOf(run) !== null) ?? testRuns[testRuns.length - 1];
   const testRunMasked = testRun !== undefined && masked(testRun);
