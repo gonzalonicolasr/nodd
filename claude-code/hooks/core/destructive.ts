@@ -28,10 +28,10 @@ const LOCAL_HOST = /(-h\s*|--host[= ])(127\.0\.0\.1|localhost)\b/;
 export function destructiveReason(command: string, roots: readonly string[], home = ""): string | null {
   const syntax = blankQuotes(command ?? "");
   for (const segment of segments(syntax)) {
-    if (/^git\s+reset\b.*--hard\b/.test(segment)) return "`git reset --hard` discards uncommitted work and moves the branch";
-    if (/^git\s+clean\b.*\s-[a-zA-Z]*f/.test(segment)) return "`git clean -f` deletes untracked files for good";
-    if (/^git\s+checkout\s+(--\s+)?\.(\s|$)/.test(segment)) return "`git checkout -- .` throws away every uncommitted change";
-    if (/^git\s+restore\b/.test(segment) && !/--staged\b/.test(segment) && /\s(--\s+)?\.(\s|$)/.test(segment)) return "`git restore .` throws away every uncommitted change";
+    if (/^git\s+reset\b.*--hard\b/.test(segment)) return "`git reset --hard` discards uncommitted work and moves the branch; `git reset --keep <ref>` moves it the same way but refuses instead of discarding";
+    if (/^git\s+clean\b.*\s-[a-zA-Z]*f/.test(segment)) return "`git clean -f` deletes untracked files for good; `git clean -n` lists them first";
+    if (/^git\s+checkout\s+(--\s+)?\.(\s|$)/.test(segment)) return "`git checkout -- .` throws away every uncommitted change; `git stash` keeps them recoverable";
+    if (/^git\s+restore\b/.test(segment) && !/--staged\b/.test(segment) && /\s(--\s+)?\.(\s|$)/.test(segment)) return "`git restore .` throws away every uncommitted change; `git stash` keeps them recoverable";
     if (/^terraform\s+destroy\b/.test(segment)) return "`terraform destroy` tears down real infrastructure";
     if (/^kubectl\s+delete\b/.test(segment)) return "`kubectl delete` removes cluster resources";
     const outside = rmOutside(segment, roots, home);

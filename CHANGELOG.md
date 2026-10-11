@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `src/scratch.ts`: the Claude Code mod lets through a Bash command whose
+  writes provably land in the session scratchpad (567 of 21538 real commands),
+  and the destructive refusal names the safe form first (`git reset --keep`,
+  `git stash`, `git clean -n`).
+
 - The observed close (`src/close-report.ts`): after every request that wrote,
   NODD reports the files written and the declared runner's state after the
   last write (green, partial, red, exit status hidden, not run), and flags an
@@ -31,6 +36,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/nodd allow destructive` lets one through.
 
 ### Fixed
+
+- The observed close stopped crying wolf: replaying 14 days of real sessions
+  (2761 requests), warnings went from 987 to 81 and confirmed-green requests
+  from 10 to 72. A bare "done" with no runner is no longer flagged, test claims
+  need test context, a hidden exit status is read from the runner's summary or
+  the printed `$?`, `gh pr checks` counts, writes to docs and agent files do not
+  stale a green run, negations are not claims, and test data that only
+  mentions `.skip` is not an added skip.
+- A leading `cd … &&` is no longer part of the runner, in evidence and in the
+  close (`~` and `/home/<user>` match).
+- The classifier no longer takes Python `.replace(`/`re.compile(`, JS
+  `regex.exec(` or `require('./x.json')` for writes, understands `\"` inside
+  double quotes, and judges `node -e` by the API it uses; a `require` of any
+  module that is not read-only (better-sqlite3, a local file) is still a write.
+  On 21538 real commands: 624 fewer counted as writes; the 18 suspicious ones
+  were reviewed and the one real file write among them (better-sqlite3) closed.
 
 - A run of the runner whose exit status is hidden (`| tail`, `|| true`,
   `; echo`, `&`) is no longer evidence, nor a failure in promotion's streak.

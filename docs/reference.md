@@ -248,6 +248,16 @@ The line is written in Spanish, like the rest of the author's tooling:
 | files written outside the declared `files` | the declared set against the written set |
 | tests that vanished or got skipped: a green run passing fewer tests than an earlier green run of this request, or more skipped | the summary line of `node --test`, bun, jest, vitest, pytest, cargo and `go test -v` (`src/test-counts.ts`); no summary, no count |
 
+A claim is flagged only when it is about tests ("pasan los tests", "suite verde",
+"all tests pass", "veredicto: pasa"); a bare "done" is flagged only when a runner
+was declared. Without a runner, any observed green test run after the last code
+write backs the claim, `gh pr checks` included. When a run hid its exit status
+(`| tail`, `; echo "exit=$?"`), the close reads it from the runner's summary or
+the printed `$?` and says "green per the summary": the close is advice, so it
+reads what the model read, while a checkoff still needs the real exit status.
+Writes to docs, to Claude's own files or to the session scratchpad do not make a
+green run stale, and a leading `cd … &&` is not part of the runner.
+
 The warnings reach the model with the next request, so an unverified claim is
 not left standing. The close never blocks: it reports. It covers the session
 that wrote; a delegated child reports in its own process. Its language detection

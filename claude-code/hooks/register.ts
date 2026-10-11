@@ -6,6 +6,7 @@ import { joinPath } from './core/path.ts'
 import { closeReport, isTestFile, testEditSignals, type TestEdit } from './core/close-report.ts'
 import type { Committed } from './core/state.ts'
 import { destructiveReason } from './core/destructive.ts'
+import { writesOnlyUnder } from './core/scratch.ts'
 import {
   BUILTIN_AGENTS,
   CC_DECLARE_SCHEMA,
@@ -533,12 +534,13 @@ export function register(on: any) {
       if (harm && allowDestructive) allowDestructive = false
       else if (harm) {
         refusals += 1
-        const reason = `nodd/destructive: ${harm}, and NODD never runs that on the model's behalf, not even inside forge. To proceed: if the user wants it, ask them to run it themselves with \`! ${String(call.input.command ?? '').split('\n')[0]}\`, or to allow it once with /nodd allow destructive`
+        const reason = `nodd/destructive: ${harm}, and NODD never runs that on the model's behalf, not even inside forge. To proceed: use the safer command named above if there is one, or, if the user wants exactly this, ask them to run it themselves with \`! ${String(call.input.command ?? '').split('\n')[0]}\`, or to allow it once with /nodd allow destructive`
         lastRefusal = { gate: 'destructive', reason, at: new Date().toISOString() }
         await exportState($)
         return { deny: reason }
       }
     }
+    if (call.toolName === 'bash' && writesOnlyUnder(String(call.input.command ?? ''), (path) => inScratchpad(path, sessionId))) return next(e)
     const forge = await insideForge($, e, key)
     const kernel = kernelFor(key)
 

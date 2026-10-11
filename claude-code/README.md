@@ -67,9 +67,12 @@ nada.
 
 **El scratchpad de la sesión no pasa por los gates.** Write y Edit dentro de
 `/tmp/claude-<uid>/<proyecto>/<id de esta sesión>/` no piden declaración, ni
-siquiera con `intent: read-only`: ahí no se cambia nada del usuario. Un Bash que
-escribe ahí sí pasa por los gates, porque NODD no puede saber con certeza a
-dónde escribe un comando.
+siquiera con `intent: read-only`: ahí no se cambia nada del usuario. Un Bash
+también, cuando NODD puede probar que todo lo que escribe cae ahí: un `mkdir`,
+`touch`, `rm`, `tee` o `cp` con destino en el scratchpad, o una redirección a un
+archivo de ahí, incluso a través de una variable asignada en el mismo comando
+(`S=…/scratchpad; mkdir $S/x`). Un `mv`, un intérprete, `sed -i`, una ruta
+relativa o un `..` siguen pasando por los gates.
 
 ## Lo irreversible no lo corre el modelo
 
@@ -77,7 +80,9 @@ Con NODD prendido, un Bash irreversible se frena **siempre**, también dentro de
 un agente de forge (que no pasa por los otros gates): `git reset --hard`,
 `git clean -f`, `git checkout -- .`, `git restore .`, `rm -rf` fuera del
 proyecto, del home de la sesión y de `/tmp`, `terraform destroy`,
-`kubectl delete`, y `DROP`/`TRUNCATE` contra una base que no es local. El
+`kubectl delete`, y `DROP`/`TRUNCATE` contra una base que no es local. Cuando
+hay una forma segura, el rechazo la nombra primero: `git reset --keep`,
+`git stash`, `git clean -n`. El
 rechazo le dice al modelo que te pida correrlo con `! <comando>`, o vos lo
 habilitás una vez con `/nodd allow destructive`.
 
@@ -100,7 +105,17 @@ o, cuando algo no cierra:
       ⚠ 1 archivo fuera de lo declarado: src/extra.ts
 
 Distingue un verde de la suite declarada, un verde parcial (`npm test -- un.test.ts`),
-una corrida roja y una corrida que escondió su exit status. Avisa además cuando
+una corrida roja y una corrida que escondió su exit status. Cuando el status
+quedó escondido (`| tail`, `; echo "exit=$?"`), lo lee del resumen del runner o
+del `$?` impreso y lo muestra como "verde según el resumen". Un `cd … &&` delante
+del runner no cuenta: `cd ~/x && npm test` es el runner `cd /home/gon/x && npm test`.
+
+Sólo marca la afirmación que tiene contexto de tests ("pasan los tests", "suite
+verde", "all tests pass", "veredicto: pasa"); un "listo" genérico se marca sólo
+si hay runner declarado. Sin runner, cualquier corrida de tests verde observada
+(incluido `gh pr checks`) la respalda. Escribir docs, la memoria de Claude o el
+scratchpad después del verde no lo invalida, y un pedido que sólo tocó docs no
+tiene nada que verificar. Avisa además cuando
 un test se editó entre una corrida roja y la verde, cuando se le agregaron
 `.skip`/`.only`/`xit`/`t.Skip`/`@pytest.mark.skip` o se le sacaron assertions,
 y cuando se escribió fuera de los `files` declarados. Los avisos le llegan al

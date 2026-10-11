@@ -240,6 +240,17 @@ describe('scratchpad y continuar', () => {
     expect(w.ran).toEqual(['Write', 'Edit'])
   })
 
+  test('un Bash que sólo escribe en el scratchpad pasa sin declarar, incluso en read-only', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    const dir = '/tmp/claude-1000/-repo/s1/scratchpad'
+    expect((await call($, { tool: 'Bash', command: `D=${dir}; mkdir -p $D/x && echo hi > $D/x/n.txt` })).deny).toBe(undefined)
+    expect((await call($, { tool: 'Bash', command: `mkdir -p ${dir}/x && echo hi > out.txt` })).deny).toContain('nodd/classify')
+    await call($, { tool: DECLARE, intent: 'read-only', route: 'inline', slug: 'mirar', summary: 's' })
+    expect((await call($, { tool: 'Bash', command: `cat > ${dir}/a.py <<'EOF'\nprint(1)\nEOF` })).deny).toBe(undefined)
+    expect(w.ran).toEqual(['Bash', 'Bash'])
+  })
+
   test('el scratchpad de otra sesión no cuenta', async ($, on) => {
     world(on)
     await nodd($, 'on')
@@ -400,6 +411,7 @@ describe('irreversible', () => {
     const forge = await call($, { tool: 'Bash', command: 'git reset --hard HEAD~2', agentId: 'f1' })
     expect(forge.deny).toContain('nodd/destructive')
     expect(forge.deny).toContain('! ')
+    expect(forge.deny).toContain('git reset --keep')
     expect((await call($, { tool: 'Bash', command: 'rm -rf /home/gon/otro' })).deny).toContain('deletes outside the project')
     expect(w.ran).toEqual([])
   })
