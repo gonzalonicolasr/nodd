@@ -11,7 +11,11 @@ export type GateRequest = {
 };
 
 export function isDeclaredPath(path: string, declared: readonly string[]): boolean {
-  return declared.some((file) => path === file || path.endsWith(`/${file.replace(/^\.\//, "")}`));
+  const relative = path.startsWith("/") ? null : path.replace(/^\.\//, "");
+  return declared.some((file) =>
+    path === file ||
+    path.endsWith(`/${file.replace(/^\.\//, "")}`) ||
+    (relative !== null && (file === relative || file.endsWith(`/${relative}`))));
 }
 
 export function targetPath(request: GateRequest): string | null {

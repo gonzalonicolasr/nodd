@@ -463,7 +463,7 @@ test("a heredoc fed to an interpreter is a script, not data", () => {
   assert.equal(classifyBash("while read l; do sh <<'EOF'\nrm -rf build\nEOF\ndone"), "mutating");
   // A full-path interpreter behind a wrapper: recognised by basename.
   assert.equal(classifyBash("sudo /bin/bash <<'EOF'\nrm -rf build\nEOF"), "mutating");
-  assert.equal(classifyBash("env /usr/bin/python3 <<'PY'\nrm -rf build\nPY"), "mutating");
+  assert.equal(classifyBash("env /usr/bin/python3 <<'PY'\nimport shutil; shutil.rmtree('build')\nPY"), "mutating");
   // A pipe into something that only reads is still a read.
   assert.equal(classifyBash("cat <<'EOF' | grep x\na > b\nEOF"), "non-mutating");
   // A wrapper's own long flags go with it, but its argument run is bounded:
@@ -478,7 +478,7 @@ test("a heredoc fed to an interpreter is a script, not data", () => {
   assert.equal(classifyBash("grep -rn bash src <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
   assert.equal(classifyBash("echo bash <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
   assert.equal(classifyBash("cat <<'EOF' | sudo tee\nplain data\nEOF"), "mutating");
-  assert.equal(classifyBash("python3 <<'PY'\nrm -rf build\nPY"), "mutating");
+  assert.equal(classifyBash("python3 <<'PY'\nimport shutil; shutil.rmtree('build')\nPY"), "mutating");
   // An unterminated heredoc must not swallow the commands after it.
   assert.equal(classifyBash("cat <<'EOF'\nx\nNOPE\nrm -rf build"), "mutating");
   // A heredoc that only carries data is still a read.
@@ -539,4 +539,16 @@ test("a boolean wrapper flag does not swallow the interpreter", () => {
   assert.equal(classifyBash("command -v bash && cat <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
   assert.equal(classifyBash("command -V bash && cat <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
   assert.equal(classifyBash("xargs -I bash echo <<'EOF'\nrm -rf build\nEOF"), "non-mutating");
+});
+
+test("code handed to node or python is judged as code, not as shell", () => {
+  assert.equal(classifyBash("node - <<'JS'\nconst fs=require('fs');const t=fs.readFileSync('tasks.md','utf8');console.log(t.split('\\n').filter(s=>s.startsWith('### T')))\nJS"), "non-mutating");
+  assert.equal(classifyBash("node --input-type=module <<'JS'\nimport assert from 'node:assert/strict'\ntest('x', () => {\n  assert.equal(1 > 0, true)\n})\nJS"), "non-mutating");
+  assert.equal(classifyBash("npm test && node --input-type=module <<'NODE'\nfor (const n of [1, 2]) assert.equal(truncate(s, n), s)\nNODE"), "non-mutating");
+  assert.equal(classifyBash("python3 - <<'PY'\nprint(len(open('a.txt').read()) > 0)\nPY"), "non-mutating");
+  assert.equal(classifyBash("node - <<'JS'\nrequire('fs').writeFileSync('f', 'x')\nJS"), "mutating");
+  assert.equal(classifyBash("node - <<'JS'\nrequire('child_process').execSync('rm -rf build')\nJS"), "mutating");
+  assert.equal(classifyBash("python3 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY"), "mutating");
+  assert.equal(classifyBash("node - <<'JS' | bash\nconsole.log(1)\nx > out.txt\nJS"), "mutating");
+  assert.equal(classifyBash("node - <<'JS'\nconsole.log(1)\nJS\nrm -rf build"), "mutating");
 });

@@ -81,18 +81,21 @@ function commandHeadAt(tokens: Token[], start: number): { head: Token; at: numbe
   return { head, at };
 }
 
-/** Does this line hand its heredoc to an interpreter, rather than to a reader? */
-function feedsAnInterpreter(line: string): boolean {
+/** The interpreters this line runs as commands, by basename: who its heredoc is handed to. */
+function interpretersFed(line: string): string[] {
   // The heredoc operator binds to whatever precedes it: `python3 <<PY` runs
   // the body just as `python3 - <<PY` does. Splitting on `<` keeps the command
   // word visible to the tokeniser.
   const tokens = tokenise(line.replace(/<</g, " << "));
+  const found: string[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
-    const found = commandHeadAt(tokens, i);
-    if (found && INTERPRETERS.has(baseOf(found.head.text))) return true;
+    const at = commandHeadAt(tokens, i);
+    if (at && INTERPRETERS.has(baseOf(at.head.text))) found.push(baseOf(at.head.text));
   }
-  return false;
+  return found;
 }
+
+const CODE_INTERPRETERS = new Set(["python", "python3", "node", "deno", "bun"]);
 
 /**
  * Drop the body of a heredoc, keeping the line that opens it.
@@ -112,7 +115,9 @@ function blankHeredocBodies(command: string): string {
     if (!opener) continue;
     // A body stops being data the moment something runs it: `cat <<EOF | bash`
     // and `bash <<EOF` smuggle a script inline, so those bodies stay visible.
-    if (feedsAnInterpreter(lines[i])) continue;
+    const interpreters = interpretersFed(lines[i]);
+    const judgedAsCode = HEREDOC_TO_CODE.test(lines[i]) && interpreters.every((name) => CODE_INTERPRETERS.has(name));
+    if (interpreters.length > 0 && !judgedAsCode) continue;
     const terminator = opener[2];
     const end = lines.findIndex((line, at) => at > i && line.trim() === terminator);
     // An unterminated heredoc swallows nothing: without a terminator there is

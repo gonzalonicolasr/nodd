@@ -117,3 +117,22 @@ test("promotion compares the declared set with what this declaration wrote", () 
   const outside = kernel.checkCall({ toolName: "write", input: { path: "/repo/src/c.ts" } });
   assert.ok(outside && /src\/c\.ts/.test(outside.reason) && outside.reason.startsWith("nodd/promotion"));
 });
+
+test("a relative write matches the absolute path it was declared as", () => {
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/repo" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  let id = 0;
+  const tool = (toolName: string, input: Record<string, unknown>) => {
+    const toolCallId = `r${++id}`;
+    kernel.onToolCall({ toolName, toolCallId, input });
+    kernel.onToolResult({ toolName, toolCallId, input, isError: false, content: "ok" });
+  };
+  tool("nodd_declare", { intent: "change", route: "inline", slug: "plan", summary: "s", files: ["/repo/.sdd/x/spec.md", "/repo/.sdd/x/tasks.md"] });
+  for (let i = 0; i < 6; i += 1) tool("read", { path: `/repo/src/f${i}.ts` });
+  assert.equal(kernel.checkCall({ toolName: "write", input: { path: ".sdd/x/spec.md" } }), null);
+  tool("write", { path: ".sdd/x/spec.md" });
+  assert.equal(kernel.checkCall({ toolName: "write", input: { path: "./.sdd/x/tasks.md" } }), null);
+  const other = kernel.checkCall({ toolName: "write", input: { path: ".sdd/x/notes.md" } });
+  assert.ok(other, "an undeclared relative path is still refused");
+});
