@@ -261,12 +261,20 @@ export function createKernel(options: KernelOptions): Kernel {
       }
 
       if (args.action === "add") {
-        if (doc.tasks.some((t) => t.id === args.id)) {
-          return { ok: false, text: `nodd_task: ${args.id} already exists` };
+        let id = typeof args.id === "string" && args.id.trim() !== "" ? args.id : "";
+        for (let n = doc.tasks.length + 1; id === ""; n += 1) {
+          if (!doc.tasks.some((t) => t.id === `T${n}`)) id = `T${n}`;
         }
-        doc.tasks.push({ id: args.id, title: args.title ?? args.id, checked: false });
+        if (doc.tasks.some((t) => t.id === id)) {
+          return { ok: false, text: `nodd_task: ${id} already exists` };
+        }
+        doc.tasks.push({ id, title: args.title ?? id, checked: false });
         const saved = saveDoc(doc);
-        return saved.ok ? { ok: true, text: `${args.id} added to .nodd/${doc.slug}/feature.md` } : saved;
+        return saved.ok ? { ok: true, text: `${id} added to .nodd/${doc.slug}/feature.md` } : saved;
+      }
+
+      if (typeof args.id !== "string" || args.id.trim() === "") {
+        return { ok: false, text: `nodd_task: ${args.action} needs the task id, e.g. T1` };
       }
 
       if (args.action === "reopen") {

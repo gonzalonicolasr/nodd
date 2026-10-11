@@ -136,3 +136,17 @@ test("a relative write matches the absolute path it was declared as", () => {
   const other = kernel.checkCall({ toolName: "write", input: { path: ".sdd/x/notes.md" } });
   assert.ok(other, "an undeclared relative path is still refused");
 });
+
+test("a task added without an id gets the next free one, and check without an id is refused", () => {
+  const { kernel, doc } = kernelWithHatch({});
+  const added = kernel.task({ action: "add", title: "segunda", slug: "demo" } as never);
+  assert.equal(added.text, "T2 added to .nodd/demo/feature.md");
+  kernel.task({ action: "add", id: "T4", title: "cuarta", slug: "demo" });
+  kernel.task({ action: "add", id: "", title: "tercera", slug: "demo" });
+  assert.match(kernel.task({ action: "add", title: "quinta", slug: "demo" } as never).text, /^T6 added/);
+  assert.match(doc(), /- \[ \] T2\. segunda\n- \[ \] T4\. cuarta\n- \[ \] T5\. tercera\n- \[ \] T6\. quinta/);
+  assert.ok(!doc().includes("undefined"));
+  const check = kernel.task({ action: "check", slug: "demo" } as never);
+  assert.equal(check.ok, false);
+  assert.match(check.text, /needs the task id/);
+});
