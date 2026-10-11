@@ -5,6 +5,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- An evidence refusal named every command observed in the session, heredoc
+  bodies included: one `nodd_task check` answer reached 98,975 characters.
+  It now names the last three runs, each cut to its first line and 120
+  characters, and how many came before. Measured on 41 real Claude Code
+  sessions (234 requests), NODD's share of the context drops from 1,396 to
+  about 540 tokens per request, and of the re-read context from 0.83 % to
+  0.26 %.
+
 ## [0.9.0] - 2026-10-11
 
 ### Added

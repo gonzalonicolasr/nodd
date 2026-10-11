@@ -235,7 +235,8 @@ export function evidenceGate(
     ? runs
     : runs.filter((run) => isDeclaredRunner(run.command, request.runner!));
   if (relevant.length === 0) {
-    const observed = runs.map((run) => `\`${run.command}\``).join(", ");
+    const recent = runs.slice(-3).map((run) => `\`${brief(run.command)}\``).join(", ");
+    const observed = runs.length > 3 ? `${recent} and ${runs.length - 3} earlier` : recent;
     // Naming what was observed is not the same as saying why it did not
     // count. A real session lost two cycles to `timeout 120 npm test | tail`:
     // the message held the evidence and made the reader derive the rule.
@@ -263,7 +264,7 @@ export function evidenceGate(
   if (trusted.length === 0) {
     const last = relevant[relevant.length - 1];
     return deny(
-      `every observed run of \`${request.runner}\` hid its exit status (last: \`${last.command}\`): after \`|\`, \`;\`, \`||\` or \`&\` the status NODD sees belongs to another command, so a failing run can look like a success`,
+      `every observed run of \`${request.runner}\` hid its exit status (last: \`${brief(last.command)}\`): after \`|\`, \`;\`, \`||\` or \`&\` the status NODD sees belongs to another command, so a failing run can look like a success`,
       `run \`${request.runner}\` with only redirects or \`&&\` after it; to keep the output short, redirect it to a file and read the file with a second command, then check ${request.task} off`,
     );
   }
@@ -271,14 +272,14 @@ export function evidenceGate(
   const green = trusted.filter((run) => isSuccess(run.outcome));
   if (green.length === 0) {
     const last = trusted[trusted.length - 1];
-    return deny(`the last observed run of \`${last.command}\` ended ${describeOutcome(last.outcome)}, which is not success`);
+    return deny(`the last observed run of \`${brief(last.command)}\` ended ${describeOutcome(last.outcome)}, which is not success`);
   }
 
   const afterWrite = green.filter((run) => run.seq > (request.lastWriteSeq ?? 0) && run.at >= request.lastWriteAt);
   if (afterWrite.length === 0) {
     const last = green[green.length - 1];
     return deny(
-      `the only observed success (\`${last.command}\`) ran before the last write to ${request.task}, so it says nothing about the current code`,
+      `the only observed success (\`${brief(last.command)}\`) ran before the last write to ${request.task}, so it says nothing about the current code`,
     );
   }
 
@@ -305,6 +306,12 @@ export function evidenceGate(
       ...(request.tdd?.mode === "strict" ? { tdd: request.tdd } : {}),
     },
   };
+}
+
+export function brief(command: string): string {
+  const line = command.split("\n")[0];
+  if (line.length > 120) return `${line.slice(0, 120)}…`;
+  return line === command ? command : `${line}…`;
 }
 
 /** The feature doc's evidence line. Never rendered from anything but a decision. */

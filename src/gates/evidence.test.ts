@@ -360,3 +360,24 @@ test("a leading cd is context, not part of the runner", () => {
   const bare = afterCommand("npm test", false, "", "b2");
   assert.equal(evidenceGate(bare, ledgerFor(bare), { ...check, runner: "cd /home/gon/projects/x && npm test" }, emptyPolicy()).allow, true);
 });
+
+test("a refusal names only the last few runs, each cut to its first line", () => {
+  let committed = emptyCommitted();
+  for (let i = 0; i < 12; i += 1) {
+    committed = fold(committed, observation({
+      toolCallId: `b${i}`, toolName: "bash", input: { command: `python3 - <<'EOF'\n${"x".repeat(5000)}\nEOF ${i}` },
+      isError: false, resultText: "", at: "2026-09-19T10:05:00.000Z",
+    }));
+  }
+  committed = fold(committed, observation({
+    toolCallId: "long", toolName: "bash", input: { command: `echo ${"y".repeat(400)}` },
+    isError: false, resultText: "", at: "2026-09-19T10:05:00.000Z",
+  }));
+  const decision = evidenceGate(committed, ledgerFor(committed), check, emptyPolicy());
+  assert.equal(decision.allow, false);
+  const reason = decision.allow === false ? decision.reason : "";
+  assert.ok(reason.length < 800, `the refusal stays short: ${reason.length}`);
+  assert.match(reason, /and 10 earlier/);
+  assert.match(reason, /`python3 - <<'EOF'…`/);
+  assert.match(reason, /`echo y{115}…`/);
+});
