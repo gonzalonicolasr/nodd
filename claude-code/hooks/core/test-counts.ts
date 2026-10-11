@@ -7,7 +7,7 @@ function lastValue(text: string, pattern: RegExp): number | null {
 }
 
 export function testCounts(output: string): TestCounts | null {
-  const text = output ?? "";
+  const text = (output ?? "").replace(/\x1b\[[0-9;]*m/g, "");
 
   const nodePass = lastValue(text, /^ℹ pass (\d+)$/gm);
   if (nodePass !== null) {

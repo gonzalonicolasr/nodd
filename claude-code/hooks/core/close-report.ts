@@ -22,13 +22,55 @@ export type CloseReport = { line: string; warnings: string[]; verified: boolean 
 
 const MARKER = /\.(skip|only|todo)\(|\bx(it|describe|test)\(|\bf(it|describe)\(|\bt\.Skip(Now|f)?\(|@pytest\.mark\.(skip|xfail)|@unittest\.skip/g;
 const ASSERTION = /\bexpect\s*\(|\bassert\w*\s*[(.\s]|\bt\.(Error|Fatal)f?\s*\(|\brequire\.\w+\s*\(/g;
-const CLAIM_TESTS = /\b(pasan (los |todos los )?(\d+ )?tests?|(los |todos los |\d+ )?tests? (pasan|pasaron|pass(es|ed)?|passing|en verde|verdes?)|(suite|todo) (en )?verde|all (the )?tests pass(ed)?|all green|veredicto:\s*pasa)\b/gi;
-const CLAIM_DONE = /\b(anda|funciona|listo|lista|arreglad[oa]|resuelt[oa]|terminad[oa]|fixed|done|works)\b/gi;
+const CLAIM_TESTS = /\b(pasan (los |todos los )?(\d+ )?tests?|(los |todos los |\d+ )?tests (pasan|pasaron|pass(es|ed)?|passing|en verde|verdes)|(suite|todo) (en )?verde|all (the )?tests pass(ed)?|all green|veredicto:\s*pasa)\b/gi;
+const CLAIM_DONE = /(^|\n)\s*[*#>-]*\s*(listo|lista|hecho|done|fixed)\b(?!\s+(de|para|los|las|el|la|que)\b)|\b(está|quedó|quedaron|queda|quedan)\s+(listo|lista|listos|listas|arreglad[oa]s?|resuelt[oa]s?|terminad[oa]s?|funcionando)\b|\b(it works|now works|is fixed|is done)\b/gi;
 const NEGATED = /\b(no|not|ni|sin|nunca|never)\b[^.!?\n]{0,20}$/i;
-const TEST_RUN = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(node|deno|bun)\s+(--)?test\b|\b(pytest|vitest|jest|rspec|phpunit|tox|nox)\b|\bgo\s+test\b|\bcargo\s+test\b|\bmvn\s+\S*\s*test\b|\bgradlew?\s+\S*test\b|\bmake\s+test\b|\bclaude\s+plugin\s+test\b|\bgh\s+pr\s+checks\b|\bgh\s+run\s+watch\b/;
+const TEST_RUN = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(node|deno|bun)\s+(--)?test\b|\b(pytest|vitest|jest|rspec|phpunit|tox|nox)\b|\bgo\s+test\b|\bcargo\s+test\b|\bmvn\s+\S*\s*test\b|\bgradlew?\s+\S*test\b|\bmake\s+test\b|\bclaude\s+plugin\s+test\b|\bgh\s+pr\s+checks\b|\bgh\s+run\s+watch\b[^\n]*--exit-status|[\w./-]*_test\.sh\b|\btest_[\w-]*\.py\b/;
+const ARTIFACT = /(^|\/)(\.next|dist|build|coverage|node_modules|target|__pycache__|\.cache|\.turbo|out)(\/|$)/;
+const PATH_LITERAL = /["']((?:~|\.{0,2}\/|\/)[^"'\s]*\.[A-Za-z0-9]+)["']/g;
+const OTHER_WRITES = /\bsubprocess\b|\bshutil\b|\bos\.(remove|rename|replace|system|makedirs|mkdir|unlink)\b|\bchild_process\b|writeFileSync|\bsed\s+-i\b/;
 const STRING = /(["'`])(?:\\.|(?!\1)[^\\\n])*\1/g;
 const AGENT_OWN = /^\/tmp\/claude-\d+\/|\/\.claude[^/]*\//;
-const HARMLESS = (path: string) => AGENT_OWN.test(path) || /\.(md|mdx|txt|rst|adoc|png|jpe?g|gif|svg|webp)$/i.test(path);
+const HARMLESS = (path: string) => AGENT_OWN.test(path) || ARTIFACT.test(path) || /\.(md|mdx|txt|rst|adoc|png|jpe?g|gif|svg|webp)$/i.test(path);
+
+function withoutData(command: string): string {
+  const lines = command.split("\n");
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    kept.push(lines[i]);
+    const opener = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1/.exec(lines[i]);
+    if (!opener) continue;
+    const end = lines.findIndex((line, at) => at > i && line.trim() === opener[2]);
+    if (end === -1) break;
+    i = end;
+  }
+  return kept.join("\n").replace(STRING, '""');
+}
+
+function isTestRun(command: string): boolean {
+  return TEST_RUN.test(splitCd(withoutData(command)).rest);
+}
+
+function onlyTouchesHarmless(command: string): boolean {
+  if (OTHER_WRITES.test(command)) return false;
+  const paths = [...command.matchAll(PATH_LITERAL)].map((match) => match[1]);
+  return paths.length > 0 && paths.every(HARMLESS);
+}
+
+type RunnerView = { command: string; runner: string };
+
+function runnerView(command: string, runner: string): RunnerView | null {
+  if (isDeclaredRunner(command, runner)) return { command, runner };
+  const segments = splitCd(runner).rest.split("&&").map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length < 2) return null;
+  const tail = segments[segments.length - 1];
+  const parts = command.split(/&&|;|\n/);
+  for (let i = 0; i < parts.length; i += 1) {
+    const rest = parts.slice(i).join("&&").trim();
+    if (isDeclaredRunner(rest, tail)) return { command: rest, runner: tail };
+  }
+  return null;
+}
 
 function claimIn(text: string, pattern: RegExp): string | undefined {
   for (const match of text.matchAll(pattern)) {
@@ -78,6 +120,8 @@ function hiddenVerdict(command: string, output: string): Verdict {
     const code = new RegExp(`${prefix}\\s*(\\d+)`).exec(output)?.[1];
     if (code !== undefined) return code === "0" ? "green" : "red";
   }
+  if (/^(--- FAIL|FAIL\s)/m.test(output)) return "red";
+  if (/^ok\s+\S+/m.test(output)) return "green";
   const count = testCounts(output);
   if (!count) return null;
   if (count.failed > 0) return "red";
@@ -92,24 +136,32 @@ export function closeReport(input: CloseInput): CloseReport | null {
   const { committed, since, runner } = input;
   const written = [...committed.filesWritten].filter(([, write]) => write.seq > since);
   const runs = committed.commandResults.filter((run) => run.seq > since);
-  const bashWrites = runs.filter((run) => writesByBash(run.command, runner) && !TEST_RUN.test(splitCd(run.command).rest));
+  const bashWrites = runs.filter((run) => writesByBash(run.command, runner) && !isTestRun(run.command));
   if (written.length === 0 && bashWrites.length === 0) return null;
 
   const codeWritten = written.filter(([path]) => !HARMLESS(path));
-  const codeBash = bashWrites.filter((run) => !writesOnlyUnder(run.command, HARMLESS));
+  const codeBash = bashWrites.filter((run) => !writesOnlyUnder(run.command, HARMLESS) && !onlyTouchesHarmless(run.command));
   const codeChanged = codeWritten.length > 0 || codeBash.length > 0;
   const lastWrite = codeChanged ? Math.max(...codeWritten.map(([, write]) => write.seq), ...codeBash.map((run) => run.seq)) : since;
-  const runnerRuns = runner === null ? [] : runs.filter((run) => isDeclaredRunner(run.command, runner));
+  const views = new Map(runs.map((run) => [run, runner === null ? null : runnerView(run.command, runner)]));
+  const runnerRuns = runner === null ? [] : runs.filter((run) => views.get(run) !== null);
+  const view = (run: (typeof runs)[number]) => views.get(run)!;
   const after = runnerRuns.filter((run) => run.seq > lastWrite);
-  const trusted = after.filter((run) => !masksExitStatus(run.command, runner!));
+  const trusted = after.filter((run) => !masksExitStatus(view(run).command, view(run).runner));
   const last = trusted[trusted.length - 1];
   const lastOutcome = last ? parseOutcome(last.isError, last.resultText) : null;
-  const testRun = runner !== null ? undefined : [...runs].reverse().find((run) => run.seq > lastWrite && TEST_RUN.test(splitCd(run.command).rest));
-  const testRunMasked = testRun !== undefined && masksExitStatus(splitCd(testRun.command).rest, splitCd(testRun.command).rest.split(/\s+/)[0]);
-  const testRunGreen = testRun !== undefined && (testRunMasked ? hiddenVerdict(testRun.command, testRun.resultText) === "green" : isSuccess(parseOutcome(testRun.isError, testRun.resultText)));
+  const masked = (run: (typeof runs)[number]) => {
+    const rest = splitCd(run.command).rest;
+    return masksExitStatus(rest, rest.split(/\s+/)[0]);
+  };
+  const verdictOf = (run: (typeof runs)[number]): Verdict => masked(run) ? hiddenVerdict(run.command, run.resultText) : isSuccess(parseOutcome(run.isError, run.resultText)) ? "green" : "red";
+  const testRuns = runner !== null ? [] : runs.filter((run) => run.seq > lastWrite && isTestRun(run.command));
+  const testRun = [...testRuns].reverse().find((run) => verdictOf(run) !== null) ?? testRuns[testRuns.length - 1];
+  const testRunMasked = testRun !== undefined && masked(testRun);
+  const testRunGreen = testRun !== undefined && verdictOf(testRun) === "green";
   const hiddenLast = runner !== null && after.length > 0 && after[after.length - 1] !== last ? after[after.length - 1] : undefined;
-  const hiddenGreen = hiddenLast !== undefined && hiddenVerdict(hiddenLast.command, hiddenLast.resultText) === "green" && !isPartial(hiddenLast.command, runner!);
-  const verified = runner === null ? testRunGreen : hiddenGreen || (hiddenLast === undefined && lastOutcome !== null && isSuccess(lastOutcome) && !isPartial(last.command, runner));
+  const hiddenGreen = hiddenLast !== undefined && hiddenVerdict(hiddenLast.command, hiddenLast.resultText) === "green" && !isPartial(view(hiddenLast).command, view(hiddenLast).runner);
+  const verified = runner === null ? testRunGreen : hiddenGreen || (hiddenLast === undefined && lastOutcome !== null && isSuccess(lastOutcome) && !isPartial(view(last).command, view(last).runner));
 
   let status: string;
   if (!codeChanged) status = "sólo docs o archivos del agente: nada que verificar";
@@ -121,7 +173,7 @@ export function closeReport(input: CloseInput): CloseReport | null {
   else if (hiddenLast || (!last && after.length > 0)) status = `\`${after[after.length - 1].command}\` escondió su exit status y su salida no confirma un verde`;
   else if (!last) status = `\`${runner}\` sin correr después de la última escritura`;
   else if (!isSuccess(lastOutcome!)) status = `✗ \`${last.command}\` → ${describeOutcome(lastOutcome!)}`;
-  else if (isPartial(last.command, runner)) status = `verde parcial: \`${last.command}\`, no la suite declarada (\`${runner}\`)`;
+  else if (isPartial(view(last).command, view(last).runner)) status = `verde parcial: \`${last.command}\`, no la suite declarada (\`${runner}\`)`;
   else {
     const count = testCounts(last.resultText);
     status = `✓ \`${last.command}\` verde${count ? ` (${count.passed} tests)` : ""} después de la última escritura`;
@@ -138,7 +190,7 @@ export function closeReport(input: CloseInput): CloseReport | null {
 
   if (verified && runner !== null && !hiddenGreen) {
     const full = runnerRuns
-      .filter((run) => !masksExitStatus(run.command, runner!) && !isPartial(run.command, runner!))
+      .filter((run) => !masksExitStatus(view(run).command, view(run).runner) && !isPartial(view(run).command, view(run).runner))
       .map((run) => ({ run, count: testCounts(run.resultText) }))
       .filter((entry): entry is { run: typeof entry.run; count: NonNullable<typeof entry.count> } => entry.count !== null);
     const current = full.find((entry) => entry.run === last);

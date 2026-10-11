@@ -190,3 +190,45 @@ test("passing CI checks back a test claim, and a negated claim is not a claim", 
   assert.deepEqual(closeReport(input(ci, { runner: null, answer: "PR 71 arriba, todo verde." }))!.warnings, []);
   assert.deepEqual(closeReport(input(c, { runner: null, answer: "Corrección: la integración falló, no quedó todo verde." }))!.warnings, []);
 });
+
+test("any green test run after the last code write counts, not only the last test-looking command", () => {
+  const c = run(run(write(emptyCommitted(), "/r/src/a.ts"), "go test ./..."), "cat > /r/pr.md <<'EOF'\nlos tests de go test pasan\nEOF");
+  assert.deepEqual(closeReport(input(c, { runner: null, answer: "Listo, pasan los tests." }))!.warnings, []);
+});
+
+test("build artifacts and python notes to docs are not code writes", () => {
+  const green = run(write(emptyCommitted(), "/r/src/a.ts"), "npm test");
+  const c = run(run(green, "rm -rf .next dist coverage"), "python3 - <<'PY'\np='/home/gon/.claude/projects/x/memory/n.md'\ns=open(p).read()\nopen(p,'w').write(s+'x')\nPY");
+  assert.deepEqual(closeReport(input(c, { runner: "npm test", answer: "Listo, pasan los tests." }))!.warnings, []);
+});
+
+test("shell and python test scripts count as test runs; gh run watch only with --exit-status", () => {
+  const c = write(emptyCommitted(), "/r/src/a.ts");
+  assert.deepEqual(closeReport(input(run(c, "bash tools/check_test.sh"), { runner: null, answer: "Pasan los tests." }))!.warnings, []);
+  assert.deepEqual(closeReport(input(run(c, "python3 tools/test_parser.py"), { runner: null, answer: "Pasan los tests." }))!.warnings, []);
+  assert.ok(closeReport(input(run(c, "gh run watch 123"), { runner: null, answer: "Pasan los tests." }))!.warnings.length > 0);
+});
+
+test("a chained runner is matched by its last segment", () => {
+  const c = run(write(emptyCommitted(), "/r/src/a.ts"), "claude plugin test .");
+  const report = closeReport(input(c, { runner: "python3 fix.py && claude plugin validate . --strict && claude plugin test .", answer: "Pasan los tests." }))!;
+  assert.deepEqual(report.warnings, []);
+});
+
+test("phrases that only look like claims are not claims", () => {
+  const c = write(emptyCommitted(), "/r/src/a.ts");
+  for (const answer of ["La lista de tareas ahora sale ordenada.", "Cómo funciona: el rayo funciona como ventana.", "Lo tapaba un test en verde.", "Deploy a test en verde.", "Antes de darlo por listo, revisá esto."]) {
+    assert.deepEqual(closeReport(input(c, { runner: "npm test", answer }))!.warnings, [], answer);
+  }
+  for (const answer of ["Listo: quedó el login.", "Quedó arreglado.", "Ya está listo.", "Los tests pasan."]) {
+    assert.ok(closeReport(input(c, { runner: "npm test", answer }))!.warnings.length > 0, answer);
+  }
+});
+
+test("a hidden go test run is read from its package lines", () => {
+  const base = write(emptyCommitted(), "/r/a.go");
+  const ok = step(base, "bash", { command: "go test ./... 2>&1 | tail -20" }, false, "ok  \texample.com/a\t0.01s\nok  \texample.com/b\t0.02s");
+  assert.deepEqual(closeReport(input(ok, { runner: null, answer: "Pasan los tests." }))!.warnings, []);
+  const bad = step(base, "bash", { command: "go test ./... 2>&1 | tail -20" }, false, "--- FAIL: TestX\nFAIL\texample.com/a\t0.01s");
+  assert.ok(closeReport(input(bad, { runner: null, answer: "Pasan los tests." }))!.warnings.length > 0);
+});
