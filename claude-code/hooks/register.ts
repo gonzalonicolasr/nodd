@@ -385,7 +385,7 @@ async function serve($: any, key: string, call: Call, id: string) {
   kernel.onToolResult({ toolName: call.toolName, toolCallId: id, input: call.input, isError: !final.ok, content: final.text })
   if (final.ok && call.toolName === 'nodd_declare') lastDeclared.set(key, call.input)
   await exportState($)
-  return final.ok ? { result: final.text } : { deny: final.text }
+  return final.ok ? { result: final.text } : { deny: ccReason(final.text) }
 }
 
 async function readRawConfig($: any): Promise<{ raw: Record<string, unknown> } | { problem: string }> {

@@ -303,6 +303,13 @@ describe('evidence en Claude Code', () => {
     expect(w.files['/repo/.nodd/auth/feature.md']).toContain('observed: `npm test` → success')
   })
 
+  test('el rechazo de nodd_task nombra el override de Claude Code, no el de pi', async ($, on) => {
+    await setup($, on)
+    const r = await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })
+    expect(r.deny).toContain('/nodd allow evidence')
+    expect(r.deny).not.toContain('/nodd-allow')
+  })
+
   test('un npm test con | tail no tilda aunque salga bien', async ($, on) => {
     const w = await setup($, on)
     w.respond = bash(() => ({ result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok' }))

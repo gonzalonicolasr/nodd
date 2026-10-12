@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- In Claude Code, a refused `nodd_task` named pi's `/nodd-allow <gate>` as
+  its override. Gate refusals already said `/nodd allow <gate>`; the
+  `nodd_task` path skipped that rewrite.
+
 ## [0.9.1] - 2026-10-12
 
 ### Fixed
