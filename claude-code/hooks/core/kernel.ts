@@ -42,6 +42,13 @@ export type SessionEntry = { type?: string; customType?: string; data?: unknown 
 const INTENTS: readonly Intent[] = ["read-only", "change"];
 
 /** `.nodd/<slug>/feature.md` — the durable, extension-owned NODD artifact. */
+function anchorPath(input: Record<string, unknown>, cwd: string): Record<string, unknown> {
+  const key = typeof input.file_path === "string" && input.file_path !== "" ? "file_path" : "path";
+  const path = input[key];
+  if (typeof path !== "string" || path === "" || path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path)) return input;
+  return { ...input, [key]: joinPath(cwd, path) };
+}
+
 export function featureDocPath(cwd: string, slug: string): string {
   return joinPath(cwd, ".nodd", slug, "feature.md");
 }
@@ -357,7 +364,8 @@ export function createKernel(options: KernelOptions): Kernel {
       return saved.ok ? { ok: true, text: `${args.id} checked in .nodd/${doc.slug}/feature.md` } : saved;
     },
 
-    checkCall(request) {
+    checkCall(raw) {
+      const request = { ...raw, input: anchorPath(raw.input ?? {}, root()) };
       // Registry order, first refusal wins: one call never collects two
       // messages about the same missing declaration.
       const decisions: Array<[(typeof GATE_IDS)[number], () => GateDecision]> = [
@@ -417,7 +425,7 @@ export function createKernel(options: KernelOptions): Kernel {
       state.pending.set(event.toolCallId, pendingCall({
         toolCallId: event.toolCallId,
         toolName: event.toolName,
-        input: event.input ?? {},
+        input: anchorPath(event.input ?? {}, root()),
       }));
     },
     forgetPending(toolCallId) {
@@ -431,7 +439,7 @@ export function createKernel(options: KernelOptions): Kernel {
       const obs = observation({
         toolCallId: event.toolCallId,
         toolName: event.toolName,
-        input: event.input ?? {},
+        input: anchorPath(event.input ?? {}, root()),
         isError: event.isError === true,
         resultText: resultText(event.content),
         at: now(),

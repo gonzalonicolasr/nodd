@@ -135,6 +135,8 @@ test("a relative write matches the absolute path it was declared as", () => {
   assert.equal(kernel.checkCall({ toolName: "write", input: { path: "./.sdd/x/tasks.md" } }), null);
   const other = kernel.checkCall({ toolName: "write", input: { path: ".sdd/x/notes.md" } });
   assert.ok(other, "an undeclared relative path is still refused");
+  const sameName = kernel.checkCall({ toolName: "write", input: { path: "spec.md" } });
+  assert.ok(sameName, "a relative path resolves against cwd, not against the tail of a declared file");
 });
 
 test("a task added without an id gets the next free one, and check without an id is refused", () => {

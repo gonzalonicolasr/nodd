@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-13
+
 ### Fixed
 
+- 0.9.0 stopped reading the body of a heredoc handed to node or python with
+  the shell rules, so a JS arrow (`s=>s`) or a `truncate(` call no longer
+  read as a write. Two cases slipped through: with an unquoted delimiter
+  (`node <<EOF`) bash still runs the body's `$(...)` and backticks before
+  node starts, and any node or python earlier on the line counted, even when
+  the heredoc went to `eval` or `source`. The body is now judged as code
+  only when the interpreter is the command that receives the heredoc, and an
+  unquoted body still has its substitutions read as shell.
+- 0.9.0 matched a relative write against a declared absolute path by its
+  tail, so `spec.md` passed as declared when `/repo/.sdd/x/spec.md` was.
+  Relative paths are now resolved against the working directory once, when
+  the kernel receives the call, and every gate compares absolute paths.
 - In Claude Code, a refused `nodd_task` named pi's `/nodd-allow <gate>` as
   its override. Gate refusals already said `/nodd allow <gate>`; the
   `nodd_task` path skipped that rewrite.

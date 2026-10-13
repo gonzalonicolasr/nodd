@@ -97,6 +97,17 @@ function interpretersFed(line: string): string[] {
 
 const CODE_INTERPRETERS = new Set(["python", "python3", "node", "deno", "bun"]);
 
+function heredocReceiver(line: string): string | undefined {
+  const segment = line.slice(0, line.search(/<<-?/)).split(/&&|\|\||[;|&]/).pop() ?? "";
+  const tokens = tokenise(segment);
+  const at = tokens.length > 0 ? commandHeadAt(tokens, 0) : null;
+  return at ? baseOf(at.head.text) : undefined;
+}
+
+function shellSubstitutions(body: string[]): string[] {
+  return body.flatMap((line) => line.match(/\$\([^)]*\)?|`[^`]*`?/g) ?? []);
+}
+
 /**
  * Drop the body of a heredoc, keeping the line that opens it.
  *
@@ -116,13 +127,16 @@ function blankHeredocBodies(command: string): string {
     // A body stops being data the moment something runs it: `cat <<EOF | bash`
     // and `bash <<EOF` smuggle a script inline, so those bodies stay visible.
     const interpreters = interpretersFed(lines[i]);
-    const judgedAsCode = HEREDOC_TO_CODE.test(lines[i]) && interpreters.every((name) => CODE_INTERPRETERS.has(name));
+    const receiver = heredocReceiver(lines[i]);
+    const judgedAsCode = receiver !== undefined && CODE_INTERPRETERS.has(receiver) &&
+      interpreters.every((name) => CODE_INTERPRETERS.has(name));
     if (interpreters.length > 0 && !judgedAsCode) continue;
     const terminator = opener[2];
     const end = lines.findIndex((line, at) => at > i && line.trim() === terminator);
     // An unterminated heredoc swallows nothing: without a terminator there is
     // no body to trust, so the rest of the command is read as commands.
     if (end === -1) continue;
+    if (opener[1] === "") kept.push(...shellSubstitutions(lines.slice(i + 1, end)));
     i = end;
   }
   return kept.join("\n");

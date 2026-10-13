@@ -89,13 +89,13 @@ test("a read-only session of read/grep/ls produces zero blocks", () => {
 
 test("tool_call inserts into pending and tool_result moves it into committed", () => {
   const kernel = createKernel();
-  kernel.onToolCall({ toolName: "write", toolCallId: "c1", input: { path: "a.ts" } });
+  kernel.onToolCall({ toolName: "write", toolCallId: "c1", input: { path: "/repo/a.ts" } });
   assert.equal(kernel.state.pending.size, 1);
   assert.equal(kernel.state.committed.filesWritten.size, 0, "a pending write is not a written file");
 
-  kernel.onToolResult({ toolName: "write", toolCallId: "c1", input: { path: "a.ts" }, isError: false, content: "" });
+  kernel.onToolResult({ toolName: "write", toolCallId: "c1", input: { path: "/repo/a.ts" }, isError: false, content: "" });
   assert.equal(kernel.state.pending.size, 0);
-  assert.deepEqual([...kernel.state.committed.filesWritten.keys()], ["a.ts"]);
+  assert.deepEqual([...kernel.state.committed.filesWritten.keys()], ["/repo/a.ts"]);
 });
 
 test("evidence helpers take Committed, so a pending sibling is structurally unreachable", () => {

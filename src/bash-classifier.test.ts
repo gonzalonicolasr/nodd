@@ -552,3 +552,18 @@ test("code handed to node or python is judged as code, not as shell", () => {
   assert.equal(classifyBash("node - <<'JS' | bash\nconsole.log(1)\nx > out.txt\nJS"), "mutating");
   assert.equal(classifyBash("node - <<'JS'\nconsole.log(1)\nJS\nrm -rf build"), "mutating");
 });
+
+test("an unquoted heredoc still runs its substitutions in the shell before the interpreter starts", () => {
+  assert.equal(classifyBash("node <<EOF\nconsole.log(1)\n$(rm -rf build)\nEOF"), "mutating");
+  assert.equal(classifyBash("node <<EOF\nconsole.log(`$(rm -rf build)`)\nEOF"), "mutating");
+  assert.equal(classifyBash("python3 <<PY\nprint('''$(rm -rf build)''')\nPY"), "mutating");
+  assert.equal(classifyBash("node <<EOF\nconsole.log([1].filter(s=>s>0), truncate('ab', 1))\nEOF"), "non-mutating");
+});
+
+test("a heredoc counts as code only when the interpreter is the command that receives it", () => {
+  assert.equal(classifyBash("node -v && eval \"$(cat)\" <<EOF\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("python3 --version; source /dev/stdin <<EOF\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("node -v && bash <<'EOF'\nrm -rf build\nEOF"), "mutating");
+  assert.equal(classifyBash("cd /tmp && python3 - <<'PY'\nprint(1 > 0)\nPY"), "non-mutating");
+  assert.equal(classifyBash("env node <<'JS'\nconsole.log([1].map(x=>x))\nJS"), "non-mutating");
+});

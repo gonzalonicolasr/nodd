@@ -37,7 +37,7 @@ code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em;backgrou
 <header class="border-b border-line sticky top-0 bg-ink/95 backdrop-blur z-20">
 <div class="max-w-3xl mx-auto px-5 h-12 flex items-center justify-between font-mono text-[13px]">
 <a href="../" class="font-semibold tracking-wide flex items-center gap-2" style="text-decoration:none"><span class="w-2 h-2 bg-gentle"></span>nodd</a>
-<nav class="flex items-center gap-5 text-mute"><a href="../#como" class="hidden sm:inline" style="text-decoration:none">cómo funciona</a><a href="../#instalar" style="text-decoration:none">instalar</a><span class="text-fg">cambios</span><span class="text-dim">v0.9.1</span></nav>
+<nav class="flex items-center gap-5 text-mute"><a href="../#como" class="hidden sm:inline" style="text-decoration:none">cómo funciona</a><a href="../#instalar" style="text-decoration:none">instalar</a><span class="text-fg">cambios</span><span class="text-dim">v0.9.2</span></nav>
 </div>
 </header>
 <main class="max-w-3xl mx-auto px-5">
@@ -48,11 +48,13 @@ code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em;backgrou
 <p class="mt-7 text-[17px] leading-relaxed text-mute max-w-[34rem]">Cada versión publicada en npm, y lo que ya está en el repo esperando la próxima. Cuando un cambio se midió, el número está acá. El detalle técnico completo vive en el <a href="https://github.com/gonzalonicolasr/nodd/blob/master/CHANGELOG.md">CHANGELOG del repo</a>.</p>
 </section>
 
-<article class="rel" id="proxima">
-<div><div class="font-mono text-[13px] text-fg">próxima</div><span class="state repo">en el repo</span></div>
+<article class="rel" id="v0.9.2">
+<div><div class="font-mono text-[13px] text-fg">0.9.2</div><div class="font-mono text-[12px] text-dim">13 oct 2026</div><span class="state npm">en npm</span></div>
 <div>
-<h2>El override correcto en cada lado.</h2>
+<h2>Dos agujeros de la 0.9.0 cerrados, y el override correcto en cada lado.</h2>
 <ul>
+<li><span class="tag fix">arreglo</span><span><strong>Un borrado escondido en un script de node ya no pasa como lectura.</strong> La 0.9.0 dejó de leer como shell el código que se le pasa a node o python, para que una flecha de JS no pareciera una escritura. Pero con <code>node &lt;&lt;EOF</code> sin comillas bash ejecuta los <code>$(...)</code> del cuerpo antes de que arranque node, y bastaba con que node apareciera en la línea aunque el cuerpo lo corriera <code>eval</code>. Ahora el cuerpo cuenta como código sólo si node o python es el que lo recibe, y sin comillas sus <code>$(...)</code> se siguen revisando.</span></li>
+<li><span class="tag fix">arreglo</span><span><strong>Una ruta relativa ya no pasa por declarada sólo porque termina igual.</strong> La 0.9.0 aceptaba escribir <code>spec.md</code> si se había declarado <code>/repo/.sdd/x/spec.md</code>. Ahora NODD resuelve la ruta contra la carpeta de trabajo y compara la ruta completa.</span></li>
 <li><span class="tag fix">arreglo</span><span><strong>En Claude Code, el freno de una tarea nombra el comando que existe.</strong> Cuando NODD no dejaba tildar una tarea, el mensaje decía <code>/nodd-allow evidence</code>, que es el comando de pi. Ahora dice <code>/nodd allow evidence</code>, como el resto de los rechazos.</span></li>
 </ul>
 </div>
@@ -143,7 +145,7 @@ code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em;backgrou
 
 </main>
 <footer class="border-t border-line mt-12">
-<div class="max-w-6xl mx-auto px-5 py-6 flex flex-wrap justify-between gap-x-6 gap-y-2 font-mono text-[12px] text-dim"><span>nodd 0.9.1 · <a href="https://www.npmjs.com/package/@gonrocca/nodd">npm</a> · <a href="https://github.com/gonzalonicolasr/nodd">github</a></span><span>las reglas son de <span class="text-gentle">ODD · Gentleman-Programming</span></span></div>
+<div class="max-w-6xl mx-auto px-5 py-6 flex flex-wrap justify-between gap-x-6 gap-y-2 font-mono text-[12px] text-dim"><span>nodd 0.9.2 · <a href="https://www.npmjs.com/package/@gonrocca/nodd">npm</a> · <a href="https://github.com/gonzalonicolasr/nodd">github</a></span><span>las reglas son de <span class="text-gentle">ODD · Gentleman-Programming</span></span></div>
 </footer>
 </body>
 </html>
