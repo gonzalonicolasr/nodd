@@ -89,6 +89,27 @@ test("a mutating bash after the green run makes the evidence stale", () => {
   assert.match(check.text, /before the last write/);
 });
 
+test("a write to a file declared as relative after the green run makes the evidence stale", () => {
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/repo" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  let id = 0;
+  const tool = (toolName: string, input: Record<string, unknown>) => {
+    const toolCallId = `d${++id}`;
+    kernel.onToolCall({ toolName, toolCallId, input });
+    kernel.onToolResult({ toolName, toolCallId, input, isError: false, content: "ok" });
+  };
+  const declaration = { intent: "change", route: "tracked", slug: "demo", summary: "s", runner: "npm test", files: ["src/a.ts"] } as const;
+  tool("nodd_declare", declaration);
+  kernel.declare(declaration);
+  kernel.task({ action: "add", id: "T1", title: "t", slug: "demo" });
+  tool("bash", { command: "npm test" });
+  tool("write", { path: "src/a.ts" });
+  const check = kernel.task({ action: "check", id: "T1", slug: "demo" });
+  assert.equal(check.ok, false);
+  assert.match(check.text, /before the last write/);
+});
+
 test("committing after the green run does not make it stale, and a runner the classifier calls mutating still counts", () => {
   const committed = observedKernel("npm test");
   committed.tool("bash", { command: "npm test" });

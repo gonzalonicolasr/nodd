@@ -250,8 +250,27 @@ export const CC_TASK_SCHEMA = {
 
 export function inScratchpad(path: unknown, sessionId: string): boolean {
   if (typeof path !== 'string' || sessionId === '') return false
+  if (/(^|\/)\.\.(\/|$)/.test(path)) return false
   const id = sessionId.replace(/[^\w-]/g, '')
-  return new RegExp(`/claude-\\d+/[^/]+/${id}/`).test(path)
+  return new RegExp(`^(?:/private)?/tmp/claude-\\d+/[^/]+/${id}/`).test(path)
+}
+
+export async function landsInScratchpad(
+  stat: (path: string) => Promise<{ realPath?: string }>,
+  path: unknown,
+  sessionId: string,
+): Promise<boolean> {
+  if (!inScratchpad(path, sessionId)) return false
+  let head = String(path)
+  let rest = ''
+  while (head.length > 1) {
+    const found = await stat(head).then((s) => ({ real: s.realPath }), () => null)
+    if (found) return found.real !== undefined && inScratchpad(found.real + rest, sessionId)
+    const cut = head.lastIndexOf('/')
+    rest = head.slice(cut) + rest
+    head = head.slice(0, cut)
+  }
+  return false
 }
 
 const DECLARE_CORE = ['intent', 'route', 'summary'] as const

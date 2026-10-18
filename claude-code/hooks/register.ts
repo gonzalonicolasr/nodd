@@ -22,6 +22,7 @@ import {
   continueDeclaration,
   gateOfReason,
   inScratchpad,
+  landsInScratchpad,
   isForgeType,
   isNewRequest,
   normalizeCall,
@@ -254,8 +255,10 @@ async function agentOf($: any, id: string): Promise<{ type: string; parent: stri
   return entry
 }
 
+const FORGE_READERS = new Set(['forge:revisar', 'forge:bugs', 'forge:mejoras'])
+
 async function insideForge($: any, e: any, key: string): Promise<boolean> {
-  if ((e.tool === 'Agent' || e.tool === 'Task') && isForgeType(e.subagent_type)) return true
+  if ((e.tool === 'Agent' || e.tool === 'Task') && FORGE_READERS.has(String(e.subagent_type))) return true
   let id = key
   for (let depth = 0; id !== MAIN && depth < 8; depth++) {
     const info = await agentOf($, id)
@@ -379,7 +382,12 @@ async function serve($: any, key: string, call: Call, id: string) {
   const kernel = kernelFor(key)
   await stage($, pathsFor(kernel, call))
   kernel.onToolCall({ toolName: call.toolName, toolCallId: id, input: call.input })
+  const before = JSON.stringify(hatches)
+  try {
+    kernel.reloadPolicy()
+  } catch {}
   const reply = call.toolName === 'nodd_declare' ? kernel.declare(call.input as any) : kernel.task(call.input as any)
+  if (JSON.stringify(hatches) !== before) await saveHatches($)
   const problems = await flush($)
   const final = problems.length === 0 ? reply : { ok: false, text: `${reply.text}\nnodd: ${problems.join('; ')}` }
   kernel.onToolResult({ toolName: call.toolName, toolCallId: id, input: call.input, isError: !final.ok, content: final.text })
@@ -559,7 +567,8 @@ export function register(on: any) {
     const id = String(e.tool_use_id ?? `nodd-${Date.now()}`)
     const call = normalizeCall(String(e.tool), e, names)
     if (isNodd) return serve($, key, call, id)
-    if ((call.toolName === 'write' || call.toolName === 'edit') && inScratchpad(call.input.file_path ?? call.input.path, sessionId)) return next(e)
+    const lands = (path: unknown) => landsInScratchpad((p) => $.fs.stat(p, { resolve: true }), path, sessionId)
+    if ((call.toolName === 'write' || call.toolName === 'edit') && await lands(call.input.file_path ?? call.input.path)) return next(e)
     if (call.toolName === 'bash') {
       const harm = destructiveReason(String(call.input.command ?? ''), [rootDir(), cwd, '/tmp'], home)
       if (harm && allowDestructive) allowDestructive = false
@@ -571,7 +580,11 @@ export function register(on: any) {
         return { deny: reason }
       }
     }
-    if (call.toolName === 'bash' && writesOnlyUnder(String(call.input.command ?? ''), (path) => inScratchpad(path, sessionId))) return next(e)
+    if (call.toolName === 'bash') {
+      const targets: string[] = []
+      const only = writesOnlyUnder(String(call.input.command ?? ''), (path) => (targets.push(path), inScratchpad(path, sessionId)))
+      if (only && (await Promise.all(targets.map(lands))).every(Boolean)) return next(e)
+    }
     const forge = await insideForge($, e, key)
     const kernel = kernelFor(key)
 

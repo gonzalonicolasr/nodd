@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-10-18
+
+### Fixed
+
+- Claude Code: a write counted as inside the session scratchpad when its path
+  merely contained `/claude-<uid>/<dir>/<session>/`, so a `Write` to
+  `/tmp/claude-1000/x/<session>/../../../repo/a.ts`, to
+  `/repo/claude-1000/x/<session>/a.ts`, or through a symlink placed in the
+  scratchpad skipped every gate. The path must now start at
+  `/tmp/claude-<uid>/<dir>/<session>/`, carry no `..`, and resolve (symlinks
+  followed) to a place still inside it; the same holds for each path a Bash
+  command writes.
+- Evidence scoped to declared files compared them with `includes`, so with
+  `files: ["src/a.ts"]` the observed write to `/repo/src/a.ts` never counted
+  as the last write and a green run from before the edit checked the task
+  off. It now matches with `isDeclaredPath`, like the other gates.
+- Claude Code: `nodd_task` did not reload the policy, so `/nodd allow
+  evidence` or `/nodd gate evidence off` only took effect after some other
+  tool call; a hatch it spent was not persisted either.
+- Claude Code: launching any `forge:*` agent skipped the gates, so under
+  `intent: read-only` the model could delegate to `forge:build`. Only the
+  read-only reviewers (`forge:revisar`, `forge:bugs`, `forge:mejoras`) are
+  exempt at launch now; calls made inside a forge agent are unchanged.
+
 ## [0.9.2] - 2026-10-13
 
 ### Fixed

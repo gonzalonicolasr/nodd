@@ -537,7 +537,7 @@ export function ledgerPath(cwd: string, slug: string): string {
  */
 function lastWrite(committed: Committed, declaredFiles: string[] = [], runner: string | null = null): { lastWriteAt: string; lastWriteSeq: number } {
   const relevant = declaredFiles.length > 0
-    ? [...committed.filesWritten].filter(([path]) => declaredFiles.includes(path))
+    ? [...committed.filesWritten].filter(([path]) => isDeclaredPath(path, declaredFiles))
     : [...committed.filesWritten];
 
   let latest = { at: new Date(0).toISOString(), seq: 0 };

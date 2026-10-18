@@ -7,11 +7,11 @@ const TASK = 'mcp__nodd__nodd_task'
 const STATE = '/h/.local/state/nodd/sessions/s1.json'
 const CONFIG = '/h/.pi/nodd.json'
 
-type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; repo: string | null; registered: string[]; schemas: Record<string, any>; store: Record<string, unknown>; respond?: (e: any) => any }
+type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; repo: string | null; registered: string[]; schemas: Record<string, any>; store: Record<string, unknown>; links: Record<string, string>; respond?: (e: any) => any }
 
 function world(on: any, seed: { files?: Record<string, string>; store?: Record<string, unknown>; agents?: any[] } = {}): World {
   mock.env(on, { HOME: '/h' })
-  const w: World = { files: { ...seed.files }, ran: [], agentsList: seed.agents ?? [], seenAgents: [], submitted: [], cwd: '/repo', repo: null, registered: [], schemas: {}, store: { ...seed.store } }
+  const w: World = { files: { ...seed.files }, ran: [], agentsList: seed.agents ?? [], seenAgents: [], submitted: [], cwd: '/repo', repo: null, registered: [], schemas: {}, store: { ...seed.store }, links: {} }
   on('store.get', async (_$: any, e: any) => ({ value: w.store[e.key] }))
   on('store.set', async (_$: any, e: any) => {
     w.store[e.key] = e.value
@@ -38,6 +38,18 @@ function world(on: any, seed: { files?: Record<string, string>; store?: Record<s
       .filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
       .map((p) => ({ name: p.slice(prefix.length), kind: 'file', size: 0, mtimeMs: 0, isLink: false }))
     return { value }
+  })
+  on('fs.stat', async (_$: any, e: any) => {
+    const parts: string[] = []
+    for (const part of e.path.split('/')) {
+      if (part === '..') parts.pop()
+      else if (part !== '' && part !== '.') parts.push(part)
+    }
+    let real = `/${parts.join('/')}`
+    for (const [link, target] of Object.entries(w.links)) {
+      if (real === link || real.startsWith(`${link}/`)) real = target + real.slice(link.length)
+    }
+    return { value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false, ...(e.resolve ? { realPath: real } : {}) } }
   })
   on('session.cwd', async () => ({ value: w.cwd }))
   on('session.id', async () => ({ value: 's1' }))
@@ -257,6 +269,31 @@ describe('scratchpad y continuar', () => {
     expect((await call($, { tool: 'Write', file_path: '/tmp/claude-1000/-repo/otra/scratchpad/a.md', content: 'x' })).deny).toContain('nodd/classify')
   })
 
+  test('una ruta que sólo contiene el patrón del scratchpad no cuenta', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    expect((await call($, { tool: 'Write', file_path: '/repo/claude-1000/x/s1/a.ts', content: 'x' })).deny).toContain('nodd/classify')
+    expect((await call($, { tool: 'Bash', command: 'echo x > /repo/claude-1000/x/s1/a.ts' })).deny).toContain('nodd/classify')
+    expect(w.ran).toEqual([])
+  })
+
+  test('salir del scratchpad con .. no cuenta', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    expect((await call($, { tool: 'Write', file_path: '/tmp/claude-1000/-repo/s1/../../../../repo/a.ts', content: 'x' })).deny).toContain('nodd/classify')
+    expect(w.ran).toEqual([])
+  })
+
+  test('un symlink del scratchpad hacia el repo no cuenta', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    w.links['/tmp/claude-1000/-repo/s1/scratchpad/link'] = '/repo/src'
+    expect((await call($, { tool: 'Write', file_path: '/tmp/claude-1000/-repo/s1/scratchpad/link/a.ts', content: 'x' })).deny).toContain('nodd/classify')
+    expect((await call($, { tool: 'Bash', command: 'echo x > /tmp/claude-1000/-repo/s1/scratchpad/link/a.ts' })).deny).toContain('nodd/classify')
+    expect((await call($, { tool: 'Write', file_path: '/tmp/claude-1000/-repo/s1/scratchpad/otro.md', content: 'x' })).deny).toBe(undefined)
+    expect(w.ran).toEqual(['Write'])
+  })
+
   test('para seguir con la feature del pedido anterior alcanza con el slug', async ($, on) => {
     const w = world(on)
     await nodd($, 'on')
@@ -308,6 +345,16 @@ describe('evidence en Claude Code', () => {
     const r = await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })
     expect(r.deny).toContain('/nodd allow evidence')
     expect(r.deny).not.toContain('/nodd-allow')
+  })
+
+  test('/nodd allow evidence vale en el nodd_task que sigue, una sola vez', async ($, on) => {
+    const w = await setup($, on)
+    expect((await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })).deny).toContain('nodd/evidence')
+    await nodd($, 'allow evidence ci caído')
+    expect((await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })).deny).toBe(undefined)
+    expect((w.store.hatches as any)?.evidence).toBe(undefined)
+    await call($, { tool: TASK, action: 'add', id: 'T2', title: 'logout', slug: 'auth' })
+    expect((await call($, { tool: TASK, action: 'check', id: 'T2', slug: 'auth' })).deny).toContain('nodd/evidence')
   })
 
   test('un npm test con | tail no tilda aunque salga bien', async ($, on) => {
@@ -555,6 +602,18 @@ describe('subagentes y forge', () => {
     const r = await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x', agentId: 'a1' })
     expect(r.deny).toBe(undefined)
     expect(w.ran).toEqual(['Write'])
+  })
+
+  test('en read-only se pueden lanzar los revisores de forge, no un forge que escribe', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, intent: 'read-only', route: 'inline', slug: 'mirar', summary: 's' })
+    for (const type of ['forge:bugs', 'forge:mejoras', 'forge:revisar']) {
+      expect((await call($, { tool: 'Agent', subagent_type: type, prompt: 'p', description: 'd' })).deny).toBe(undefined)
+    }
+    const build = await call($, { tool: 'Agent', subagent_type: 'forge:build', prompt: 'p', description: 'd' })
+    expect(build.deny).toContain('nodd/authorize')
+    expect(w.ran).toEqual(['Agent', 'Agent', 'Agent'])
   })
 
   test('un run de forge en otra sesión no apaga NODD en la principal', async ($, on) => {
