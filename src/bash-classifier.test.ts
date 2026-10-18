@@ -567,3 +567,21 @@ test("a heredoc counts as code only when the interpreter is the command that rec
   assert.equal(classifyBash("cd /tmp && python3 - <<'PY'\nprint(1 > 0)\nPY"), "non-mutating");
   assert.equal(classifyBash("env node <<'JS'\nconsole.log([1].map(x=>x))\nJS"), "non-mutating");
 });
+
+test("a covered command behind a wrapper, an assignment or an absolute path is still a write", () => {
+  for (const command of ["env rm -rf build", "timeout 5 rm -rf .nodd", "command rm x", "/usr/bin/rm -rf build", "FOO=1 rm -rf build", "env touch f", "env chmod +x f", "echo x | /usr/bin/tee out.txt", "nice -n 5 mv a b", "env git commit -m x"]) {
+    assert.equal(classifyBash(command), "mutating", command);
+  }
+  for (const command of ["command -v rm", "echo 'env rm -rf x'", "grep -rn 'timeout 5 rm' src", "type rm"]) {
+    assert.equal(classifyBash(command), "non-mutating", command);
+  }
+});
+
+test("downloaders, syncers, extractors and history-moving git commands are writes", () => {
+  for (const command of ["curl -o out.txt http://x", "curl -sSLO http://x/a.tgz", "curl --output out http://x", "wget http://x/a", "wget -O out.txt http://x", "rsync -a src/ dst/", "git clone http://x/r.git", "git pull", "git -C sub merge main", "git rebase main", "tar -xzf a.tgz", "tar czf a.tgz dir", "unzip f.zip", "find . -name '*.pyc' -delete", "find build -exec rm {} +"]) {
+    assert.equal(classifyBash(command), "mutating", command);
+  }
+  for (const command of ["curl -s http://x", "curl -o /dev/null -w '%{http_code}' http://x", "wget -qO- http://x", "wget -O - http://x", "rsync --dry-run -a a/ b/", "tar -tzf a.tgz", "unzip -l f.zip", "find . -name '*.ts'", "find . -exec grep -l x {} +", "git log --oneline"]) {
+    assert.equal(classifyBash(command), "non-mutating", command);
+  }
+});

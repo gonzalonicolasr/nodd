@@ -19,7 +19,8 @@ import { trackGate } from "./gates/track.ts";
 import { delegateGate } from "./gates/delegate.ts";
 import { evidenceGate, isDeclaredRunner, masksExitStatus, writesByBash } from "./gates/evidence.ts";
 import { promotionGate } from "./gates/promotion.ts";
-import { isDeclaredPath, isFileWrite, targetPath, type GateRequest } from "./gates/request.ts";
+import { isDeclaredPath, isFileWrite, isMutatingBash, targetPath, type GateRequest } from "./gates/request.ts";
+import { bashWriteTargets } from "./scratch.ts";
 import { appendRecord, readLedger } from "./ledger-core.ts";
 import { isSuccess, parseOutcome } from "./outcome.ts";
 import { candidateFor, candidateIdentity } from "./review-candidate.ts";
@@ -42,11 +43,28 @@ export type SessionEntry = { type?: string; customType?: string; data?: unknown 
 const INTENTS: readonly Intent[] = ["read-only", "change"];
 
 /** `.nodd/<slug>/feature.md` — the durable, extension-owned NODD artifact. */
+function anchorOne(path: string, cwd: string): string {
+  return path === "" || path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) ? path : joinPath(cwd, path);
+}
+
+function anchorFiles(files: readonly string[], cwd: string): string[] {
+  return files.map((file) => anchorOne(file, cwd));
+}
+
 function anchorPath(input: Record<string, unknown>, cwd: string): Record<string, unknown> {
-  const key = typeof input.file_path === "string" && input.file_path !== "" ? "file_path" : "path";
-  const path = input[key];
-  if (typeof path !== "string" || path === "" || path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path)) return input;
-  return { ...input, [key]: joinPath(cwd, path) };
+  const anchored = Array.isArray(input.files)
+    ? { ...input, files: input.files.map((file) => (typeof file === "string" ? anchorOne(file, cwd) : file)) }
+    : input;
+  const key = typeof anchored.file_path === "string" && anchored.file_path !== "" ? "file_path" : "path";
+  const path = anchored[key];
+  if (typeof path !== "string") return anchored;
+  return { ...anchored, [key]: anchorOne(path, cwd) };
+}
+
+const PLAIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function plainName(value: string): boolean {
+  return PLAIN_NAME.test(value) && !value.includes("..");
 }
 
 export function featureDocPath(cwd: string, slug: string): string {
@@ -166,6 +184,7 @@ export function createKernel(options: KernelOptions): Kernel {
   // Set by `setPolicy`: the caller owns the whole policy from then on, and
   // `reloadPolicy` stops re-reading the file over their choice.
   let policyIsPinned = false;
+  let lastCheckoffSeq = 0;
 
   const readDoc = (slug: string): FeatureDoc | null => {
     const path = featureDocPath(root(), slug);
@@ -193,6 +212,9 @@ export function createKernel(options: KernelOptions): Kernel {
         return { ok: false, text: `nodd_declare: route must be one of ${ROUTES.join(", ")}` };
       }
       if (!args.slug) return { ok: false, text: "nodd_declare: slug is required" };
+      if (!plainName(args.slug)) {
+        return { ok: false, text: `nodd_declare: slug must be one plain name (letters, digits, \`.\`, \`_\`, \`-\`), not a path: ${JSON.stringify(args.slug)}` };
+      }
 
       // `inline` is small, understood work: it creates no durable artifact
       // (`routing.go:94`). Only tracked and forge routes get a feature doc.
@@ -256,15 +278,24 @@ export function createKernel(options: KernelOptions): Kernel {
         runner: requested ?? doc.verification.runner,
         tdd: args.tdd === "strict" ? "strict" : "off",
         source: "nodd_declare",
-        files: [...new Set((args.files ?? []).filter((file) => typeof file === "string" && file !== ""))],
+        files: [...new Set(anchorFiles((args.files ?? []).filter((file) => typeof file === "string" && file !== ""), root()))],
       };
       return saveDoc(doc);
     },
 
     task(args) {
+      if (typeof args.slug !== "string" || !plainName(args.slug)) {
+        return { ok: false, text: `nodd_task: slug must be one plain name, not ${JSON.stringify(args.slug)}` };
+      }
       const doc = readDoc(args.slug);
       if (!doc) {
         return { ok: false, text: `nodd_task: no feature document for ${args.slug}; call nodd_declare first` };
+      }
+
+      const oneLine = [args.title, args.reason].find((text) => typeof text === "string" && /[\r\n]/.test(text));
+      if (oneLine !== undefined) return { ok: false, text: "nodd_task: a title or reason is one line; put the detail in the task's own work, not in line breaks" };
+      if (typeof args.id === "string" && args.id.trim() !== "" && !plainName(args.id)) {
+        return { ok: false, text: `nodd_task: a task id is one plain name like T1, not ${JSON.stringify(args.id)}` };
       }
 
       if (args.action === "add") {
@@ -306,10 +337,11 @@ export function createKernel(options: KernelOptions): Kernel {
           task: args.id,
           // The task's own files when it declared some, the whole session's
           // writes otherwise. Either way a real timestamp, not a bash proxy.
-          ...lastWrite(state.committed, doc.verification.files, doc.verification.runner),
+          ...lastWrite(state.committed, anchorFiles(doc.verification.files, root()), doc.verification.runner),
           runner: doc.verification.runner,
+          root: root(),
           ...(doc.verification.tdd === "strict" && doc.verification.runner
-            ? { tdd: { mode: "strict" as const, source: doc.verification.source, runner: doc.verification.runner } }
+            ? { redSince: lastCheckoffSeq, tdd: { mode: "strict" as const, source: doc.verification.source, runner: doc.verification.runner } }
             : {}),
         },
         policy,
@@ -328,6 +360,7 @@ export function createKernel(options: KernelOptions): Kernel {
           candidate: candidateIdentity(candidateFor(state.committed)),
         };
         const saved = saveDoc(doc);
+        if (saved.ok) lastCheckoffSeq = state.committed.toolCalls;
         return saved.ok ? { ok: true, text: `${args.id} checked in .nodd/${doc.slug}/feature.md on a one-shot override, with no observed run` } : saved;
       }
 
@@ -361,6 +394,7 @@ export function createKernel(options: KernelOptions): Kernel {
         candidate: candidateIdentity(candidateFor(state.committed)),
       };
       const saved = saveDoc(doc);
+      if (saved.ok) lastCheckoffSeq = state.committed.toolCalls;
       return saved.ok ? { ok: true, text: `${args.id} checked in .nodd/${doc.slug}/feature.md` } : saved;
     },
 
@@ -372,8 +406,8 @@ export function createKernel(options: KernelOptions): Kernel {
         ["authorize", () => authorizeGate(state.committed, request, policy, isReadOnlyAgent)],
         ["classify", () => classifyGate(state.committed, request, policy, state.pending)],
         ["track", () => trackGate(state.committed, request, policy, (slug) => fs.existsSync(featureDocPath(root(), slug)))],
-        ["delegate", () => delegateGate(state.committed, request, policy, state.pending)],
-        ["promotion", () => promotionGate(promotionSignals(state.committed, request), request, policy)],
+        ["delegate", () => delegateGate(state.committed, request, policy, state.pending, root())],
+        ["promotion", () => promotionGate(promotionSignals(state.committed, request, root()), request, policy)],
       ];
 
       for (const [gate, evaluate] of decisions) {
@@ -436,6 +470,7 @@ export function createKernel(options: KernelOptions): Kernel {
     },
     onToolResult(event) {
       state.pending.delete(event.toolCallId);
+      const command = event.toolName === "bash" ? event.input?.command : undefined;
       const obs = observation({
         toolCallId: event.toolCallId,
         toolName: event.toolName,
@@ -443,6 +478,7 @@ export function createKernel(options: KernelOptions): Kernel {
         isError: event.isError === true,
         resultText: resultText(event.content),
         at: now(),
+        ...(typeof command === "string" ? { writes: bashWriteTargets(command, root()) } : {}),
       });
       state.committed = fold(state.committed, obs);
       return obs;
@@ -566,7 +602,7 @@ function lastWrite(committed: Committed, declaredFiles: string[] = [], runner: s
  * The third specified signal, "the user asked", was not derivable and has been
  * removed from the product rather than faked (see `src/gates/promotion.ts`).
  */
-function promotionSignals(committed: Committed, request: GateRequest) {
+function promotionSignals(committed: Committed, request: GateRequest, root: string) {
   const declaration = committed.declaration;
   const runner = declaration?.runner ?? null;
 
@@ -576,7 +612,7 @@ function promotionSignals(committed: Committed, request: GateRequest) {
   if (runner !== null) {
     for (let i = committed.commandResults.length - 1; i >= 0; i--) {
       const run = committed.commandResults[i];
-      if (!isDeclaredRunner(run.command, runner) || masksExitStatus(run.command, runner)) continue;
+      if (!isDeclaredRunner(run.command, runner, root) || masksExitStatus(run.command, runner)) continue;
       if (isSuccess(parseOutcome(run.isError, run.resultText))) break;
       consecutiveFailures += 1;
     }
@@ -589,7 +625,8 @@ function promotionSignals(committed: Committed, request: GateRequest) {
   const files = new Set([...committed.filesWritten].filter(([, write]) => write.seq > since).map(([path]) => path));
   const target = targetPath(request);
   if (target && isFileWrite(request)) files.add(target);
-  const declared = declaration?.files ?? [];
+  if (isMutatingBash(request)) for (const path of bashWriteTargets(String(request.input.command), root)) files.add(path);
+  const declared = anchorFiles(declaration?.files ?? [], root);
   const undeclared = [...files].filter((path) => !isDeclaredPath(path, declared));
 
   return {
@@ -658,7 +695,7 @@ export function clearHatch(fs: Fs, gate: string, home: string): void {
   try {
     const remaining = readHatches(fs, home);
     delete remaining[gate];
-    fs.writeFileSync(hatchPath(home), `${JSON.stringify(remaining)}\n`, "utf8");
+    writeVerified(hatchPath(home), `${JSON.stringify(remaining)}\n`, { fs, mode: 0o600 });
   } catch {
     // Best effort; the in-memory policy has already dropped it either way.
   }

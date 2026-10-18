@@ -72,7 +72,7 @@ function commandHeadAt(tokens: Token[], start: number): { head: Token; at: numbe
     while (tokens[at + 1] && (head.text.startsWith("-") || /^\d+[smhd]?$/.test(head.text))) {
       head = tokens[++at];
       // A flag's value is one word, and only when it is not an interpreter.
-      if (tokens[at + 1] && !head.text.startsWith("-") && !INTERPRETERS.has(baseOf(head.text))) {
+      if (tokens[at + 1] && !head.text.startsWith("-") && !INTERPRETERS.has(baseOf(head.text)) && !KNOWN_WRITERS.has(baseOf(head.text))) {
         if (!WRAPPERS.has(baseOf(head.text))) head = tokens[++at];
       }
     }
@@ -186,6 +186,8 @@ export const COVERED_PATTERNS: CoveredPattern[] = [
   { label: "package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add)", example: "npm install lodash", test: (c) => /\b(npm|pnpm|yarn|pip|pip3|cargo)\s+(install|add|i)\b/.test(c) },
   { label: "inline code for `node` or `python` (`-e`, `-c` or a heredoc) that can write: a write mode, a file or process API, `eval`/`exec`", example: "node -e \"require('fs').writeFileSync('f','x')\"", tokenises: true, test: (c) => inlineCodeMayWrite(c) },
   { label: "an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`)", example: "node script.js", tokenises: true, test: (c) => runsScriptFile(c) },
+  { label: "a covered command behind a wrapper, an assignment or an absolute path (`env rm`, `timeout 5 rm`, `FOO=1 rm`, `/usr/bin/rm`)", example: "env rm -rf build", tokenises: true, test: (c) => commandHeads(c).some(isCoveredHead) },
+  { label: "downloaders, syncers and extractors that write files (`curl -o`/`-O`, `wget`, `rsync`, `tar -x`/`-c`, `unzip`, `find -delete`/`-exec rm`) and git commands that move history (`clone`, `pull`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `switch`)", example: "curl -o out.txt http://x", tokenises: true, test: (c) => commandHeads(c).some(writesThroughTool) },
 ];
 
 /**
@@ -242,6 +244,7 @@ function tokenise(command: string): Token[] {
 
   let escaped = false;
   let quotedEscape = false;
+  let brace = false;
   for (const ch of command) {
     if (escaped) { text += ch; escaped = false; continue; }
     if (quotedEscape) {
@@ -258,6 +261,8 @@ function tokenise(command: string): Token[] {
       continue;
     }
     if (ch === "'" || ch === '"') { quote = ch; continue; }
+    if (brace) { text += ch; if (ch === "}") brace = false; continue; }
+    if (ch === "{" && text.endsWith("$")) { text += ch; brace = true; continue; }
     // `(`, `)` and a backtick open a command just as `;` does: a subshell is
     // still a place where an interpreter can be the command word.
     if (";&|()`{}\n".includes(ch)) { flush(); pendingBreak = true; startsCommand = true; continue; }
@@ -304,6 +309,79 @@ function runsScriptFile(command: string): boolean {
     if (arg?.text === "--") arg = tokens[i + 2];
     if (!arg || arg.text.startsWith("-")) continue;
     if (SCRIPT_FILE.test(arg.text)) return true;
+  }
+  return false;
+}
+
+export type CommandHead = { name: string; args: string[] };
+
+/**
+ * Every command this line runs, by basename, with the words that follow it up
+ * to the next separator. Wrappers, assignments and absolute paths are walked
+ * past by `commandHeadAt`, so `env rm`, `FOO=1 rm` and `/usr/bin/rm` are `rm`.
+ * Heredoc bodies that are data stay out, exactly as for the regex rows.
+ */
+export function commandHeads(command: string): CommandHead[] {
+  const tokens = tokenise(blankHeredocBodies(command ?? ""));
+  const heads: CommandHead[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const found = commandHeadAt(tokens, i);
+    if (!found) continue;
+    let k = found.at + 1;
+    const args: string[] = [];
+    while (k < tokens.length && !tokens[k].startsCommand) args.push(tokens[k++].text);
+    heads.push({ name: baseOf(found.head.text), args });
+    i = k - 1;
+  }
+  return heads;
+}
+
+const MUTATORS = new Set(["mv", "cp", "rm", "rmdir", "ln", "install", "dd", "truncate", "touch", "mkdir", "chmod", "chown", "patch", "tee"]);
+const KNOWN_WRITERS = new Set([...MUTATORS, "git", "sed", "perl", "curl", "wget", "rsync", "tar", "unzip", "find"]);
+const GIT_WRITES = new Set(["apply", "checkout", "restore", "reset", "commit", "stash", "clean", "mv", "rm", "clone", "pull", "merge", "rebase", "cherry-pick", "revert", "am", "switch"]);
+const DISCARD = /^(-|\/dev\/(null|stdout|stderr))$/;
+
+export function gitSubcommand(args: string[]): { name: string; rest: string[] } | null {
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === "-C" || args[i] === "-c") { i += 1; continue; }
+    if (args[i].startsWith("-")) continue;
+    return { name: args[i], rest: args.slice(i + 1) };
+  }
+  return null;
+}
+
+function isCoveredHead(head: CommandHead): boolean {
+  if (MUTATORS.has(head.name)) return true;
+  if ((head.name === "sed" || head.name === "perl") && head.args.some((a) => /^-[a-zA-Z]*i/.test(a) || a.startsWith("--in-place"))) return true;
+  return head.name === "git" && GIT_WRITES.has(gitSubcommand(head.args)?.name ?? "");
+}
+
+function writesThroughTool(head: CommandHead): boolean {
+  const { name, args } = head;
+  if (name === "curl") {
+    return args.some((a, i) =>
+      /^-[a-zA-Z]*O/.test(a) || a.startsWith("--remote-name") ||
+      (/^-[a-zA-Z]*o$/.test(a) || a === "--output") && !DISCARD.test(args[i + 1] ?? "-") ||
+      a.startsWith("--output=") && !DISCARD.test(a.slice(9)));
+  }
+  if (name === "wget") {
+    if (args.includes("--spider")) return false;
+    const target = args.findIndex((a) => /^-[a-zA-Z]*O/.test(a) || a.startsWith("--output-document"));
+    if (target === -1) return true;
+    const flag = args[target];
+    const value = flag.includes("=") ? flag.slice(flag.indexOf("=") + 1) : /O.+$/.test(flag) ? flag.slice(flag.indexOf("O") + 1) : args[target + 1] ?? "";
+    return !DISCARD.test(value);
+  }
+  if (name === "rsync") return !args.some((a) => a === "--dry-run" || /^-[a-zA-Z]*n/.test(a) && !a.startsWith("--"));
+  if (name === "tar") {
+    if (args.some((a) => /^--(extract|get|create|append|update|delete)\b/.test(a))) return true;
+    const clusters = args.filter((a, i) => /^-[a-zA-Z]+$/.test(a) || (i === 0 && /^[a-zA-Z]+$/.test(a)));
+    return clusters.some((a) => /[xcru]/.test(a.replace(/^-/, "")));
+  }
+  if (name === "unzip") return !args.some((a) => /^-[a-zA-Z]*[ltpvZ]/.test(a));
+  if (name === "find") {
+    return args.some((a, i) => a === "-delete" || a === "-fprint" || a === "-fprintf" ||
+      ["-exec", "-execdir", "-ok", "-okdir"].includes(a) && isCoveredHead({ name: baseOf(args[i + 1] ?? ""), args: args.slice(i + 2) }));
   }
   return false;
 }

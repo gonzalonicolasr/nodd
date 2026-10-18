@@ -56,7 +56,6 @@ let home = ''
 let cwd = ''
 let sessionId = ''
 let projectRoot = ''
-let headless = false
 let enabled = false
 let hatches: Policy['hatches'] = {}
 let toolsRegistered = false
@@ -98,7 +97,6 @@ async function readText($: any, path: string): Promise<string | null> {
 function boot($: any, sessionCwd?: string): Promise<void> {
   booted ??= (async () => {
     home = (await $.env.get('HOME').catch(() => '')) || ''
-    headless = (await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => '')) === 'sdk-cli'
     cwd = sessionCwd || (await $.session.cwd().catch(() => '')) || ''
     sessionId = (await $.session.id().catch(() => '')) || ''
     enabled = (await readSwitch($)) ?? (await $.store.get('enabled').catch(() => undefined)) === true
@@ -263,7 +261,7 @@ async function insideForge($: any, e: any, key: string): Promise<boolean> {
   for (let depth = 0; id !== MAIN && depth < 8; depth++) {
     const info = await agentOf($, id)
     if (!info) break
-    if (isForgeType(info.type)) return true
+    if (isForgeType(info.type) && !FORGE_READERS.has(info.type)) return true
     id = info.parent
   }
   return false
@@ -287,7 +285,7 @@ async function resolveCapability($: any, name: unknown) {
     return
   }
   let found: boolean | null = null
-  for (const dir of [joinPath(cwd, '.claude', 'agents'), joinPath(home, '.claude', 'agents')]) {
+  for (const dir of [...new Set([rootDir(), cwd])].map((d) => joinPath(d, '.claude', 'agents')).concat(joinPath(home, '.claude', 'agents'))) {
     for (const text of await agentFiles($, dir)) {
       const answer = agentReadOnly(text, name)
       if (answer !== null) {
@@ -342,7 +340,7 @@ async function saveSession($: any) {
 
 async function exportState($: any) {
   await saveSession($)
-  if (headless || !home) return
+  if (!home) return
   await stage($, [configPath()])
   const snap = snapshot({
     sessionId,
@@ -372,10 +370,19 @@ async function registerTools($: any) {
   }
 }
 
+function recordRefusal(reason: string, gate = gateOfReason(reason)) {
+  refusals += 1
+  lastRefusal = { gate, reason, at: new Date().toISOString() }
+}
+
 async function serve($: any, key: string, call: Call, id: string) {
   if (call.toolName === 'nodd_declare') {
     const continued = continueDeclaration(call.input, lastDeclared.get(key) ?? lastDeclared.get(MAIN))
-    if ('problem' in continued) return { deny: continued.problem }
+    if ('problem' in continued) {
+      recordRefusal(continued.problem, 'nodd_declare')
+      await exportState($)
+      return { deny: continued.problem }
+    }
     call = { ...call, input: continued.input }
     projectRoot = await resolveRoot($)
   }
@@ -392,8 +399,10 @@ async function serve($: any, key: string, call: Call, id: string) {
   const final = problems.length === 0 ? reply : { ok: false, text: `${reply.text}\nnodd: ${problems.join('; ')}` }
   kernel.onToolResult({ toolName: call.toolName, toolCallId: id, input: call.input, isError: !final.ok, content: final.text })
   if (final.ok && call.toolName === 'nodd_declare') lastDeclared.set(key, call.input)
+  const reason = final.ok ? '' : ccReason(final.text)
+  if (!final.ok) recordRefusal(reason, /^nodd\/[a-z]+:/.test(reason) ? gateOfReason(reason) : call.toolName)
   await exportState($)
-  return final.ok ? { result: final.text } : { deny: ccReason(final.text) }
+  return final.ok ? { result: final.text } : { deny: reason }
 }
 
 async function readRawConfig($: any): Promise<{ raw: Record<string, unknown> } | { problem: string }> {
@@ -570,19 +579,18 @@ export function register(on: any) {
     const lands = (path: unknown) => landsInScratchpad((p) => $.fs.stat(p, { resolve: true }), path, sessionId)
     if ((call.toolName === 'write' || call.toolName === 'edit') && await lands(call.input.file_path ?? call.input.path)) return next(e)
     if (call.toolName === 'bash') {
-      const harm = destructiveReason(String(call.input.command ?? ''), [rootDir(), cwd, '/tmp'], home)
+      const harm = destructiveReason(String(call.input.command ?? ''), [rootDir(), '/tmp'], home, cwd)
       if (harm && allowDestructive) allowDestructive = false
       else if (harm) {
-        refusals += 1
         const reason = `nodd/destructive: ${harm}, and NODD never runs that on the model's behalf, not even inside forge. To proceed: use the safer command named above if there is one, or, if the user wants exactly this, ask them to run it themselves with \`! ${String(call.input.command ?? '').split('\n')[0]}\`, or to allow it once with /nodd allow destructive`
-        lastRefusal = { gate: 'destructive', reason, at: new Date().toISOString() }
+        recordRefusal(reason, 'destructive')
         await exportState($)
         return { deny: reason }
       }
     }
     if (call.toolName === 'bash') {
       const targets: string[] = []
-      const only = writesOnlyUnder(String(call.input.command ?? ''), (path) => (targets.push(path), inScratchpad(path, sessionId)))
+      const only = writesOnlyUnder(String(call.input.command ?? ''), (path) => inScratchpad(path, sessionId), (path) => targets.push(path))
       if (only && (await Promise.all(targets.map(lands))).every(Boolean)) return next(e)
     }
     const forge = await insideForge($, e, key)
@@ -596,8 +604,8 @@ export function register(on: any) {
       try {
         kernel.reloadPolicy()
         decision = kernel.checkCall(call)
-      } catch {
-        decision = null
+      } catch (err) {
+        decision = { block: true, reason: `nodd/internal: a gate failed (${err instanceof Error ? err.message : String(err)}), so NODD refuses the call instead of letting it through unchecked. To proceed: ask the user to turn NODD off with /nodd off and report the error` }
       }
       if (JSON.stringify(hatches) !== before) await saveHatches($)
       await flush($)
@@ -605,9 +613,8 @@ export function register(on: any) {
     kernel.onToolCall({ toolName: call.toolName, toolCallId: id, input: call.input })
     if (decision) {
       kernel.forgetPending(id)
-      refusals += 1
       const reason = ccReason(decision.reason)
-      lastRefusal = { gate: gateOfReason(reason), reason, at: new Date().toISOString() }
+      recordRefusal(reason)
       await exportState($)
       return { deny: reason }
     }

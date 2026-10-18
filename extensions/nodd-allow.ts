@@ -8,8 +8,7 @@
 // Turning a gate off for good is `/nodd-gates disable`, which is a different
 // decision and says so.
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { nodeFs, writeVerified } from "../src/io.ts";
 import { hatchPath } from "../src/config.ts";
 import { GATE_IDS, isGateId } from "../src/gates/registry.ts";
 import { grantHatch, type Policy } from "../src/gates/policy.ts";
@@ -83,9 +82,7 @@ export default function register(
       // command reported success and changed nothing at all.
       if (result.ok) {
         try {
-          const path = hatchPath(home);
-          mkdirSync(dirname(path), { recursive: true });
-          writeFileSync(path, `${JSON.stringify(result.policy.hatches)}\n`, "utf8");
+          writeVerified(hatchPath(home), `${JSON.stringify(result.policy.hatches)}\n`, { fs: nodeFs, mode: 0o600 });
         } catch {
           // A hatch that cannot be persisted must not break the session; the
           // refusal simply stands, which is the safe direction.

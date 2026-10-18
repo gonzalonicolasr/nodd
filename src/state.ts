@@ -144,6 +144,7 @@ export function fold(committed: Committed, obs: Observation): Committed {
   if (!obs.isError) {
     if (READ_TOOLS.has(obs.toolName) && path) next.filesRead.add(path);
     if (WRITE_TOOLS.has(obs.toolName) && path) next.filesWritten.set(path, { at: obs.at, seq: next.toolCalls });
+    if (obs.toolName === "bash") for (const written of obs.writes ?? []) next.filesWritten.set(written, { at: obs.at, seq: next.toolCalls });
   }
 
   if (obs.toolName === "bash") {

@@ -29,7 +29,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude Code: launching any `forge:*` agent skipped the gates, so under
   `intent: read-only` the model could delegate to `forge:build`. Only the
   read-only reviewers (`forge:revisar`, `forge:bugs`, `forge:mejoras`) are
-  exempt at launch now; calls made inside a forge agent are unchanged.
+  exempt at launch now, and their own calls go through the gates with the
+  inherited declaration, so a reviewer under `intent: read-only` can neither
+  write nor launch `forge:build`.
+- The bash classifier only recognised a covered command as the first word, so
+  `env rm -rf build`, `timeout 5 rm -rf .nodd`, `command rm x`, `FOO=1 rm`
+  and `/usr/bin/rm` read as reads. Commands are now found the way the
+  interpreter row already found them, past wrappers, assignments and
+  absolute paths. Downloaders, syncers and extractors that write files
+  (`curl -o`/`-O`, `wget`, `rsync`, `tar -x`/`-c`, `unzip`, `find -delete`,
+  `find -exec rm`) and git commands that move history (`clone`, `pull`,
+  `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `switch`) are writes.
+- Claude Code's destructive guard compared paths as text: `rm -rf
+  /tmp/../home/x`, `rm -rf ../otro`, `cd sub && rm -rf ../..`, a `FOO=1` or
+  `env` prefix, `find -delete` outside the project, `git clean --force`
+  and `rm -rf` of the project root itself all passed. Paths are now resolved
+  against the working directory and any `cd`, `..` is folded, and the
+  session's starting directory is no longer treated as a root.
+- `nodd_task add` wrote the title into the feature document as is, so a title
+  with line breaks could plant a task already checked with invented evidence.
+  Titles, reopen reasons and task ids must be one line; slugs must be one
+  plain name, so `slug: "../../tmp/x"` no longer writes outside `.nodd/`.
+- A run that `cd`s into another directory before the runner
+  (`cd /tmp && npm test`) counted as the declared runner. It now has to run
+  in the project root.
+- A declared file matched any path ending the same way, so declaring
+  `src/a.ts` also covered `/repo/other/src/a.ts`. Declared files are anchored
+  at the project root and compared whole.
+- Without a declared runner, a test script (`bash run_tests.sh`) counted as
+  its own last write and its green run could never check a task off.
+- In strict TDD a RED from an earlier task satisfied the next one. The RED
+  must now come after the previous checkoff.
+- Files written by bash (redirections, `cp`/`mv`/`rm`/`touch` operands,
+  `sed -i`, `dd of=`) count as written files, so `promotion` refuses an
+  undeclared one and `delegate` counts them toward its threshold.
+- `gate-track` missed `echo x >.nodd/a` with no space after `>`, and refused
+  `echo "use .nodd/" > notes.md`, where `.nodd/` is text. It now reads the
+  command's words, quotes and heredoc bodies resolved.
+- `writeVerified` wrote its temp file under a predictable name and followed a
+  symlink planted there; a failed read-back left the new content in place.
+  The temp file now has a random name and is created exclusively, a failed
+  read-back puts the previous content back, and override files are written
+  `0600`.
+- Claude Code: the scratchpad exemption let `cp -t /repo <scratchpad>/a`
+  through, and a glob after `ln -s` reached outside. It now names targets the
+  same way as the classifier, so `-t`, link sources and globs are checked, a
+  `cd` into the scratchpad is followed, `sed -i`/`chmod`/`truncate -s` on
+  scratchpad files pass, and the value of an unrelated assignment is not
+  taken for a target.
+- Claude Code: a refused `nodd_task` or `nodd_declare` did not update the
+  last refusal NERV shows; project agents were looked up in the starting
+  directory instead of the repository root; a gate that threw let the call
+  through unchecked, and now refuses it; headless sessions now export their
+  state file too.
 
 ## [0.9.2] - 2026-10-13
 

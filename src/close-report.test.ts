@@ -68,7 +68,7 @@ test("without a runner the report says so, and a green test run is not flagged",
 
 test("files outside the declared ones are named", () => {
   const c = run(write(write(emptyCommitted(), "/r/src/a.ts"), "/r/src/extra.ts"), "npm test");
-  const report = closeReport(input(c, { declaredFiles: ["src/a.ts"] }))!;
+  const report = closeReport(input(c, { declaredFiles: ["/r/src/a.ts"] }))!;
   assert.ok(report.warnings.some((w) => w.includes("fuera de lo declarado") && w.includes("/r/src/extra.ts")));
 });
 
@@ -143,7 +143,7 @@ test("test data that only mentions .skip is not an added skip", () => {
 
 test("writes to the scratchpad or to Claude's own files are not outside the declaration", () => {
   const c = write(write(write(emptyCommitted(), "/r/src/a.ts"), "/tmp/claude-1000/-r/s1/scratchpad/n.md"), "/home/gon/.claude/projects/-home-gon/memory/x.md");
-  assert.deepEqual(closeReport(input(c, { declaredFiles: ["src/a.ts"] }))!.warnings.filter((w) => w.includes("fuera")), []);
+  assert.deepEqual(closeReport(input(c, { declaredFiles: ["/r/src/a.ts"] }))!.warnings.filter((w) => w.includes("fuera")), []);
 });
 
 test("only a claim about tests counts as a test claim", () => {

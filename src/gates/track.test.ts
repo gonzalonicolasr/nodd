@@ -153,6 +153,13 @@ test("reading .nodd/ through bash is still a read", () => {
   }
 });
 
+test("a redirect glued to .nodd/ is caught, and .nodd/ inside quoted text is not a target", () => {
+  assert.equal(trackGate(routed("tracked"), { toolName: "bash", input: { command: "echo x >.nodd/demo/feature.md" } }, emptyPolicy(), present).allow, false);
+  assert.equal(trackGate(routed("tracked"), { toolName: "bash", input: { command: "echo x >>.nodd/a" } }, emptyPolicy(), present).allow, false);
+  assert.equal(trackGate(routed("tracked"), { toolName: "bash", input: { command: "echo \"use .nodd/ as the dir\" > notes.md" } }, emptyPolicy(), present).allow, true);
+  assert.equal(trackGate(routed("tracked"), { toolName: "bash", input: { command: "cat > t.ts <<'EOF'\nconst p = '.nodd/x'\nEOF" } }, emptyPolicy(), present).allow, true);
+});
+
 test("a mutating command that never names .nodd is not this gate's business", () => {
   assert.equal(trackGate(routed("tracked"), { toolName: "bash", input: { command: "echo x > /repo/projects/nodd/out.txt" } }, emptyPolicy(), present).allow, true);
 });

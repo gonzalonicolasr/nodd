@@ -23,6 +23,7 @@ import type { Committed } from "../state.ts";
 import type { PendingCall } from "../observations.ts";
 import { THRESHOLDS } from "../manifest.ts";
 import { classifyBash } from "../bash-classifier.ts";
+import { bashWriteTargets } from "../scratch.ts";
 import { allow, refuse, resolveFlag, type GateDecision, type Policy } from "./policy.ts";
 import { isFileWrite, targetPath, type GateRequest, isDeclaredPath } from "./request.ts";
 
@@ -37,7 +38,7 @@ import { isFileWrite, targetPath, type GateRequest, isDeclaredPath } from "./req
  * that fires on history nobody can undo is one an actor learns to route
  * around, which is worse than no threshold at all.
  */
-function writtenFiles(committed: Committed, request: GateRequest, pending: Map<string, PendingCall>): Set<string> {
+function writtenFiles(committed: Committed, request: GateRequest, pending: Map<string, PendingCall>, root: string): Set<string> {
   const since = committed.declaration?.seq ?? 0;
   // Files the declaration named are not counted. The trigger exists to catch a
   // session sprawling past what it set out to do, and a declaration that lists
@@ -54,14 +55,16 @@ function writtenFiles(committed: Committed, request: GateRequest, pending: Map<s
       .filter(([path, write]) => write.seq > since && !isDeclaredPath(path, promised))
       .map(([path]) => path),
   );
-  for (const call of pending.values()) {
+  const intended = (call: GateRequest) => {
     if (isFileWrite(call)) {
       const path = targetPath(call);
-      if (path && !isDeclaredPath(path, promised)) files.add(path);
+      return path ? [path] : [];
     }
+    return call.toolName === "bash" ? bashWriteTargets(String(call.input?.command ?? ""), root) : [];
+  };
+  for (const call of [...pending.values(), request]) {
+    for (const path of intended(call)) if (!isDeclaredPath(path, promised)) files.add(path);
   }
-  const path = targetPath(request);
-  if (path && !isDeclaredPath(path, promised)) files.add(path);
   return files;
 }
 
@@ -70,6 +73,7 @@ export function delegateGate(
   request: GateRequest,
   policy: Policy,
   pending: Map<string, PendingCall>,
+  root = "",
 ): GateDecision {
   if (!resolveFlag("delegate", policy).enabled) return allow();
   if (!isFileWrite(request) && classifyBash(String(request.input?.command ?? "")) !== "mutating") return allow();
@@ -86,7 +90,7 @@ export function delegateGate(
     "report the block to whoever delegated this work, " +
     "or delegate the work with the `subagent` tool";
 
-  const written = writtenFiles(committed, request, pending);
+  const written = writtenFiles(committed, request, pending, root);
   if (written.size >= THRESHOLDS.writerMinNonTrivialFiles) {
     return refuse(
       "delegate",

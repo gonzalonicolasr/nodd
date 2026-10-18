@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nodeFs, writeVerified, type Fs } from "./io.ts";
@@ -50,6 +50,48 @@ test("an interrupted write leaves no partial file behind", () => {
   const result = writeVerified(target, "half", { fs: interrupted });
   assert.equal(result.ok, false);
   assert.deepEqual(readdirSync(dir), [], "no partial and no temp file may remain");
+});
+
+test("the temp file is created exclusively, so a planted symlink is never followed", () => {
+  const dir = tmp();
+  const target = join(dir, "feature.md");
+  const victim = join(dir, "victim.txt");
+  writeFileSync(victim, "keep\n", "utf8");
+  symlinkSync(victim, join(dir, ".S.nodd-tmp"));
+  const flags: unknown[] = [];
+  const spying: Fs = { ...nodeFs, writeFileSync: (path, data, options) => { flags.push(options); nodeFs.writeFileSync(path, data, options); } };
+
+  const result = writeVerified(target, "new\n", { fs: spying, now: () => "S" });
+  assert.equal(result.ok, true);
+  assert.equal(readFileSync(victim, "utf8"), "keep\n");
+  assert.ok(flags.every((options) => typeof options === "object" && (options as { flag?: string }).flag === "wx"), JSON.stringify(flags));
+});
+
+test("a read-back mismatch puts the previous content back", () => {
+  const dir = tmp();
+  const target = join(dir, "feature.md");
+  writeFileSync(target, "original\n", "utf8");
+  let renamed = false;
+  let lied = false;
+  const lyingOnce: Fs = {
+    ...nodeFs,
+    renameSync: (from, to) => { nodeFs.renameSync(from, to); if (to === target) renamed = true; },
+    readFileSync: (path, encoding) => {
+      if (renamed && path === target && !lied) { lied = true; return "trunca"; }
+      return nodeFs.readFileSync(path, encoding);
+    },
+  };
+
+  const result = writeVerified(target, "replacement\n", { fs: lyingOnce });
+  assert.equal(result.ok, false);
+  assert.equal(readFileSync(target, "utf8"), "original\n");
+});
+
+test("a mode asked for reaches the file", () => {
+  const dir = tmp();
+  const target = join(dir, "hatch.json");
+  assert.equal(writeVerified(target, "{}\n", { fs: nodeFs, mode: 0o600 }).ok, true);
+  assert.equal(statSync(target).mode & 0o777, 0o600);
 });
 
 test("divergent on-disk content is preserved alongside, losing neither version", () => {

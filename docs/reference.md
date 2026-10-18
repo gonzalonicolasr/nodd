@@ -77,6 +77,8 @@ pattern set (`src/bash-classifier.ts`) and asserted against by
 | package installers (`npm`/`pnpm`/`yarn`/`pip`/`cargo` install or add) | `npm install lodash` |
 | inline code for `node` or `python` (`-e`, `-c` or a heredoc) that can write: a write mode, a file or process API, `eval`/`exec` | `node -e "require('fs').writeFileSync('f','x')"` |
 | an interpreter running a script file as its first argument (`node script.js`, `deno run main.ts`) | `node script.js` |
+| a covered command behind a wrapper, an assignment or an absolute path (`env rm`, `timeout 5 rm`, `FOO=1 rm`, `/usr/bin/rm`) | `env rm -rf build` |
+| downloaders, syncers and extractors that write files (`curl -o`/`-O`, `wget`, `rsync`, `tar -x`/`-c`, `unzip`, `find -delete`/`-exec rm`) and git commands that move history (`clone`, `pull`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `switch`) | `curl -o out.txt http://x` |
 
 ### Not covered
 

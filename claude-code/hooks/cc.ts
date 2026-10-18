@@ -251,6 +251,7 @@ export const CC_TASK_SCHEMA = {
 export function inScratchpad(path: unknown, sessionId: string): boolean {
   if (typeof path !== 'string' || sessionId === '') return false
   if (/(^|\/)\.\.(\/|$)/.test(path)) return false
+  path = path.replace(/\/\.(?=\/)/g, '').replace(/\/{2,}/g, '/')
   const id = sessionId.replace(/[^\w-]/g, '')
   return new RegExp(`^(?:/private)?/tmp/claude-\\d+/[^/]+/${id}/`).test(path)
 }

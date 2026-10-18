@@ -173,3 +173,92 @@ test("a task added without an id gets the next free one, and check without an id
   assert.equal(check.ok, false);
   assert.match(check.text, /needs the task id/);
 });
+
+function session(declaration?: Record<string, unknown>) {
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/repo" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  let id = 0;
+  const tool = (toolName: string, input: Record<string, unknown>, isError = false) => {
+    const toolCallId = `s${++id}`;
+    kernel.onToolCall({ toolName, toolCallId, input });
+    kernel.onToolResult({ toolName, toolCallId, input, isError, content: isError ? "FAIL\nCommand exited with code 1" : "ok" });
+  };
+  if (declaration) {
+    tool("nodd_declare", declaration);
+    kernel.declare(declaration as never);
+  }
+  return { kernel, tool, files };
+}
+
+test("a slug that is not one plain name is refused and writes nothing", () => {
+  const { kernel, files } = session();
+  for (const slug of ["../../tmp/x", "a/b", "..", ".hidden"]) {
+    const r = kernel.declare({ intent: "change", route: "tracked", slug, summary: "s" });
+    assert.equal(r.ok, false, slug);
+  }
+  assert.deepEqual([...files.keys()], []);
+  assert.equal(kernel.declare({ intent: "change", route: "tracked", slug: "audit-2.v1_x", summary: "s" }).ok, true);
+});
+
+test("a task title is one line, so it cannot forge a checked task", () => {
+  const { kernel, files } = session({ intent: "change", route: "tracked", slug: "demo", summary: "s", runner: "npm test" });
+  const r = kernel.task({ action: "add", id: "T1", title: "legit\n- [x] T2. fake\n  - observed: `npm test` → success\n  - candidate: x", slug: "demo" });
+  assert.equal(r.ok, false);
+  assert.doesNotMatch(files.get("/repo/.nodd/demo/feature.md") ?? "", /T2/);
+});
+
+test("a runner run inside another directory is not the runner", () => {
+  const { kernel, tool } = session({ intent: "change", route: "tracked", slug: "demo", summary: "s", runner: "npm test" });
+  kernel.task({ action: "add", id: "T1", title: "t", slug: "demo" });
+  tool("write", { path: "/repo/a.ts" });
+  tool("bash", { command: "cd /tmp && npm test" });
+  assert.equal(kernel.task({ action: "check", id: "T1", slug: "demo" }).ok, false);
+  tool("bash", { command: "cd /repo && npm test" });
+  assert.equal(kernel.task({ action: "check", id: "T1", slug: "demo" }).ok, true);
+});
+
+test("a declared file covers its own path, not every path that ends the same", () => {
+  const { kernel } = session({ intent: "change", route: "inline", slug: "s", summary: "s", files: ["src/a.ts"] });
+  assert.equal(kernel.checkCall({ toolName: "write", input: { path: "/repo/src/a.ts" } }), null);
+  const other = kernel.checkCall({ toolName: "write", input: { path: "/repo/other/src/a.ts" } });
+  assert.ok(other && other.reason.startsWith("nodd/promotion"), other?.reason);
+});
+
+test("without a runner, a test script is not its own last write", () => {
+  const { kernel, tool } = session({ intent: "change", route: "tracked", slug: "demo", summary: "s" });
+  kernel.task({ action: "add", id: "T1", title: "t", slug: "demo" });
+  tool("write", { path: "/repo/a.ts" });
+  tool("bash", { command: "bash run_tests.sh" });
+  const check = kernel.task({ action: "check", id: "T1", slug: "demo" });
+  assert.equal(check.ok, true, check.text);
+});
+
+test("in strict TDD the RED has to belong to the task being checked", () => {
+  const { kernel, tool } = session({ intent: "change", route: "tracked", slug: "demo", summary: "s", runner: "npm test", tdd: "strict" });
+  kernel.task({ action: "add", id: "T1", title: "t", slug: "demo" });
+  kernel.task({ action: "add", id: "T2", title: "t", slug: "demo" });
+  tool("bash", { command: "npm test" }, true);
+  tool("write", { path: "/repo/a.ts" });
+  tool("bash", { command: "npm test" });
+  assert.equal(kernel.task({ action: "check", id: "T1", slug: "demo" }).ok, true);
+  tool("write", { path: "/repo/b.ts" });
+  tool("bash", { command: "npm test" });
+  const second = kernel.task({ action: "check", id: "T2", slug: "demo" });
+  assert.equal(second.ok, false);
+  assert.match(second.text, /RED/);
+});
+
+test("promotion sees the file a bash command writes", () => {
+  const { kernel } = session({ intent: "change", route: "inline", slug: "s", summary: "s", files: ["src/a.ts"] });
+  assert.equal(kernel.checkCall({ toolName: "bash", input: { command: "echo x > src/a.ts" } }), null);
+  const outside = kernel.checkCall({ toolName: "bash", input: { command: "echo x > src/c.ts" } });
+  assert.ok(outside && outside.reason.startsWith("nodd/promotion") && /src\/c\.ts/.test(outside.reason), outside?.reason);
+});
+
+test("files written by bash count toward the delegate threshold", () => {
+  const { kernel, tool } = session({ intent: "change", route: "inline", slug: "s", summary: "s" });
+  tool("bash", { command: "echo x > /repo/f1.ts" });
+  const second = kernel.checkCall({ toolName: "bash", input: { command: "echo x > /repo/f2.ts" } });
+  assert.ok(second && second.reason.startsWith("nodd/delegate"), second?.reason);
+});

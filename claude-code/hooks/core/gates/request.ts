@@ -11,7 +11,7 @@ export type GateRequest = {
 };
 
 export function isDeclaredPath(path: string, declared: readonly string[]): boolean {
-  return declared.some((file) => path === file || path.endsWith(`/${file.replace(/^\.\//, "")}`));
+  return declared.includes(path);
 }
 
 export function targetPath(request: GateRequest): string | null {

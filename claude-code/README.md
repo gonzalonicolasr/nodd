@@ -152,10 +152,13 @@ forge: no pasan por los gates, pero lo que hacen se observa, así que un
   padre en ese momento: si el principal declaró, el subagente puede escribir
   dentro de esa ruta; si no declaró nadie, el subagente también se frena (y el
   rechazo le dice que avise o que declare).
-- **Los agentes de forge pasan siempre.** Las llamadas de un agente de fase
-  `forge:<fase>`, o de algo que ese agente lanzó, no pasan por los gates. Un run
-  de forge en curso no apaga NODD en el resto: la sesión principal sigue
-  frenada.
+- **Los agentes de fase de forge pasan.** Las llamadas de un agente de fase
+  `forge:<fase>`, o de algo que ese agente lanzó, no pasan por los gates. Los
+  revisores (`forge:revisar`, `forge:bugs`, `forge:mejoras`) son la excepción:
+  lanzarlos no pasa por los gates, pero lo que ellos hacen sí, con la
+  declaración heredada, así que en un pedido de sólo lectura no escriben ni
+  lanzan un `forge:build`. Un run de forge en curso no apaga NODD en el resto:
+  la sesión principal sigue frenada.
 - **Los rechazos nombran `/nodd allow <gate>`**, el comando de Claude Code. El
   kernel compartido escribe `/nodd-allow`, que es el de pi, y el mod lo traduce.
 - **El interruptor es uno solo.** Cada sesión lo relee antes de cada tool y de

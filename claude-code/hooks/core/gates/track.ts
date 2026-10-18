@@ -15,6 +15,7 @@
 // forge, and then "Evidence: tests pass" is back, in a file, looking official.
 
 import type { Committed } from "../state.ts";
+import { commandHeads } from "../bash-classifier.ts";
 import { allow, refuse, resolveFlag, type GateDecision, type Policy } from "./policy.ts";
 import { isFileWrite, isMutatingBash, isMutation, targetPath, type GateRequest } from "./request.ts";
 
@@ -27,9 +28,12 @@ function targetsNoddDir(request: GateRequest): boolean {
   return isFileWrite(request) && path !== null && /(^|\/)\.nodd\//.test(path);
 }
 
+const NODD_WORD = /^(\d|&)?(>>?)?(.*\/)?\.nodd(\/|$)/;
+
 function bashTouchesNoddDir(request: GateRequest): boolean {
   const command = request.input.command;
-  return isMutatingBash(request) && typeof command === "string" && /(^|[\s'"=/])\.nodd(\/|[\s'";|&)]|$)/.test(command);
+  if (!isMutatingBash(request) || typeof command !== "string") return false;
+  return commandHeads(command).some((head) => head.args.some((word) => NODD_WORD.test(word) || /=(.*\/)?\.nodd(\/|$)/.test(word)));
 }
 
 export function trackGate(

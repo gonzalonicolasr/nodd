@@ -284,6 +284,18 @@ describe('scratchpad y continuar', () => {
     expect(w.ran).toEqual([])
   })
 
+  test('cd al scratchpad, asignaciones ajenas y barras dobles no frenan una escritura que queda adentro', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, intent: 'read-only', route: 'inline', slug: 'mirar', summary: 's' })
+    const dir = '/tmp/claude-1000/-repo/s1/scratchpad'
+    expect((await call($, { tool: 'Bash', command: `cd ${dir} && echo x > n.txt` })).deny).toBe(undefined)
+    expect((await call($, { tool: 'Bash', command: `D=/repo; echo x > ${dir}/a` })).deny).toBe(undefined)
+    expect((await call($, { tool: 'Write', file_path: '/tmp//claude-1000/-repo/s1/./scratchpad/b.md', content: 'x' })).deny).toBe(undefined)
+    expect((await call($, { tool: 'Bash', command: `cp -t /repo ${dir}/a` })).deny).toContain('nodd/authorize')
+    expect(w.ran).toEqual(['Bash', 'Bash', 'Write'])
+  })
+
   test('un symlink del scratchpad hacia el repo no cuenta', async ($, on) => {
     const w = world(on)
     await nodd($, 'on')
@@ -574,6 +586,17 @@ describe('authorize', () => {
     const r = await call($, { tool: 'Agent', subagent_type: 'lector', prompt: 'p', description: 'd' })
     expect(r.deny).toBe(undefined)
   })
+
+  test('los agentes del proyecto se buscan en la raíz del repo aunque la sesión arranque en una subcarpeta', async ($, on) => {
+    const agent = '---\nname: lector\ndescription: lee\ntools: Read, Grep, Glob\n---\nprompt'
+    const w = world(on, { files: { '/repo/.claude/agents/lector.md': agent } })
+    w.cwd = '/repo/sub'
+    w.repo = '/repo'
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, intent: 'read-only', route: 'inline', slug: 'mirar', summary: 's' })
+    const r = await call($, { tool: 'Agent', subagent_type: 'lector', prompt: 'p', description: 'd' })
+    expect(r.deny).toBe(undefined)
+  })
 })
 
 describe('override', () => {
@@ -616,6 +639,16 @@ describe('subagentes y forge', () => {
     expect(w.ran).toEqual(['Agent', 'Agent', 'Agent'])
   })
 
+  test('un revisor de forge no queda eximido: en read-only no escribe ni lanza un forge que escribe', async ($, on) => {
+    const w = world(on, { agents: [{ id: 'r1', type: 'forge:revisar', status: 'running', description: 'r' }] })
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, intent: 'read-only', route: 'inline', slug: 'mirar', summary: 's' })
+    expect((await call($, { tool: 'Read', file_path: '/repo/a.ts', agentId: 'r1' })).deny).toBe(undefined)
+    expect((await call($, { tool: 'Write', file_path: '/repo/a.ts', content: 'x', agentId: 'r1' })).deny).toContain('nodd/authorize')
+    expect((await call($, { tool: 'Agent', subagent_type: 'forge:build', prompt: 'p', description: 'd', agentId: 'r1' })).deny).toContain('nodd/authorize')
+    expect(w.ran).toEqual(['Read'])
+  })
+
   test('un run de forge en otra sesión no apaga NODD en la principal', async ($, on) => {
     const w = world(on, { files: { '/h/.local/state/forge/state.json': JSON.stringify({ run: { status: 'running' } }) } })
     await nodd($, 'on')
@@ -646,6 +679,17 @@ describe('subagentes y forge', () => {
 })
 
 describe('estado exportado', () => {
+  test('un rechazo de nodd_task también queda como último rechazo', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare, runner: 'npm test' })
+    await call($, { tool: TASK, action: 'add', id: 'T1', title: 't', slug: 'auth' })
+    await call($, { tool: TASK, action: 'check', id: 'T1', slug: 'auth' })
+    const state = JSON.parse(w.files[STATE] ?? 'null')
+    expect(state.lastRefusal?.gate).toBe('evidence')
+    expect(state.counters.refusals).toBe(1)
+  })
+
   test('state.json sigue el interruptor, la declaración y el último rechazo', async ($, on) => {
     const w = world(on)
     await nodd($, 'on')

@@ -55,3 +55,33 @@ test("each refusal offers the safe way when there is one", () => {
   assert.match(destructiveReason("git clean -fd", roots, home)!, /git clean -n/);
   assert.equal(destructiveReason("git reset --keep origin/main", roots, home), null);
 });
+
+test("a wrapper, an assignment, a relative path or a .. does not hide a delete outside", () => {
+  for (const command of [
+    "env rm -rf /home/gon/otro",
+    "FOO=1 rm -rf /etc",
+    "timeout 5 rm -rf /etc",
+    "/bin/rm -rf /etc",
+    "rm -rf ../otro",
+    "cd sub && rm -rf ../../otro",
+    "rm -rf /tmp/../home/gon/otro",
+    "rm -rf /repo/../otro",
+    "rm -rf /repo",
+    "rm -rf .",
+    "FOO=1 git reset --hard",
+    "env git reset --hard",
+    "git -C /repo reset --hard",
+    "git clean --force -d",
+    "find /home/gon -name '*.log' -delete",
+    "find ~ -exec rm -rf {} +",
+    "find .. -delete",
+  ]) assert.ok(destructiveReason(command, roots, home), command);
+  for (const command of [
+    "cd sub && rm -rf build",
+    "rm -rf ./a/../b",
+    "find . -name '*.pyc' -delete",
+    "find /tmp/claude-1000/x -delete",
+    "git commit -m 'reset --hard'",
+    "echo 'rm -rf /etc'",
+  ]) assert.equal(destructiveReason(command, roots, home), null, command);
+});

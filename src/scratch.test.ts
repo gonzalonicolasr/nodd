@@ -21,9 +21,39 @@ test("anything that may write elsewhere is not exempt", () => {
     `bash ${S}/run.sh`,
     `cp ${S}/a.ts src/a.ts`,
     `D=/home/gon/x; mkdir $D/y`,
-    `sed -i 's/a/b/' ${S}/f`,
     `echo hi`,
     `rm -rf ${S}/../../../home/gon/x`,
     `D=${S}/..; mkdir -p $D/y`,
   ]) assert.equal(writesOnlyUnder(command, inside), false, command);
+});
+
+test("in-place edits, modes, sizes and a cd into the scratchpad stay recognised", () => {
+  for (const command of [
+    `sed -i 's/a/b/' ${S}/f`,
+    `chmod +x ${S}/run.sh`,
+    `truncate -s 0 ${S}/log`,
+    `cd ${S} && echo x > n.txt`,
+    `D=/repo; echo x > ${S}/a`,
+    `echo x > ${S}//b`,
+  ]) assert.equal(writesOnlyUnder(command, inside), true, command);
+});
+
+test("a target directory flag, a link to outside, a glob, a cd elsewhere or an unknown writer is not exempt", () => {
+  for (const command of [
+    `cp -t /repo ${S}/a.txt`,
+    `cp --target-directory=/repo ${S}/a.txt`,
+    `install -t /repo ${S}/a`,
+    `ln -s /repo/a ${S}/link`,
+    `echo x > ${S}/l*`,
+    `cd /repo && echo x > n.txt`,
+    `npm install > ${S}/log`,
+    `env rm -rf /repo/x`,
+    `echo x > n.txt`,
+  ]) assert.equal(writesOnlyUnder(command, inside), false, command);
+});
+
+test("only real write targets are reported, not the values of assignments", () => {
+  const seen: string[] = [];
+  assert.equal(writesOnlyUnder(`D=/repo; echo x > ${S}/a`, inside, (path) => seen.push(path)), true);
+  assert.deepEqual(seen, [`${S}/a`]);
 });

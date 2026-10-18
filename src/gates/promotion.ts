@@ -33,7 +33,7 @@
 
 import { allow, refuse, resolveFlag, type GateDecision, type Policy } from "./policy.ts";
 import type { GateRequest } from "./request.ts";
-import { isFileWrite } from "./request.ts";
+import { isFileWrite, isMutatingBash } from "./request.ts";
 
 export type PromotionSignals = {
   slug: string;
@@ -52,7 +52,7 @@ const CONSECUTIVE_FAILURE_LIMIT = 2;
 
 export function promotionGate(signals: PromotionSignals, request: GateRequest, policy: Policy): GateDecision {
   if (!resolveFlag("promotion", policy).enabled) return allow();
-  if (!isFileWrite(request)) return allow();
+  if (!isFileWrite(request) && !isMutatingBash(request)) return allow();
 
   // Three paths, following D4's reachability invariant (T011).
   // `/nodd-promote` is a slash command, which a subagent cannot run, and

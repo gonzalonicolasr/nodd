@@ -17,6 +17,8 @@ export type Observation = {
   resultText: string;
   /** ISO timestamp of when the result was observed. */
   at: string;
+  /** For bash, the absolute paths its shape says it writes. */
+  writes?: string[];
 };
 
 /**
@@ -42,6 +44,7 @@ export function observation(fields: Observation): Observation {
     isError: fields.isError,
     resultText: fields.resultText ?? "",
     at: fields.at,
+    ...(Array.isArray(fields.writes) && fields.writes.length > 0 ? { writes: [...fields.writes] } : {}),
   };
 }
 

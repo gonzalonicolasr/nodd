@@ -19,7 +19,7 @@ export type Fs = {
   existsSync(path: string): boolean;
   mkdirSync(path: string, options: { recursive: true }): void;
   readFileSync(path: string, encoding: "utf8"): string;
-  writeFileSync(path: string, data: string, encoding: "utf8"): void;
+  writeFileSync(path: string, data: string, options: "utf8" | { encoding: "utf8"; flag?: string; mode?: number }): void;
   renameSync(from: string, to: string): void;
   unlinkSync(path: string): void;
 };
@@ -36,6 +36,8 @@ export type WriteOptions = {
    */
   expectedPrevious?: string;
   now?: () => string;
+  /** File permissions for the written file, e.g. `0o600` for a file only its owner should read. */
+  mode?: number;
 };
 
 function timestamp(): string {
@@ -48,24 +50,10 @@ function conflictPathFor(target: string, stamp: string): string {
   return `${base}.conflict-${stamp}${ext}`;
 }
 
-export function writeVerified(target: string, content: string, options: WriteOptions): WriteResult {
-  const fs = options.fs;
-  const stamp = (options.now ?? timestamp)();
-  const temp = join(dirname(target), `.${stamp}.nodd-tmp`);
-
-  let conflictPath: string | undefined;
+function placeAtomically(fs: Fs, target: string, content: string, stamp: string, mode: number | undefined): void {
+  const temp = join(dirname(target), `.${stamp}-${Math.random().toString(36).slice(2, 10)}.nodd-tmp`);
   try {
-    fs.mkdirSync(dirname(target), { recursive: true });
-
-    if (options.expectedPrevious !== undefined && fs.existsSync(target)) {
-      const onDisk = fs.readFileSync(target, "utf8");
-      if (onDisk !== options.expectedPrevious) {
-        conflictPath = conflictPathFor(target, stamp);
-        fs.writeFileSync(conflictPath, onDisk, "utf8");
-      }
-    }
-
-    fs.writeFileSync(temp, content, "utf8");
+    fs.writeFileSync(temp, content, { encoding: "utf8", flag: "wx", ...(mode === undefined ? {} : { mode }) });
     fs.renameSync(temp, target);
   } catch (err) {
     try {
@@ -73,6 +61,29 @@ export function writeVerified(target: string, content: string, options: WriteOpt
     } catch {
       // Best effort: the temp file is already reported through the limitation.
     }
+    throw err;
+  }
+}
+
+export function writeVerified(target: string, content: string, options: WriteOptions): WriteResult {
+  const fs = options.fs;
+  const stamp = (options.now ?? timestamp)();
+
+  let conflictPath: string | undefined;
+  let previous: string | undefined;
+  try {
+    fs.mkdirSync(dirname(target), { recursive: true });
+
+    if (fs.existsSync(target)) {
+      previous = fs.readFileSync(target, "utf8");
+      if (options.expectedPrevious !== undefined && previous !== options.expectedPrevious) {
+        conflictPath = conflictPathFor(target, stamp);
+        fs.writeFileSync(conflictPath, previous, { encoding: "utf8", flag: "wx" });
+      }
+    }
+
+    placeAtomically(fs, target, content, stamp, options.mode);
+  } catch (err) {
     return { ok: false, limitation: err instanceof Error ? err.message : String(err) };
   }
 
@@ -84,7 +95,15 @@ export function writeVerified(target: string, content: string, options: WriteOpt
     return { ok: false, limitation: `read-back failed: ${err instanceof Error ? err.message : String(err)}` };
   }
   if (readBack !== content) {
-    return { ok: false, limitation: `read-back mismatch on ${target}: the file on disk is not what NODD wrote` };
+    let restored = "";
+    try {
+      if (previous !== undefined) placeAtomically(fs, target, previous, stamp, options.mode);
+      else fs.unlinkSync(target);
+      restored = previous !== undefined ? "; the previous content was put back" : "; the unverified file was removed";
+    } catch {
+      restored = "; restoring the previous content failed too";
+    }
+    return { ok: false, limitation: `read-back mismatch on ${target}: the file on disk is not what NODD wrote${restored}` };
   }
 
   return conflictPath ? { ok: true, conflictPath } : { ok: true };

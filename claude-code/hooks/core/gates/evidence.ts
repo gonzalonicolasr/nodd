@@ -59,6 +59,10 @@ export type CheckRequest = {
   lastWriteSeq?: number;
   /** The declared verification command. `null` when the declaration pinned none. */
   runner: string | null;
+  /** The project root: a run that `cd`s elsewhere before the runner is not the runner. */
+  root?: string;
+  /** In strict TDD, the RED must come after this observation, so a RED from an earlier task does not count. */
+  redSince?: number;
   tdd?: TddContext;
 };
 
@@ -106,10 +110,14 @@ function sameDir(a: string, b: string): boolean {
   return tilde !== null && other.startsWith("/") && other.endsWith(tilde.slice(1)) && /^\/home\/[^/]+$|^\/root$/.test(other.slice(0, other.length - tilde.length + 1));
 }
 
-export function isDeclaredRunner(command: string, runner: string): boolean {
+export function isDeclaredRunner(command: string, runner: string, root?: string): boolean {
   const run = splitCd(command);
   const want = splitCd(runner);
   if (run.dir !== null && want.dir !== null && !sameDir(run.dir, want.dir)) return false;
+  if (run.dir !== null && want.dir === null && root !== undefined && root !== "") {
+    const where = /^(\/|~|\$HOME)/.test(run.dir) ? run.dir : `${root.replace(/\/+$/, "")}/${run.dir}`;
+    if (!sameDir(where.replace(/\/\.$/, ""), root)) return false;
+  }
   const actual = run.rest.trim().split(/\s+/);
   const declared = want.rest.trim().split(/\s+/);
   if (declared.length === 0 || actual.length < declared.length) return false;
@@ -233,7 +241,7 @@ export function evidenceGate(
   // not a failing test run, it is not a test run at all.
   const relevant = request.runner === null
     ? runs
-    : runs.filter((run) => isDeclaredRunner(run.command, request.runner!));
+    : runs.filter((run) => isDeclaredRunner(run.command, request.runner!, request.root));
   if (relevant.length === 0) {
     const recent = runs.slice(-3).map((run) => `\`${brief(run.command)}\``).join(", ");
     const observed = runs.length > 3 ? `${recent} and ${runs.length - 3} earlier` : recent;
@@ -275,7 +283,7 @@ export function evidenceGate(
     return deny(`the last observed run of \`${brief(last.command)}\` ended ${describeOutcome(last.outcome)}, which is not success`);
   }
 
-  const afterWrite = green.filter((run) => run.seq > (request.lastWriteSeq ?? 0) && run.at >= request.lastWriteAt);
+  const afterWrite = green.filter((run) => run.seq >= (request.lastWriteSeq ?? 0) && run.at >= request.lastWriteAt);
   if (afterWrite.length === 0) {
     const last = green[green.length - 1];
     return deny(
@@ -285,7 +293,7 @@ export function evidenceGate(
 
   if (request.tdd?.mode === "strict") {
     const chosen = afterWrite[afterWrite.length - 1];
-    const red = trusted.find((run) => !isSuccess(run.outcome) && run.at <= chosen.at);
+    const red = trusted.find((run) => !isSuccess(run.outcome) && run.at <= chosen.at && run.seq > (request.redSince ?? 0));
     if (!red) {
       return deny(
         `TDD mode is strict (${request.tdd.source}) but no failing (RED) run was observed before this success, so the test was never seen to fail first`,
