@@ -6,6 +6,7 @@
 // the file is the extensions' job.
 
 import { joinPath } from "./path.ts";
+import { bashWriteTargets, writesOnlyUnder } from "./scratch.ts";
 import type { ConfigurableSlot } from "./manifest.ts";
 
 export type GateFlag = { enabled: boolean };
@@ -42,6 +43,72 @@ export function noddConfigPath(home: string): string {
  */
 export function hatchPath(home: string): string {
   return joinPath(home, ".pi", "nodd-hatch.json");
+}
+
+/** Where the global on/off switch lives, and where the exported per-session state does. */
+export function switchPath(home: string): string {
+  return joinPath(home, ".local", "state", "nodd", "switch.json");
+}
+
+export function statePath(home: string, sessionId: string): string {
+  return joinPath(home, ".local", "state", "nodd", "sessions", `${sessionId || "sin-id"}.json`);
+}
+
+/**
+ * The files that decide whether NODD looks at a call: the gate config, a
+ * pending one-shot override, the global switch, and the exported state.
+ *
+ * They live under `$HOME`, so the roots the destructive guard knows never
+ * included them, and once a declaration existed every other gate was satisfied —
+ * a model could write `{"gates":{"evidence":{"enabled":false}}}` and then check
+ * a task off with no run observed. An enforcer whose subject can rewrite its
+ * rules is enforcing prose with extra steps.
+ */
+export type ControlPaths = {
+  files: string[];
+  /** Prefixes that may legitimately be created: a conflict copy, a session's state file. */
+  prefixes: string[];
+};
+
+export function controlPaths(home: string): ControlPaths {
+  const config = noddConfigPath(home);
+  const hatch = hatchPath(home);
+  const flip = switchPath(home);
+  return {
+    files: [config, hatch, flip],
+    prefixes: [`${config}.conflict-`, `${hatch}.conflict-`, `${joinPath(home, ".local", "state", "nodd")}/`],
+  };
+}
+
+export function isControlPath(path: string, home: string): boolean {
+  if (typeof path !== "string" || path === "" || home === "") return false;
+  const { files, prefixes } = controlPaths(home);
+  return files.includes(path) || prefixes.some((prefix) => path.startsWith(prefix));
+}
+
+/** `~` and `$HOME` stand for the same directory, and the write tools see them as written. */
+function expandHome(command: string, home: string): string {
+  if (home === "") return command;
+  return command
+    .replace(/(^|[\s='"<>&|(])\$HOME(?=\/|$|[\s'";&|)])/g, `$1${home}`)
+    .replace(/(^|[\s='"<>&|(])~(?=\/|$|[\s'";&|)])/g, `$1${home}`);
+}
+
+/**
+ * The control file a bash command would write, if any.
+ *
+ * Built on the same target extraction the gates already trust, over a copy of
+ * the command with `~`/`$HOME` expanded — `bashWriteTargets` drops those as
+ * unpinnable, which is right for promotion and wrong here, because they name a
+ * control file exactly.
+ */
+export function bashControlTarget(command: string, home: string, cwd: string): string | null {
+  if (typeof command !== "string" || command === "") return null;
+  const expanded = expandHome(command, home);
+  const found: string[] = [];
+  writesOnlyUnder(expanded, () => true, (path) => found.push(path));
+  found.push(...bashWriteTargets(expanded, cwd));
+  return found.find((path) => isControlPath(path, home)) ?? null;
 }
 
 function asObject(value: unknown): Record<string, unknown> {

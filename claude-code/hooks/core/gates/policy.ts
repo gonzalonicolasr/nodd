@@ -65,7 +65,7 @@ export function refuse(gate: GateId, observed: string, action: string): GateDeci
 }
 
 
-export function grantHatch(policy: Policy, gate: GateId, reason: string, at?: string): Policy {
+export function grantHatch(policy: Policy, gate: GateId | "config", reason: string, at?: string): Policy {
   return { ...policy, hatches: { ...policy.hatches, [gate]: { reason, ...(at ? { at } : {}) } } };
 }
 

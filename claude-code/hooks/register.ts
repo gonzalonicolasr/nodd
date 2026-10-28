@@ -117,8 +117,25 @@ async function syncEnabled($: any) {
 }
 
 async function resolveRoot($: any): Promise<string> {
+  // `$.session.repo()` answers the *main* working tree's root for a worktree —
+  // that is its contract. So in a worktree, `.nodd/` landed in the main
+  // checkout while every write happened in the worktree, the declared `files`
+  // were anchored to a tree the work never touched, and `evidence` compared the
+  // runner's `cd` against that root and refused every checkoff.
+  //
+  // `$.session.root()` is the one a worktree move takes with it, but it is only
+  // trusted where it differs from `repo.root` *and* carries a worktree pointer
+  // (a `.git` file reading `gitdir:`). A plain clone keeps `repo.root`, and a
+  // host that answers with some parent directory is ignored rather than
+  // silently moving every artifact.
   const repo = await $.session.repo().catch(() => null)
-  if (repo && typeof repo.root === 'string' && repo.root !== '') return repo.root
+  const repoRoot = repo && typeof repo.root === 'string' && repo.root !== '' ? repo.root : null
+  const sessionRoot = (await $.session.root().catch(() => '')) || ''
+  if (sessionRoot !== '' && sessionRoot !== repoRoot) {
+    const pointer = await readText($, joinPath(sessionRoot, '.git')).catch(() => null)
+    if (pointer !== null && /^gitdir:/.test(pointer)) return sessionRoot
+  }
+  if (repoRoot !== null) return repoRoot
   return (await $.session.cwd().catch(() => '')) || cwd
 }
 
@@ -145,6 +162,7 @@ function kernelFor(key: string): Kernel {
       delete next[gate]
       hatches = next
     },
+    home: () => home,
   })
   if (key !== MAIN) {
     const parent = kernels.get(agents.get(key)?.parent ?? MAIN)?.state.committed.declaration
@@ -491,7 +509,15 @@ async function command($: any, args: string): Promise<string> {
         allowDestructive = true
         return 'nodd: override de un solo uso para un comando irreversible. Lo consume el próximo.'
       }
-      if (!gate || !isGateId(gate)) return `uso: /nodd allow <gate> [motivo]. Gates: ${GATE_IDS.join(', ')}`
+      if (gate === 'config') {
+        // Not a gate id: the kernel reads this hatch itself, before the registry
+        // runs, because it guards the files that decide whether the gates run.
+        hatches = grantHatch({ config: {}, flags: {}, hatches }, gate, why.join(' '), new Date().toISOString()).hatches
+        await saveHatches($)
+        await exportState($)
+        return 'nodd: override de un solo uso para escribir la config o el interruptor de NODD. Lo consume la próxima escritura.'
+      }
+      if (!gate || !isGateId(gate)) return `uso: /nodd allow <${GATE_IDS.join('|')}|destructive|config> [motivo]`
       if (!ENFORCED.includes(gate)) return `nodd: ${gate} todavía no se aplica en Claude Code, así que no hay nada que saltear.`
       hatches = grantHatch({ config: {}, flags: {}, hatches }, gate, why.join(' '), new Date().toISOString()).hatches
       await saveHatches($)
@@ -499,7 +525,7 @@ async function command($: any, args: string): Promise<string> {
       return `nodd: override de un solo uso para ${gate}. Lo consume el próximo rechazo de ${gate}.`
     }
     default:
-      return 'uso: /nodd [status|on|off|gates|gate <id|all> on|off|allow <gate> [motivo]]'
+      return 'uso: /nodd [status|on|off|gates|gate <id|all> on|off|allow <gate|destructive|config> [motivo]]'
   }
 }
 

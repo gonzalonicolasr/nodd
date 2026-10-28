@@ -28,6 +28,13 @@ export type Verification = {
   source: string;
   /** The distinct files the declaration promised to touch. */
   files: string[];
+  /**
+   * Where the work actually happens, when it is not the repository the session
+   * runs in. Every other declaration field is anchored here, and the runner is
+   * only accepted from this directory. `null` means "the session's root", which
+   * is what a declaration inside its own project has always meant.
+   */
+  root?: string | null;
 };
 
 export type TaskEvidence = {
@@ -123,6 +130,9 @@ function renderVerification(v: Verification): string[] {
     `- tdd: ${v.tdd}`,
     `- source: ${v.source}`,
     `- files: ${v.files.length > 0 ? v.files.join(", ") : "none declared"}`,
+    // Only when it is not the default, so every document written before this
+    // field existed parses back to exactly what it always meant.
+    ...(v.root ? [`- root: ${v.root}`] : []),
   ];
 }
 
@@ -133,11 +143,16 @@ function parseVerification(block: string): Verification {
     return value === null || value === "none declared" ? null : value;
   };
   const files = field("files");
+  const root = field("root");
   return {
     runner: field("runner"),
     tdd: field("tdd") === "strict" ? "strict" : "off",
     source: field("source") ?? "undeclared",
     files: files === null ? [] : files.split(",").map((part) => part.trim()).filter((part) => part !== ""),
+    // Absent, not null: a document written before this field existed must parse
+    // to exactly what it always meant, and every deep-equality over a parsed
+    // document would otherwise gain a key it never had.
+    ...(root === null ? {} : { root }),
   };
 }
 

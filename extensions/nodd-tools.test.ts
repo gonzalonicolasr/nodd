@@ -43,7 +43,7 @@ test("route: tracked creates the feature doc and reports it in one line", () => 
   assert.deepEqual(parsed.defects, []);
   assert.equal(parsed.doc.objective, "Make the thing work");
   assert.deepEqual(parsed.doc.tasks, [], "a fresh doc has an empty Tasks section");
-  assert.equal(result.text, ".nodd/demo/feature.md created with 0 tasks");
+  assert.equal(result.text, `.nodd/demo/feature.md created with 0 tasks, anchored at ${cwd}`);
 });
 
 // A runner is pinned once. `tdd: strict` was not: re-declaring while omitting
@@ -101,7 +101,7 @@ test("nodd_task add appends a task and the count is reported from the doc", () =
   assert.deepEqual(parsed.doc.tasks, [{ id: "T1", title: "First task", checked: false }]);
 
   const second = kernel.declare({ intent: "change", route: "tracked", slug: "demo", summary: "obj", title: "Demo" });
-  assert.match(second.text, /with 1 tasks?$/);
+  assert.match(second.text, /with 1 tasks?, anchored at /);
 });
 
 test("the model never writes the doc: the extension does", () => {

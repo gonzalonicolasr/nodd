@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `nodd_declare` takes an optional `root`: the directory the work happens in,
+  when it is not the repository the session runs in. Declared files and the
+  runner anchor there, so a cross-repo feature — a nested repo, a sibling
+  project — can reach a checkoff. Before this the session's root was the only
+  one NODD knew, `gate-evidence` accepted the runner only from it, and a runner
+  invoked with its own `cd` was refused with no reachable remedy but an
+  override. It is pinned once, like the runner: a root chosen after the work is
+  a root chosen to fit it.
+- A declaration that names files outside the session's root now says so in the
+  reply, naming `root` as the remedy. It is not a refusal: an absolute path
+  outside the root is sound whenever the runner runs from the session's own
+  directory, and NODD does not infer a root from a file list that may be
+  incomplete.
+
+### Security
+
+- A tool call can no longer write the files that decide whether NODD looks at
+  a call: `~/.pi/nodd.json`, `~/.pi/nodd-hatch.json`, the global switch and the
+  exported session state. With a declaration in place every gate allowed such a
+  write, and `$HOME` sits outside the roots the destructive guard knows, so one
+  redirect — `echo '{"gates":{"evidence":{"enabled":false}}}' > ~/.pi/nodd.json` —
+  turned the evidence gate off and the next checkoff was taken with no run
+  observed. Enforcing a protocol whose subject can rewrite its rules is prose
+  with extra steps. Checked in the kernel, before the gate registry, for typed
+  writes and for bash (including the `~` and `$HOME` spellings that the write
+  target extraction drops as unpinnable). The user keeps the hand:
+  `/nodd gate` and `/nodd on|off` in Claude Code, `/nodd-gates` in pi, and a
+  one-shot `nodd-allow config` for anything else.
+
+### Fixed
+
+- In a git worktree, NODD anchored `.nodd/` and every declared file to the
+  **main** working tree. `$.session.repo().root` answers the main tree's root
+  for a worktree, by contract, and it was the only root NODD asked for. So the
+  feature document landed in the main checkout while the work happened in the
+  worktree, the declared `files` pointed at paths the work never touched, and
+  `gate-evidence` compared the runner's `cd` against that root and refused every
+  checkoff — with no reachable remedy but an override. `resolveRoot` now prefers
+  `$.session.root()` when it differs from `repo.root` and carries a worktree
+  pointer (a `.git` file reading `gitdir:`); a plain clone is unchanged.
+- The declaration's one-line report now names the root it anchored at, because
+  that root is what `gate-evidence` accepts the runner from.
+
+### Fixed
+
+- An append redirect (`cmd >> file`) was parsed as a write to a file called
+  `>`. `redirectTargets` matched the operator as a prefix before the bare-operator
+  row, so `>>` split into `>` + a glued target `>`, and the operator row below it
+  was unreachable. Every append therefore named an invented path: `promotion`
+  refused it as an undeclared file ("1 of them never named (/repo/>)"), the
+  scratchpad exemption never applied to it, and an append after a green run
+  invalidated that run. The bare operator is matched first, and the glued form
+  no longer accepts `>&2` or `&>f` as file targets.
+
 ## [0.9.3] - 2026-10-18
 
 ### Fixed

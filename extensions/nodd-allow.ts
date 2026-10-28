@@ -35,10 +35,10 @@ export function runAllowCommand(
       policy,
     };
   }
-  if (!isGateId(gate)) {
+  if (!isGateId(gate) && gate !== "config") {
     return {
       ok: false,
-      text: `nodd-allow: unknown gate "${gate}". Valid gates: ${GATE_IDS.join(", ")}`,
+      text: `nodd-allow: unknown gate "${gate}". Valid gates: ${GATE_IDS.join(", ")}, config`,
       policy,
     };
   }

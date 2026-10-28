@@ -11,7 +11,7 @@ import {
 } from "./feature-doc.ts";
 import { writeVerified, type Fs } from "./io-core.ts";
 import { consumeHatch, emptyPolicy, type GateDecision, type Policy } from "./gates/policy.ts";
-import { hatchPath, parseConfig, noddConfigPath } from "./config-core.ts";
+import { hatchPath, isControlPath, bashControlTarget, parseConfig, noddConfigPath } from "./config-core.ts";
 import { GATE_IDS } from "./gates/registry.ts";
 import { authorizeGate, type CapabilityLookup } from "./gates/authorize.ts";
 import { classifyGate } from "./gates/classify.ts";
@@ -88,6 +88,8 @@ export type DeclareArgs = {
   tdd?: "strict" | "off";
   /** The files this work says it will touch. `gate-promotion` compares against it. */
   files?: string[];
+  /** Where the work happens, when it is not the repository this session runs in. */
+  root?: string;
 };
 
 export type TaskArgs = {
@@ -165,9 +167,17 @@ export type KernelOptions = {
   now?: () => string;
   loadPolicy?: () => Policy;
   isReadOnlyAgent?: CapabilityLookup;
-  // Injected like `docExists` and `isReadOnlyAgent`: the kernel decides a hatch
-  // was spent, the caller owns where that fact is persisted.
+  /** Injected like `docExists` and `isReadOnlyAgent`: the kernel decides a hatch
+  // was spent, the caller owns where that fact is persisted. */
   spendHatch?: (gate: string) => void;
+  /**
+   * `$HOME`, when the caller knows it: the files that decide whether NODD looks
+   * at a call (the gate config, a pending override, the switch, the exported
+   * state) live under it. A function when it is only known after boot, like
+   * `cwd`. Leaving it out turns the guard off, which is what the pure tests
+   * want and what no runtime should do.
+   */
+  home?: string | (() => string);
 };
 
 export function createKernel(options: KernelOptions): Kernel {
@@ -177,6 +187,7 @@ export function createKernel(options: KernelOptions): Kernel {
   const loadPolicy = options.loadPolicy ?? emptyPolicy;
   const isReadOnlyAgent = options.isReadOnlyAgent ?? (() => null);
   const spendHatch = options.spendHatch ?? (() => {});
+  const home = typeof options.home === "function" ? options.home : () => options.home ?? "";
   const state = emptyState();
   // Mutable because `/nodd-allow` grants a hatch mid-session and a refusal
   // spends it. The policy is session state, not a constant.
@@ -192,13 +203,18 @@ export function createKernel(options: KernelOptions): Kernel {
     return parseFeatureDoc(fs.readFileSync(path, "utf8")).doc;
   };
 
-  const saveDoc = (doc: FeatureDoc): ToolReply => {
+  const saveDoc = (doc: FeatureDoc, note: string | null = null): ToolReply => {
     const path = featureDocPath(root(), doc.slug);
     const previous = fs.existsSync(path) ? fs.readFileSync(path, "utf8") : undefined;
     const result = writeVerified(path, renderFeatureDoc(doc), { fs, expectedPrevious: previous });
     if (!result.ok) return { ok: false, text: `nodd: ${result.limitation}` };
     const conflict = result.conflictPath ? ` (previous version preserved at ${result.conflictPath})` : "";
-    return { ok: true, text: `.nodd/${doc.slug}/feature.md created with ${doc.tasks.length} tasks${conflict}` };
+    // Naming the root is the whole remedy when the declaration anchored
+    // somewhere the work does not run: `evidence` accepts the runner only from
+    // this root, so a reader who cannot see it would run the right command in
+    // the wrong tree and be refused with no way to tell why.
+    const warning = note ? `\n⚠ ${note}` : "";
+    return { ok: true, text: `.nodd/${doc.slug}/feature.md created with ${doc.tasks.length} tasks, anchored at ${doc.verification.root ?? root()}${conflict}${warning}` };
   };
 
   return {
@@ -262,6 +278,43 @@ export function createKernel(options: KernelOptions): Kernel {
         };
       }
 
+      // The session's root is where every artifact and every declared file has
+      // always been anchored, and for most features that is exactly right. It is
+      // wrong when the work is elsewhere — a nested repo, a sibling project —
+      // and the failure is silent: `evidence` then accepts the runner only from
+      // a directory the work never ran in, so a runner invoked with its own `cd`
+      // is refused and the only reachable remedy is an override.
+      //
+      // Not a refusal: absolute paths outside the root work whenever the runner
+      // runs from the session's own directory, and refusing them would break
+      // declarations that are perfectly sound. NODD also does not guess a root
+      // from the declared files, because an incomplete file list guesses wrong
+      // and a guessed root is a fabricated signal. It says what it sees instead.
+      const sessionRoot = root();
+      const declaredRoot = args.root && args.root !== "" ? joinPath(args.root) : null;
+      if (declaredRoot !== null && !declaredRoot.startsWith("/")) {
+        return { ok: false, text: `nodd_declare: root must be an absolute path, not ${JSON.stringify(args.root)}` };
+      }
+      if (doc.verification.root !== undefined && doc.verification.root !== null && declaredRoot !== null && declaredRoot !== doc.verification.root) {
+        return {
+          ok: false,
+          text: `nodd_declare: ${args.slug} is pinned to root \`${doc.verification.root}\`. A root chosen after the work is a root chosen to fit it; declare a new feature to verify elsewhere.`,
+        };
+      }
+      const workRoot = declaredRoot ?? doc.verification.root ?? sessionRoot;
+      const outside =
+        declaredRoot === null && doc.verification.root === undefined
+          ? (args.files ?? []).filter(
+              (file) => typeof file === "string" && file !== "" && !anchorOne(file, sessionRoot).startsWith(`${sessionRoot}/`),
+            )
+          : [];
+      const outsideRootNote =
+        outside.length === 0
+          ? null
+          : `${outside.length} declared file(s) sit outside \`${sessionRoot}\`, which is where this session runs. ` +
+            "They are recorded as given, but the runner is only accepted from that root — if it needs its own `cd`, " +
+            "pass `root` with the directory the work happens in.";
+
       doc.objective = args.summary;
       // `/nodd-promote` reads these three into the forge handoff
       // (`src/promote.ts:58-60`), where they read "Not recorded in the NODD
@@ -278,9 +331,10 @@ export function createKernel(options: KernelOptions): Kernel {
         runner: requested ?? doc.verification.runner,
         tdd: args.tdd === "strict" ? "strict" : "off",
         source: "nodd_declare",
-        files: [...new Set(anchorFiles((args.files ?? []).filter((file) => typeof file === "string" && file !== ""), root()))],
+        files: [...new Set(anchorFiles((args.files ?? []).filter((file) => typeof file === "string" && file !== ""), workRoot))],
+        root: workRoot === sessionRoot ? null : workRoot,
       };
-      return saveDoc(doc);
+      return saveDoc(doc, outsideRootNote);
     },
 
     task(args) {
@@ -339,7 +393,9 @@ export function createKernel(options: KernelOptions): Kernel {
           // writes otherwise. Either way a real timestamp, not a bash proxy.
           ...lastWrite(state.committed, anchorFiles(doc.verification.files, root()), doc.verification.runner),
           runner: doc.verification.runner,
-          root: root(),
+          // The declared root when there is one: a run is a run of *this*
+          // feature only where the feature lives.
+          root: doc.verification.root ?? root(),
           ...(doc.verification.tdd === "strict" && doc.verification.runner
             ? { redSince: lastCheckoffSeq, tdd: { mode: "strict" as const, source: doc.verification.source, runner: doc.verification.runner } }
             : {}),
@@ -400,6 +456,21 @@ export function createKernel(options: KernelOptions): Kernel {
 
     checkCall(raw) {
       const request = { ...raw, input: anchorPath(raw.input ?? {}, root()) };
+      // Before every gate: the files that decide whether NODD looks are not the
+      // model's to write. Checked first because once a declaration exists every
+      // gate below is satisfied, and `$HOME` is outside the roots the
+      // destructive guard knows, so one redirect turned the evidence gate off.
+      // Its own one-shot override, `config`, is spent by the refusal it prevents.
+      const control = controlTarget(request, home(), root());
+      if (control !== null) {
+        const hatch = consumeHatch(policy, "config" as GateId);
+        if (hatch) {
+          policy = hatch.policy;
+          spendHatch("config");
+        } else {
+          return { block: true, reason: controlRefusal(control) };
+        }
+      }
       // Registry order, first refusal wins: one call never collects two
       // messages about the same missing declaration.
       const decisions: Array<[(typeof GATE_IDS)[number], () => GateDecision]> = [
@@ -536,6 +607,10 @@ export const DECLARE_SCHEMA = {
         items: { type: "string" },
         description: "the files this work will touch; writing more distinct files than declared escalates to promotion",
       },
+      root: {
+        type: "string",
+        description: "absolute dir the work happens in, when not this repo; files and runner anchor here",
+      },
     },
     required: ["intent", "route", "slug", "summary"],
   },
@@ -559,6 +634,26 @@ export const TASK_SCHEMA = {
 
 export function ledgerPath(cwd: string, slug: string): string {
   return joinPath(cwd, ".nodd", slug, "ledger.json");
+}
+
+/** The control file this call would write, if any. */
+function controlTarget(request: GateRequest, home: string, cwd: string): string | null {
+  if (home === "") return null;
+  const direct = targetPath(request);
+  if (isFileWrite(request) && direct !== null && isControlPath(direct, home)) return direct;
+  if (request.toolName === "bash") {
+    return bashControlTarget(String(request.input?.command ?? ""), home, cwd);
+  }
+  return null;
+}
+
+function controlRefusal(path: string): string {
+  return (
+    `nodd/config: this call writes \`${path}\`, and the gate config, a pending override, ` +
+    "the global switch and the exported state are what decide whether NODD looks at a call at all. " +
+    "To proceed: change it with the command meant for it (`/nodd-gates` in pi, `/nodd gate` in Claude Code), " +
+    "which is the user's hand and not yours, or ask the user for a one-shot override with `nodd-allow config`"
+  );
 }
 
 /**

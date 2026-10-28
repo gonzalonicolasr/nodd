@@ -228,6 +228,7 @@ export const CC_DECLARE_SCHEMA = {
       runner: { type: 'string', description: 'verification command, pinned once' },
       tdd: { type: 'string', enum: ['strict', 'off'], description: 'strict: a failing run before a checkoff' },
       files: { type: 'array', items: { type: 'string' } },
+      root: { type: 'string', description: 'dir the work happens in, when not this repo' },
     },
     required: ['slug'],
   },
