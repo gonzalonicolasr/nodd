@@ -7,7 +7,7 @@ const TASK = 'mcp__nodd__nodd_task'
 const STATE = '/h/.local/state/nodd/sessions/s1.json'
 const CONFIG = '/h/.pi/nodd.json'
 
-type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; repo: string | null; registered: string[]; schemas: Record<string, any>; store: Record<string, unknown>; links: Record<string, string>; respond?: (e: any) => any }
+type World = { files: Record<string, string>; ran: string[]; agentsList: any[]; seenAgents: unknown[]; submitted: any[]; cwd: string; root?: string; repo: string | null; registered: string[]; schemas: Record<string, any>; store: Record<string, unknown>; links: Record<string, string>; respond?: (e: any) => any }
 
 function world(on: any, seed: { files?: Record<string, string>; store?: Record<string, unknown>; agents?: any[] } = {}): World {
   mock.env(on, { HOME: '/h' })
@@ -52,6 +52,7 @@ function world(on: any, seed: { files?: Record<string, string>; store?: Record<s
     return { value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false, ...(e.resolve ? { realPath: real } : {}) } }
   })
   on('session.cwd', async () => ({ value: w.cwd }))
+  on('session.root', async () => ({ value: w.root ?? w.cwd }))
   on('session.id', async () => ({ value: 's1' }))
   on('session.repo', async () => ({ value: w.repo === null ? null : { root: w.repo, remote: null, internal: false } }))
   on('agent.list', async () => ({ value: w.agentsList }))
@@ -205,6 +206,71 @@ describe('una sesión, su estado', () => {
     expect((await call($, { tool: 'Write', file_path: '/h/proyecto/pkg/a.ts', content: 'x' })).deny).toBe(undefined)
   })
 
+  test('en un worktree, el documento va al worktree y no al árbol principal', async ($, on) => {
+    // `$.session.repo()` answers the *main* working tree's root for a worktree,
+    // by contract. Anchoring there put `.nodd/` in the main checkout while the
+    // work happened in the worktree, and `evidence` then compared the runner's
+    // `cd` against a root the work never ran in, so no checkoff could pass.
+    const w = world(on, { files: { '/h/repo/.claude/worktrees/feat/.git': 'gitdir: /h/repo/.git/worktrees/feat\n' } })
+    w.cwd = '/h/repo/.claude/worktrees/feat'
+    w.root = '/h/repo/.claude/worktrees/feat'
+    w.repo = '/h/repo'
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare })
+    expect(w.files['/h/repo/.claude/worktrees/feat/.nodd/auth/feature.md']).toContain('login con tokens')
+    expect(w.files['/h/repo/.nodd/auth/feature.md']).toBe(undefined)
+  })
+
+  test('la declaración dice a qué root ancló, para que el runner se busque ahí', async ($, on) => {
+    const w = world(on, { files: { '/h/repo/.claude/worktrees/feat/.git': 'gitdir: /h/repo/.git/worktrees/feat\n' } })
+    w.cwd = '/h/repo/.claude/worktrees/feat'
+    w.root = '/h/repo/.claude/worktrees/feat'
+    w.repo = '/h/repo'
+    await nodd($, 'on')
+    const reply = await call($, { tool: DECLARE, ...declare })
+    expect(String(reply.result)).toContain('/h/repo/.claude/worktrees/feat')
+  })
+
+  test('el modelo no puede escribir la config que decide si NODD lo mira', async ($, on) => {
+    // With a declaration in place every other gate is satisfied, and `$HOME` is
+    // outside the roots the destructive guard knows, so the model could turn its
+    // own evidence gate off and then check a task off with no run at all.
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare })
+    for (const command of [
+      `echo '{"gates":{"evidence":{"enabled":false}}}' > ${CONFIG}`,
+      `printf '{}' >> ${CONFIG}`,
+      `rm -f ${CONFIG}`,
+      `echo '{"evidence":{"reason":"x"}}' > /h/.pi/nodd-hatch.json`,
+    ]) {
+      const reply = await call($, { tool: 'Bash', command })
+      expect(reply.deny).toContain('nodd/config')
+    }
+    expect((await call($, { tool: 'Write', file_path: CONFIG, content: '{}' })).deny).toContain('nodd/config')
+    expect(w.ran).not.toContain('Bash')
+    // A command that only reads the config is untouched.
+    expect((await call($, { tool: 'Bash', command: `cat ${CONFIG}` })).deny).toBe(undefined)
+  })
+
+  test('el interruptor general y el estado exportado tampoco se escriben desde una tool', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare })
+    for (const path of ['/h/.local/state/nodd/switch.json', '/h/.local/state/nodd/sessions/s1.json']) {
+      expect((await call($, { tool: 'Write', file_path: path, content: '{}' })).deny).toContain('nodd/config')
+    }
+  })
+
+  test('el override de un solo uso deja pasar una escritura a la config, y sólo una', async ($, on) => {
+    const w = world(on)
+    await nodd($, 'on')
+    await call($, { tool: DECLARE, ...declare })
+    await nodd($, 'allow config')
+    expect((await call($, { tool: 'Bash', command: `echo '{}' > ${CONFIG}` })).deny).toBe(undefined)
+    expect((await call($, { tool: 'Bash', command: `echo '{}' > ${CONFIG}` })).deny).toContain('nodd/config')
+  })
+
   test('fuera de un repo, el documento va a la carpeta donde se declara', async ($, on) => {
     const w = world(on)
     await nodd($, 'on')
@@ -221,11 +287,11 @@ describe('costo en tokens', () => {
     const declare = w.schemas.nodd_declare
     const task = w.schemas.nodd_task
     const size = JSON.stringify(declare).length + JSON.stringify(task).length
-    expect(size).toBeLessThan(1500)
+    expect(size).toBeLessThan(1560)
     expect(JSON.stringify(declare)).not.toContain('/nodd-promote')
     expect(declare.description).toContain('inline')
     expect(declare.inputSchema.required).toEqual(['slug'])
-    expect(Object.keys(declare.inputSchema.properties).sort()).toEqual(['constraints', 'files', 'intent', 'problem', 'route', 'runner', 'scope', 'slug', 'summary', 'tdd', 'title'])
+    expect(Object.keys(declare.inputSchema.properties).sort()).toEqual(['constraints', 'files', 'intent', 'problem', 'root', 'route', 'runner', 'scope', 'slug', 'summary', 'tdd', 'title'])
     expect(task.inputSchema.required).toEqual(['action', 'id', 'slug'])
   })
 

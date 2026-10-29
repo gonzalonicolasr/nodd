@@ -24,7 +24,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@gonrocca/nodd"><img alt="npm" src="https://img.shields.io/npm/v/@gonrocca/nodd?color=0b7285&label=npm"></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-594%20passing-0b7285">
+  <img alt="tests" src="https://img.shields.io/badge/tests-705%20passing-0b7285">
   <img alt="gates" src="https://img.shields.io/badge/gates-6-0b7285">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-666">
 </p>
@@ -286,6 +286,7 @@ The two most load-bearing `(P)` clauses:
 | --- | --- |
 | `/nodd-gates [status\|enable\|disable] [<gate>\|all]` | inspect and set gate flags |
 | `/nodd-allow <gate>` | grant a one-shot override |
+| `/nodd-allow config` | the same, for a write to `nodd.json`, the hatch file or the switch |
 | `/nodd-models [<slot>=<provider>/<model>\|profile …]` | assign models per slot; no argument opens the picker |
 | `/nodd-promote <slug>` | hand a feature to `/forge` |
 

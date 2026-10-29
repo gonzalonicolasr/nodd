@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createKernel } from "./kernel.ts";
+import { parseFeatureDoc } from "./feature-doc.ts";
 import type { Fs } from "./io-core.ts";
 import type { Policy } from "./gates/policy.ts";
 
@@ -262,3 +263,97 @@ test("files written by bash count toward the delegate threshold", () => {
   const second = kernel.checkCall({ toolName: "bash", input: { command: "echo x > /repo/f2.ts" } });
   assert.ok(second && second.reason.startsWith("nodd/delegate"), second?.reason);
 });
+
+test("the files that decide whether NODD looks are not written by a tool", () => {
+  // With a declaration in place every gate allows the write, and `$HOME` is
+  // outside the roots the destructive guard knows. Turning the evidence gate off
+  // from here is how a checkoff was obtained with no run observed.
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/repo", home: "/home/g" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  kernel.onToolResult({ toolName: "nodd_declare", toolCallId: "d", input: { intent: "change", route: "inline", slug: "s", summary: "s" }, isError: false, content: "ok" });
+
+  for (const command of [
+    `echo '{"gates":{"evidence":{"enabled":false}}}' > /home/g/.pi/nodd.json`,
+    `echo x > ~/.pi/nodd.json`,
+    `printf '{}' >> $HOME/.pi/nodd-hatch.json`,
+    `rm -f /home/g/.local/state/nodd/switch.json`,
+  ]) {
+    const decision = kernel.checkCall({ toolName: "bash", input: { command } });
+    assert.ok(decision && decision.reason.startsWith("nodd/config"), `${command} -> ${decision?.reason}`);
+  }
+  const typed = kernel.checkCall({ toolName: "write", input: { file_path: "/home/g/.pi/nodd.json" } });
+  assert.ok(typed && typed.reason.startsWith("nodd/config"), typed?.reason);
+  // Reading it is not writing it.
+  assert.equal(kernel.checkCall({ toolName: "bash", input: { command: "cat /home/g/.pi/nodd.json" } }), null);
+});
+
+test("a declaration can name the root where the work happens, outside the session's repo", () => {
+  // The session runs in one repository and the work is in another. Anchoring
+  // only to the session root made the runner acceptable only from a directory
+  // the work never ran in, so no checkoff could pass.
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/session/repo" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  const input = {
+    intent: "change",
+    route: "tracked",
+    slug: "cross",
+    summary: "x",
+    runner: "npm test",
+    root: "/work/project",
+    files: ["src/a.ts"],
+  };
+  const reply = kernel.declare(input);
+  assert.ok(reply.ok, reply.text);
+  assert.match(reply.text, /anchored at \/work\/project/, reply.text);
+
+  const doc = parseFeatureDoc(files.get("/session/repo/.nodd/cross/feature.md")!).doc;
+  assert.equal(doc.verification.root, "/work/project");
+  assert.deepEqual(doc.verification.files, ["/work/project/src/a.ts"], "declared files anchor at the declared root");
+
+  // The document still lives where the session declares, so `track` finds it.
+  kernel.onToolResult({ toolName: "nodd_declare", toolCallId: "d", input, isError: false, content: reply.text });
+  kernel.onToolResult({ toolName: "nodd_task", toolCallId: "t", input: { action: "add", slug: "cross", id: "T1", title: "x" }, isError: false, content: "ok" });
+  kernel.task({ action: "add", slug: "cross", id: "T1", title: "x" });
+
+  // A runner reached through its own `cd` into the declared root is a run of it.
+  const run = (id: string, command: string) =>
+    kernel.onToolResult({ toolName: "bash", toolCallId: id, input: { command }, isError: false, content: "" });
+  run("b1", "cd /work/project && npm test");
+  assert.match(kernel.task({ action: "check", slug: "cross", id: "T1" }).text, /checked in/, "the declared root is where the runner is accepted");
+});
+
+test("a declaration that names files outside the session root says so", () => {
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/session/repo" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  const reply = kernel.declare({ intent: "change", route: "tracked", slug: "out", summary: "x", files: ["/elsewhere/a.ts"] });
+  assert.ok(reply.ok, "a legitimate absolute declaration is not refused");
+  assert.match(reply.text, /outside `\/session\/repo`/, reply.text);
+  assert.match(reply.text, /pass `root`/, "the reply names the remedy");
+});
+
+test("a declared root is pinned, like the runner", () => {
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/session/repo" });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: {} });
+  assert.ok(kernel.declare({ intent: "change", route: "tracked", slug: "p", summary: "x", root: "/one" }).ok);
+  const again = kernel.declare({ intent: "change", route: "tracked", slug: "p", summary: "x", root: "/two" });
+  assert.ok(!again.ok, "a root chosen after the work is a root chosen to fit it");
+  assert.match(again.text, /pinned to root `\/one`/);
+  assert.ok(!kernel.declare({ intent: "change", route: "tracked", slug: "p", summary: "x", root: "relative/path" }).ok);
+});
+
+test("the config one-shot override is spent by the write it lets through", () => {
+  const spent: string[] = [];
+  const files = new Map<string, string>();
+  const kernel = createKernel({ fs: memoryFs(files), cwd: "/repo", home: "/home/g", spendHatch: (gate) => spent.push(gate) });
+  kernel.setPolicy({ config: {}, flags: {}, hatches: { config: { reason: "user asked" } } });
+  const first = kernel.checkCall({ toolName: "write", input: { file_path: "/home/g/.pi/nodd.json" } });
+  assert.ok(!first?.reason.startsWith("nodd/config"), `the granted override clears its own gate: ${first?.reason}`);
+  const second = kernel.checkCall({ toolName: "write", input: { file_path: "/home/g/.pi/nodd.json" } });
+  assert.ok(second && second.reason.startsWith("nodd/config"), second?.reason);
+  assert.deepEqual(spent, ["config"]);
+});
+

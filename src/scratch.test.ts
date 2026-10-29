@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writesOnlyUnder } from "./scratch.ts";
+import { bashWriteTargets, writesOnlyUnder } from "./scratch.ts";
 
 const S = "/tmp/claude-1000/-home-gon/s1/scratchpad";
 const inside = (path: string) => path === S || path.startsWith(`${S}/`);
@@ -50,6 +50,28 @@ test("a target directory flag, a link to outside, a glob, a cd elsewhere or an u
     `env rm -rf /repo/x`,
     `echo x > n.txt`,
   ]) assert.equal(writesOnlyUnder(command, inside), false, command);
+});
+
+test("an append redirect names the file being appended to", () => {
+  // The operator is its own token once quotes are gone, so the destination is
+  // the next word — not the operator's own second character. Reading it the
+  // other way made every `cmd >> f` look like a write to a file called `>`,
+  // which then counted as an undeclared file and invalidated the green run.
+  const seen: string[] = [];
+  assert.equal(writesOnlyUnder(`echo x >> ${S}/log`, inside, (path) => seen.push(path)), true);
+  assert.deepEqual(seen, [`${S}/log`]);
+  assert.deepEqual(bashWriteTargets("echo x >> src/a.ts", "/repo"), ["/repo/src/a.ts"]);
+  assert.deepEqual(bashWriteTargets("echo x >>src/a.ts", "/repo"), ["/repo/src/a.ts"]);
+  assert.deepEqual(bashWriteTargets("npm test > out.txt 2>&1", "/repo"), ["/repo/out.txt"]);
+});
+
+test("an append outside the scratchpad is not exempt", () => {
+  for (const command of [`echo x >> /repo/a.txt`, `echo x >> n.txt`, `cat a >> /repo/b`]) {
+    assert.equal(writesOnlyUnder(command, inside), false, command);
+  }
+  // A descriptor duplication is not a file either way.
+  assert.deepEqual(bashWriteTargets("npm test 2>&1", "/repo"), []);
+  assert.deepEqual(bashWriteTargets("echo x >&2", "/repo"), []);
 });
 
 test("only real write targets are reported, not the values of assignments", () => {

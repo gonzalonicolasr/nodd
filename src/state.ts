@@ -51,6 +51,8 @@ export type Declaration = {
   tdd: "strict" | "off";
   /** Distinct files the declaration promised to touch. `gate-promotion` reads it. */
   files: string[];
+  /** Where the work happens, when it is not the session's repository root. */
+  root?: string;
 };
 
 export type Committed = {
@@ -182,6 +184,10 @@ export function fold(committed: Committed, obs: Observation): Committed {
         // not a mode it gets to assume.
         tdd: obs.input.tdd === "strict" ? "strict" : "off",
         files: declaredFiles(obs.input.files),
+        // Only when it was declared, for the same reason as the document: a
+        // declaration inside its own project has no separate root, and adding
+        // `root: null` to every one of them changes a shape callers compare.
+        ...(str(obs.input.root) === null ? {} : { root: str(obs.input.root) }),
       };
     }
   }

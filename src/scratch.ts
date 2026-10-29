@@ -72,9 +72,16 @@ function redirectTargets(args: string[]): { targets: string[]; rest: string[] } 
   const targets: string[] = [];
   const rest: string[] = [];
   for (let i = 0; i < args.length; i += 1) {
-    const glued = /^(\d|&)?>>?(.+)$/.exec(args[i]);
-    if (glued && !glued[2].startsWith("&")) { targets.push(glued[2]); continue; }
+    // The bare operator first: tokenise() makes `>>` its own word, so the file
+    // is the *next* argument. Matching the operator as a prefix first read
+    // `>>` as `>` followed by a glued target `>`, so every append named a file
+    // called `>` — which then counted as an undeclared write and invalidated
+    // the green run it came after.
     if (/^(\d|&)?>>?$/.test(args[i])) { if (args[i + 1] !== undefined) targets.push(args[++i]); continue; }
+    // Glued form (`>>log`, `>log`, `2>log`). `>&2` and `&>f` are descriptor
+    // business, not a file, so the operator may not be followed by `&`/`>`.
+    const glued = /^(\d|&)?(>>|>)(?![>&])(.+)$/.exec(args[i]);
+    if (glued) { targets.push(glued[3]); continue; }
     rest.push(args[i]);
   }
   return { targets: targets.filter((t) => !SINKS.test(t)), rest };

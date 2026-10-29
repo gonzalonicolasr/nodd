@@ -66,8 +66,9 @@ export function createKernel(
   loadPolicy: () => Policy = emptyPolicy,
   isReadOnlyAgent: CapabilityLookup = readOnlyAgentLookup(homedir()),
   spendHatch: (gate: string) => void = () => {},
+  home: string = homedir(),
 ): Kernel {
-  return createKernelWith({ fs: nodeFs, now, cwd, loadPolicy, isReadOnlyAgent, spendHatch });
+  return createKernelWith({ fs: nodeFs, now, cwd, loadPolicy, isReadOnlyAgent, spendHatch, home });
 }
 
 /**
@@ -145,6 +146,7 @@ export default function register(pi?: PiApi, cwd: string = process.cwd(), home?:
     () => ({ ...readPolicy(nodeFs, home ?? homedir()), flags: cliFlags }),
     readOnlyAgentLookup(home ?? homedir()),
     (gate) => clearHatch(nodeFs, gate, home ?? homedir()),
+    home ?? homedir(),
   );
   if (!pi || typeof pi.on !== "function") {
     kernel.reloadPolicy();
